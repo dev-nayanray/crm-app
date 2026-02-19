@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.021";
+const VERSION = "1.022";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -102,7 +102,7 @@ async function apiSave(endpoint, data) {
 
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
 const OPEN_STATUSES = ["Open", "On the way", "Approved to pay"];
-const TYPE_OPTIONS = ["Brand Payment", "Refund Affiliate"];
+const TYPE_OPTIONS = ["Affiliate Payment", "Brand Refund"];
 const STATUS_COLORS = {
   Open: { bg: "#FEF3C7", text: "#92400E", border: "#F59E0B" },
   "On the way": { bg: "#E0E7FF", text: "#3730A3", border: "#818CF8" },
@@ -248,7 +248,7 @@ function fmtFee(fee, amount) {
 }
 
 function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const availableStatuses = getAvailableStatuses(userEmail);
@@ -295,7 +295,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
           )}
         </Field>
         <Field label="Type">
-          <select style={{ ...inp, cursor: "pointer" }} value={f.type || "Brand Payment"} onChange={e => s("type", e.target.value)}>
+          <select style={{ ...inp, cursor: "pointer" }} value={f.type || "Affiliate Payment"} onChange={e => s("type", e.target.value)}>
             {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
@@ -367,7 +367,7 @@ function PaymentTable({ payments, onEdit, onDelete, emptyMsg }) {
               <td style={{ padding: "11px 14px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 15, borderRight: "1px solid #F1F5F9" }}>{p.invoice}</td>
               <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Brand Payment") === "Refund Affiliate" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Refund Affiliate" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Brand Payment"}</span>
+                <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Affiliate Payment"}</span>
               </td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
@@ -788,6 +788,8 @@ const CP_STATUS_COLORS = {
   Refund: { background: "#EF4444", color: "#FFF" },
 };
 
+const CP_TYPE_OPTIONS = ["Brand Payment", "Affiliate Refund"];
+
 const CP_INITIAL = [
   { id: genId(), invoice: "Swin", paidDate: "2026-02-02", status: "Received", amount: "21436", openBy: "Rose", instructions: "", month: 1, year: 2026 },
   { id: genId(), invoice: "12Mark", paidDate: "2026-02-02", status: "Received", amount: "8120", openBy: "Rose", instructions: "", month: 1, year: 2026 },
@@ -832,7 +834,7 @@ const CP_INITIAL = [
 ];
 
 function CPForm({ payment, onSave, onClose, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", trcAddress: "", ercAddress: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -858,6 +860,11 @@ function CPForm({ payment, onSave, onClose, userName }) {
             setError("");
           }}>
             {CP_STATUS_OPTIONS.map(st => <option key={st} value={st}>{st}</option>)}
+          </select>
+        </Field>
+        <Field label="Type">
+          <select style={{ ...inp, cursor: "pointer" }} value={f.type || "Brand Payment"} onChange={e => s("type", e.target.value)}>
+            {CP_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
         <Field label="Paid Date">
@@ -897,7 +904,7 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Actions"].map(h =>
+            {["Invoice","Paid Date","Type","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Actions"].map(h =>
               <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
             )}
           </tr>
@@ -910,6 +917,9 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
             >
               <td style={{ padding: "11px 14px", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>{p.invoice}</td>
               <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Brand Payment"}</span>
+              </td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
               </td>
