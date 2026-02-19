@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.018";
+const VERSION = "1.019";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -179,6 +179,7 @@ const I = {
   calendar: <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="13" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M3 8h14M7 2v4M13 2v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
   admin: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2a3 3 0 100 6 3 3 0 000-6zM4 15a5 5 0 0110 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><path d="M14 8l1.5 1.5M14 11V8h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   back: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M11 4L6 9l5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  refresh: <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 8a6 6 0 0110.89-3.48M14 2v4h-4M14 8a6 6 0 01-10.89 3.48M2 14v-4h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
 };
 
 /* ── Shared styles ── */
@@ -551,7 +552,7 @@ function AdminPanel({ users, setUsers, onBack }) {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments }) {
+function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments, onRefresh }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -621,6 +622,10 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments
             onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
           >⚙️ Admin Panel</button>
           <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+          >{I.refresh}<span>Refresh</span></button>
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -901,7 +906,7 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
   );
 }
 
-function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPayments }) {
+function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPayments, onRefresh }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -962,6 +967,10 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
           <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+          >{I.refresh}<span>Refresh</span></button>
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -1098,6 +1107,19 @@ export default function App() {
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
+  const handleRefresh = async () => {
+    skipSave.current = true;
+    const [u, p, cp] = await Promise.all([
+      apiGet('users'),
+      apiGet('payments'),
+      apiGet('customer-payments'),
+    ]);
+    if (u !== null && u.length > 0) setUsers(u);
+    if (p !== null) setPayments(p);
+    if (cp !== null) setCpPayments(cp);
+    setTimeout(() => { skipSave.current = false; }, 500);
+  };
+
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif" }}>
       <div style={{ textAlign: "center" }}>
@@ -1109,6 +1131,6 @@ export default function App() {
 
   if (!user) return <LoginScreen onLogin={setUser} users={users} />;
   if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage("dashboard")} />;
-  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} payments={payments} setPayments={setPayments} />;
+  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} />;
 }
