@@ -80,7 +80,9 @@ const ADMIN_EMAIL = "y0505300530@gmail.com";
 const VERSION = "1.030";
 
 // ── API Configuration ──
-const API_BASE = "https://leeds-crm.com/api";
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : `http://${window.location.hostname}:3001/api`;
 
 async function apiGet(endpoint) {
   try {
