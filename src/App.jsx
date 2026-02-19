@@ -123,6 +123,28 @@ async function apiSave(endpoint, data) {
   } catch (e) { serverOnline = false; }
 }
 
+// Telegram API functions
+async function telegramTest() {
+  try {
+    const res = await fetch(`${API_BASE}/telegram/test`, { signal: AbortSignal.timeout(4000) });
+    return await res.json();
+  } catch (e) {
+    return { status: "error", error: e.message };
+  }
+}
+
+async function telegramNotify(message) {
+  try {
+    const res = await fetch(`${API_BASE}/telegram/notify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }), signal: AbortSignal.timeout(4000),
+    });
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
 const OPEN_STATUSES = ["Open", "On the way", "Approved to pay"];
 const TYPE_OPTIONS = ["Affiliate Payment", "Brand Refund"];
