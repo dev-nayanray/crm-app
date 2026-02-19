@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.019";
+const VERSION = "1.021";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -227,8 +227,28 @@ function getAvailableStatuses(userEmail) {
   return base;
 }
 
+/* ── Fee Helper ── */
+// Fee can be: "2%" (percentage), "50" (flat $), or empty
+function calcFee(fee, amount) {
+  if (!fee) return 0;
+  const f = fee.trim();
+  const amt = parseFloat(amount) || 0;
+  if (f.endsWith('%')) {
+    const pct = parseFloat(f.replace('%', ''));
+    return isNaN(pct) ? 0 : Math.round(amt * pct / 100);
+  }
+  const flat = parseFloat(f);
+  return isNaN(flat) ? 0 : flat;
+}
+
+function fmtFee(fee, amount) {
+  if (!fee) return "—";
+  const val = calcFee(fee, amount);
+  return fee.trim().endsWith('%') ? `${fee.trim()} (${val.toLocaleString("en-US")}$)` : `${val.toLocaleString("en-US")}$`;
+}
+
 function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", openBy: userName || "", type: "Brand Payment", instructions: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const availableStatuses = getAvailableStatuses(userEmail);
@@ -240,10 +260,6 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
     }
     if (!f.amount || parseFloat(f.amount) <= 0) {
       setError("Amount is required");
-      return;
-    }
-    if (!f.instructions.trim()) {
-      setError("Instructions are required");
       return;
     }
     if (f.status === "Paid" && !f.paymentHash.trim()) {
@@ -258,6 +274,10 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Invoice #"><input style={inp} value={f.invoice} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("invoice", v); }} placeholder="e.g. 100" maxLength={3} /></Field>
         <Field label="Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
+        <Field label="Fee (number or %)">
+          <input style={inp} value={f.fee || ""} onChange={e => s("fee", e.target.value)} placeholder="e.g. 2% or 50" />
+          {f.fee && f.amount && <div style={{ fontSize: 11, color: "#0EA5E9", marginTop: 4 }}>Fee: {fmtFee(f.fee, f.amount)}</div>}
+        </Field>
         <Field label="Status">
           <select style={{ ...inp, cursor: "pointer" }} value={f.status} onChange={e => {
             const ns = e.target.value;
@@ -286,7 +306,10 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
         </Field>
         <Field label="Open By"><input style={inp} value={f.openBy} onChange={e => s("openBy", e.target.value)} placeholder="Name" /></Field>
       </div>
-      <Field label="Instructions"><textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={f.instructions} onChange={e => s("instructions", e.target.value)} placeholder="Notes or instructions..." /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
+        <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
+      </div>
       <Field label="Payment Hash (Crypto Wallet)">
         <input style={{ ...inp, borderColor: error && f.status === "Paid" && !f.paymentHash.trim() ? "#EF4444" : "rgba(148,163,184,0.2)" }} value={f.paymentHash} onChange={e => s("paymentHash", e.target.value)} placeholder="e.g. 0xabc123..." />
       </Field>
@@ -329,7 +352,7 @@ function PaymentTable({ payments, onEdit, onDelete, emptyMsg }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Type","Status","Amount","Open By","Instructions","Payment Hash","Actions"].map(h =>
+            {["Invoice","Paid Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Payment Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
             )}
           </tr>
@@ -350,10 +373,12 @@ function PaymentTable({ payments, onEdit, onDelete, emptyMsg }) {
                 <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
               </td>
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getOpenByColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "11px 14px", color: "#475569", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9", fontSize: 13 }}>{p.instructions || "—"}</td>
+              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#94A3B8", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "11px 14px" }}>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -564,7 +589,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
+    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
   };
 
   // Open payments: any payment NOT "Paid"
@@ -807,7 +832,7 @@ const CP_INITIAL = [
 ];
 
 function CPForm({ payment, onSave, onClose, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", openBy: userName || "", instructions: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", trcAddress: "", ercAddress: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -822,6 +847,10 @@ function CPForm({ payment, onSave, onClose, userName }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Invoice (Name)"><input style={inp} value={f.invoice} onChange={e => s("invoice", e.target.value)} placeholder="e.g. Swin, 12Mark" /></Field>
         <Field label="Invoice Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
+        <Field label="Fee (number or %)">
+          <input style={inp} value={f.fee || ""} onChange={e => s("fee", e.target.value)} placeholder="e.g. 2% or 50" />
+          {f.fee && f.amount && <div style={{ fontSize: 11, color: "#0EA5E9", marginTop: 4 }}>Fee: {fmtFee(f.fee, f.amount)}</div>}
+        </Field>
         <Field label="Status">
           <select style={{ ...inp, cursor: "pointer" }} value={f.status} onChange={e => {
             const ns = e.target.value;
@@ -838,7 +867,10 @@ function CPForm({ payment, onSave, onClose, userName }) {
         </Field>
         <Field label="Open By"><input style={inp} value={f.openBy} onChange={e => s("openBy", e.target.value)} placeholder="Name" /></Field>
       </div>
-      <Field label="Instructions"><textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={f.instructions} onChange={e => s("instructions", e.target.value)} placeholder="Notes..." /></Field>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
+        <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
+      </div>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -865,7 +897,7 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Status","Invoice Amount","Open By","Instructions","Actions"].map(h =>
+            {["Invoice","Paid Date","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Actions"].map(h =>
               <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
             )}
           </tr>
@@ -882,10 +914,12 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
                 <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
               </td>
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "11px 14px", color: "#475569", maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9", fontSize: 13 }}>{p.instructions || "—"}</td>
+              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
               <td style={{ padding: "11px 14px" }}>
                 <div style={{ display: "flex", gap: 6 }}>
                   <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
@@ -918,7 +952,7 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.instructions].some(v => (v || "").toLowerCase().includes(q));
+    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const openPayments = payments.filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
