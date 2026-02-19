@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 /* ── Password Hashing (SHA-256 pure JS - works on HTTP) ── */
 function hashPassword(password) {
@@ -75,7 +75,30 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.013";
+const VERSION = "1.018";
+
+// ── API Configuration ──
+const API_BASE = window.location.hostname === 'localhost'
+  ? 'http://localhost:3001/api'
+  : `http://${window.location.hostname}:3001/api`;
+
+async function apiGet(endpoint) {
+  try {
+    const res = await fetch(`${API_BASE}/${endpoint}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { console.error(`API GET ${endpoint}:`, e); return null; }
+}
+
+async function apiSave(endpoint, data) {
+  try {
+    return await fetch(`${API_BASE}/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  } catch (e) { console.error(`API POST ${endpoint}:`, e); }
+}
 
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
 const OPEN_STATUSES = ["Open", "On the way", "Approved to pay"];
@@ -95,18 +118,50 @@ const MONTHS = [
 const genId = () => Math.random().toString(36).substr(2, 9);
 
 const INITIAL = [
-  { id: genId(), invoice: "100", paidDate: "", status: "Paid", amount: "2300", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "101", paidDate: "", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ ONLY USDT ‼️ TRC-20: TYUWBpmzSqCcz9r5rRVGQvQzfb7qC1...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "102", paidDate: "", status: "Paid", amount: "26990", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE 0x6A8CC73BBFd9717489Ad89661aba0482d112...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "103", paidDate: "", status: "Paid", amount: "3200", openBy: "Sophia", type: "Brand Payment", instructions: "Pls process the payment TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rn...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "104", paidDate: "", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Our wallets: 0xA061F8742Ea82a41c8f1cccd26868Cb9Ae5E9B79 Erc...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "105", paidDate: "", status: "Paid", amount: "2600", openBy: "Sophia", type: "Brand Payment", instructions: "TRC TCJLAVWWPyosxq8WBGB1yYid5pRP94BAS6 +2%FEE ERC 0x...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "106", paidDate: "", status: "Paid", amount: "10000", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ UPDATED NEW Wallets: ONLY USDT ‼️  TRC20 - TKDR9q8...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "107", paidDate: "", status: "Paid", amount: "1450", openBy: "Sophia", type: "Brand Payment", instructions: "FEE 2% USDT (ERC20) 0x564a0700D9C77c8811FEE19ECc137B3A9...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "108", paidDate: "", status: "Paid", amount: "16230", openBy: "Sophia", type: "Brand Payment", instructions: "We only accept payments in USDT. Payment wallet addresses: USDT ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "109", paidDate: "", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: "🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "110", paidDate: "", status: "Paid", amount: "4000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys! Our wallets 0x2d93167590B6951fD5A1b4aEaf984Ff155C8E...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "111", paidDate: "", status: "Paid", amount: "8000", openBy: "Sophia", type: "Brand Payment", instructions: "🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD8...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "117", paidDate: "2026-02-02", status: "Paid", amount: "2300", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "35", paidDate: "2026-02-02", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ ONLY USDT ‼️ TRC-20: TYUWBpmzSqCcz9r5rRVGQvQzfb7qC1PphQ ERC-20: 0x5066d63E...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "47", paidDate: "2026-02-02", status: "Paid", amount: "26990", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "13", paidDate: "2026-02-03", status: "Paid", amount: "3200", openBy: "Sophia", type: "Brand Payment", instructions: "Pls process the payment   TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "165", paidDate: "2026-02-03", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Our wallets: 0xA061F8742Ea82a41c8f1cccd26868Cb9Ae5E9B79 Erc  TBv35KYhJMs89qRu...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "130", paidDate: "2026-02-03", status: "Paid", amount: "2600", openBy: "Sophia", type: "Brand Payment", instructions: "TRC TCJLAVWWPyosxq8WBGB1yYid5pRP94BAS6 +2%FEE  ERC 0xDC8eAD92DEa0D3A174fb1497...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "137", paidDate: "2026-02-03", status: "Paid", amount: "10000", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "159", paidDate: "2026-02-03", status: "Paid", amount: "1450", openBy: "Sophia", type: "Brand Payment", instructions: "FEE 2% USDT (ERC20) 0x564a0700D9C77c8811FEE19ECc137B3A929e315c  USDC (ERC20) ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "33", paidDate: "2026-02-04", status: "Paid", amount: "16230", openBy: "Sophia", type: "Brand Payment", instructions: "We only accept payments in USDT. Payment wallet addresses:  USDT TRC-20  TMBF...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "168", paidDate: "2026-02-04", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: ":  🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD890444f2c066eFDDD713...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-05", status: "Paid", amount: "4000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "168", paidDate: "2026-02-05", status: "Paid", amount: "8000", openBy: "Sophia", type: "Brand Payment", instructions: "🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD890444f2c066eFDDD713  💰...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "137", paidDate: "2026-02-05", status: "Paid", amount: "3500", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-06", status: "Paid", amount: "10000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "68", paidDate: "2026-02-06", status: "Paid", amount: "1800", openBy: "Sophia", type: "Brand Payment", instructions: "ELPIS  USDT TRC  TLjLRPN6FWZ44shV73fRNUj9dmAgdnjqRR  USDT ERC/USDC ERC  0xFAE...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "13", paidDate: "2026-02-09", status: "Paid", amount: "1650", openBy: "Sophia", type: "Brand Payment", instructions: "TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - 0x7F0179D7Cc08fF7dc4D87857...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "47", paidDate: "2026-02-09", status: "Paid", amount: "24550", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "117", paidDate: "2026-02-09", status: "Paid", amount: "5130", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-09", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "196", paidDate: "2026-02-10", status: "Paid", amount: "1000", openBy: "Sophia", type: "Brand Payment", instructions: "TXERqryyzQC5htUbgupp4B6pZ1oSYTHm4h  TRC 20", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "175", paidDate: "2026-02-10", status: "Paid", amount: "340", openBy: "Sophia", type: "Brand Payment", instructions: "- Wallets - USDT -   TRC-20 TPHsyQ5BVsxNFtoRfpUE6LfszkcSUPdzjm  ERC-20 0xf819...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "12", paidDate: "2026-02-10", status: "Paid", amount: "2400", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20: TQZn4ufgaD2FsSQg6aTxLVfHX9SSpg7jV2  USDT ERC-20: 0xA5F1A1b03844a...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "137", paidDate: "2026-02-10", status: "Paid", amount: "6000", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "122", paidDate: "2026-02-10", status: "Paid", amount: "7208", openBy: "Sophia", type: "Brand Payment", instructions: "❗️NEW WALLET❗️ TZ1U7FRRv2QtaTT2aLJfDqCU95KDxQkHsK", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "134", paidDate: "2026-02-10", status: "Paid", amount: "6030", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC20       TUuWDyvwbimGcaX3gLYYsK4zBZk3QvoKR7", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "33", paidDate: "2026-02-11", status: "Paid", amount: "22690", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20  TMBFC53yfyDbBDJ5d8jcuAoKeh1ax3QdeX  USDT ERC-20 0x750654D4440D4C...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "35", paidDate: "2026-02-11", status: "Paid", amount: "1848", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ ONLY USDT ‼️ TRC-20: TYUWBpmzSqCcz9r5rRVGQvQzfb7qC1PphQ ERC-20: 0x5066d63E...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-11", status: "Paid", amount: "8000", openBy: "Julia", type: "Brand Payment", instructions: "", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "117", paidDate: "2026-02-12", status: "Paid", amount: "15000", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "80", paidDate: "2026-02-16", status: "Paid", amount: "825", openBy: "Sophia", type: "Brand Payment", instructions: "Hello dear, confirmed Wallets are the same: ERC – 0x6e2449206C27D6D3714801638...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "71", paidDate: "2026-02-16", status: "Paid", amount: "2600", openBy: "Sophia", type: "Brand Payment", instructions: "0xBAaB1FEE27badEE9E85c7498A1bC4e1BF780F460", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-16", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "117", paidDate: "2026-02-16", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "159", paidDate: "2026-02-16", status: "Paid", amount: "2652", openBy: "Sophia", type: "Brand Payment", instructions: "USDT (ERC20) 0x564a0700D9C77c8811FEE19ECc137B3A929e315c  USDC (ERC20) 0x564a0...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "12", paidDate: "2026-02-16", status: "Paid", amount: "1950", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20: TQZn4ufgaD2FsSQg6aTxLVfHX9SSpg7jV2  USDT ERC-20: 0xA5F1A1b03844a...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "13", paidDate: "2026-02-17", status: "Paid", amount: "7750", openBy: "Sophia", type: "Brand Payment", instructions: "Pls process the payment   TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "175", paidDate: "2026-02-17", status: "Paid", amount: "15600", openBy: "Sophia", type: "Brand Payment", instructions: "- Wallets - USDT -   TRC-20 TPHsyQ5BVsxNFtoRfpUE6LfszkcSUPdzjm  ERC-20 0xf819...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "47", paidDate: "2026-02-17", status: "Paid", amount: "9600", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "211", paidDate: "2026-02-17", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "171", paidDate: "2026-02-18", status: "Paid", amount: "4785", openBy: "Sophia", type: "Brand Payment", instructions: "NEW Wallets: ❗️❗️💵💸🟩  BTC - 3ApPSHdMCuTLn2Uf2AJmKW3uyWiF1voFZs  TRC - TYm8rfR...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "134", paidDate: "2026-02-18", status: "Paid", amount: "3855", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC20 TUuWDyvwbimGcaX3gLYYsK4zBZk3QvoKR7", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "33", paidDate: "2026-02-18", status: "Paid", amount: "5580", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20  TMBFC53yfyDbBDJ5d8jcuAoKeh1ax3QdeX  USDT ERC-20 0x750654D4440D4C...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "171", paidDate: "2026-02-18", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "NEW Wallets: ❗️❗️💵💸🟩  BTC - 3ApPSHdMCuTLn2Uf2AJmKW3uyWiF1voFZs  TRC - TYm8rfR...", paymentHash: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "117", paidDate: "2026-02-18", status: "Paid", amount: "7000", openBy: "Sophia", type: "Brand Payment", instructions: "Our wallets: USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c4934...", paymentHash: "", month: 1, year: 2026 },
 ];
 
 /* ── Icons ── */
@@ -496,11 +551,10 @@ function AdminPanel({ users, setUsers, onBack }) {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onCustomers }) {
+function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
-  const [payments, setPayments] = useState(INITIAL);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editPay, setEditPay] = useState(null);
@@ -696,11 +750,12 @@ function LoginScreen({ onLogin, users }) {
 }
 
 /* ── Customer Payments Page ── */
-const CP_STATUS_OPTIONS = ["Open", "Pending", "Received"];
+const CP_STATUS_OPTIONS = ["Open", "Pending", "Received", "Refund"];
 const CP_STATUS_COLORS = {
   Open: { background: "#FEF3C7", color: "#92400E" },
   Pending: { background: "#818CF8", color: "#FFF" },
   Received: { background: "#10B981", color: "#FFF" },
+  Refund: { background: "#EF4444", color: "#FFF" },
 };
 
 const CP_INITIAL = [
@@ -709,6 +764,41 @@ const CP_INITIAL = [
   { id: genId(), invoice: "Tdex", paidDate: "2026-02-02", status: "Received", amount: "5150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
   { id: genId(), invoice: "Miltonia", paidDate: "2026-02-02", status: "Received", amount: "3537", openBy: "Rose", instructions: "", month: 1, year: 2026 },
   { id: genId(), invoice: "No limit", paidDate: "2026-02-03", status: "Received", amount: "23514", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "GLB", paidDate: "2026-02-03", status: "Received", amount: "500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Legion", paidDate: "2026-02-03", status: "Received", amount: "1760", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "EMP313", paidDate: "2026-02-03", status: "Received", amount: "2500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Bettebrandz", paidDate: "2026-02-03", status: "Received", amount: "272", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Bettebrandz", paidDate: "2026-02-03", status: "Received", amount: "2200", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Capitan", paidDate: "2026-02-04", status: "Received", amount: "25023", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Z", paidDate: "2026-02-04", status: "Received", amount: "1290", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Captain", paidDate: "2026-02-04", status: "Received", amount: "6806", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Glb", paidDate: "2026-02-04", status: "Received", amount: "2467", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Imperius", paidDate: "2026-02-04", status: "Received", amount: "1200", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Legion", paidDate: "2026-02-04", status: "Received", amount: "1465", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Legion", paidDate: "2026-02-04", status: "Received", amount: "690", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "EMP", paidDate: "2026-02-04", status: "Received", amount: "3700", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Clickbait", paidDate: "2026-02-04", status: "Received", amount: "1500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "212", paidDate: "2026-02-05", status: "Refund", amount: "-650", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "TRADETRADITION", paidDate: "2026-02-05", status: "Refund", amount: "-1322", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "WhiteRhino", paidDate: "2026-02-05", status: "Received", amount: "2030", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "GLB", paidDate: "2026-02-05", status: "Received", amount: "2102", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Medianova", paidDate: "2026-02-06", status: "Received", amount: "5300", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Media now", paidDate: "2026-02-06", status: "Received", amount: "1600", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Unit", paidDate: "2026-02-06", status: "Received", amount: "2400", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "12Mark", paidDate: "2026-02-06", status: "Received", amount: "10150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Ucases Tdex", paidDate: "2026-02-09", status: "Received", amount: "10000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Tdex FR", paidDate: "2026-02-09", status: "Received", amount: "2935", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "fintrix", paidDate: "2026-02-09", status: "Received", amount: "3000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Swin", paidDate: "2026-02-10", status: "Received", amount: "6845", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "madnet", paidDate: "2026-02-10", status: "Received", amount: "367", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Capitan", paidDate: "2026-02-10", status: "Received", amount: "33505", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "capitan", paidDate: "2026-02-10", status: "Received", amount: "342", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "swin", paidDate: "2026-02-10", status: "Received", amount: "11731", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Avelux", paidDate: "2026-02-10", status: "Received", amount: "3000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "celestia", paidDate: "2026-02-10", status: "Received", amount: "1863", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Z", paidDate: "2026-02-11", status: "Received", amount: "2700", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Glb", paidDate: "2026-02-11", status: "Received", amount: "527", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "12Mark", paidDate: "2026-02-11", status: "Received", amount: "10150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
 ];
 
 function CPForm({ payment, onSave, onClose, userName }) {
@@ -811,11 +901,10 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
   );
 }
 
-function CustomerPayments({ user, onLogout, onBack, onAdmin }) {
+function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPayments }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
-  const [payments, setPayments] = useState(CP_INITIAL);
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editPay, setEditPay] = useState(null);
@@ -828,7 +917,7 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin }) {
   };
 
   const openPayments = payments.filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
-  const receivedPayments = payments.filter(p => p.status === "Received" && p.month === month && p.year === year && matchSearch(p));
+  const receivedPayments = payments.filter(p => ["Received", "Refund"].includes(p.status) && p.month === month && p.year === year && matchSearch(p));
 
   const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const receivedTotal = receivedPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
@@ -839,7 +928,7 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin }) {
   const handleSave = form => {
     if (editPay) {
       const updated = { ...editPay, ...form };
-      if (form.status === "Received" && editPay.status !== "Received") {
+      if (["Received", "Refund"].includes(form.status) && !["Received", "Refund"].includes(editPay.status)) {
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
@@ -951,12 +1040,75 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState(INITIAL_USERS);
+  const [payments, setPayments] = useState(INITIAL);
+  const [cpPayments, setCpPayments] = useState(CP_INITIAL);
   const [page, setPage] = useState("dashboard");
+  const [loaded, setLoaded] = useState(false);
+  const skipSave = useRef(true);
+  const isSaving = useRef(false);
+
+  // Load from API on startup
+  useEffect(() => {
+    (async () => {
+      const [u, p, cp] = await Promise.all([
+        apiGet('users'),
+        apiGet('payments'),
+        apiGet('customer-payments'),
+      ]);
+      if (u !== null && u.length > 0) setUsers(u);
+      if (p !== null && p.length > 0) setPayments(p);
+      if (cp !== null && cp.length > 0) setCpPayments(cp);
+      setLoaded(true);
+      setTimeout(() => { skipSave.current = false; }, 1000);
+    })();
+  }, []);
+
+  // Auto-poll every 12 seconds to pick up changes from other users
+  useEffect(() => {
+    if (!loaded) return;
+    const interval = setInterval(async () => {
+      if (isSaving.current) return; // Don't poll while saving
+      try {
+        const [u, p, cp] = await Promise.all([
+          apiGet('users'),
+          apiGet('payments'),
+          apiGet('customer-payments'),
+        ]);
+        // Only update if server returned data and it's different
+        skipSave.current = true; // Prevent save loop
+        if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
+        if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
+        if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
+        setTimeout(() => { skipSave.current = false; }, 500);
+      } catch (e) { /* silent fail on poll */ }
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [loaded]);
+
+  // Auto-save to API whenever data changes (skip during initial load and polling)
+  useEffect(() => {
+    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('users', users).finally(() => { isSaving.current = false; }); }
+  }, [users]);
+  useEffect(() => {
+    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('payments', payments).finally(() => { isSaving.current = false; }); }
+  }, [payments]);
+  useEffect(() => {
+    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('customer-payments', cpPayments).finally(() => { isSaving.current = false; }); }
+  }, [cpPayments]);
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
+  if (!loaded) return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", marginBottom: 8 }}>Blitz Payments</div>
+        <div style={{ color: "#64748B" }}>Loading...</div>
+      </div>
+    </div>
+  );
+
   if (!user) return <LoginScreen onLogin={setUser} users={users} />;
   if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage("dashboard")} />;
-  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} />;
+  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} payments={payments} setPayments={setPayments} />;
 }
