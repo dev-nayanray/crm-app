@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.027";
+const VERSION = "1.028";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -190,6 +190,58 @@ const inp = {
 };
 
 /* ── Components ── */
+const TEAM_NAMES = ["Alex", "John", "Katie", "Joy", "Oksana", "Donald"];
+
+const PEOPLE_COLORS = {
+  Alex: "#0EA5E9", Katie: "#E91E63", Oksana: "#9C27B0", Joy: "#4CAF50", John: "#3F51B5", Donald: "#FF9800",
+};
+const getPersonColor = name => {
+  if (PEOPLE_COLORS[name]) return PEOPLE_COLORS[name];
+  let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  const colors = ["#FF6B9D","#00BCD4","#FF9800","#9C27B0","#4CAF50","#E91E63","#3F51B5","#009688"];
+  return colors[Math.abs(h) % colors.length];
+};
+
+function NameCombo({ value, onChange, placeholder }) {
+  const [custom, setCustom] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const isCustom = value && !TEAM_NAMES.includes(value);
+
+  if (custom || (isCustom && value)) {
+    return (
+      <div style={{ display: "flex", gap: 6 }}>
+        <input style={{ ...inp, flex: 1 }} value={isCustom ? value : customVal}
+          onChange={e => { setCustomVal(e.target.value); onChange(e.target.value); }}
+          placeholder="Type custom name..." autoFocus />
+        <button onClick={() => { setCustom(false); setCustomVal(""); onChange(""); }}
+          style={{ padding: "6px 10px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 12, whiteSpace: "nowrap" }}>← Back</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+      {TEAM_NAMES.map(name => (
+        <button key={name} onClick={() => onChange(name)}
+          style={{
+            padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            border: value === name ? `2px solid ${getPersonColor(name)}` : "2px solid #E2E8F0",
+            background: value === name ? `${getPersonColor(name)}15` : "#F8FAFC",
+            color: value === name ? getPersonColor(name) : "#64748B",
+            transition: "all 0.15s",
+          }}
+        >{name}</button>
+      ))}
+      <button onClick={() => setCustom(true)}
+        style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer",
+          border: "2px dashed #CBD5E1", background: "transparent", color: "#94A3B8", transition: "all 0.15s" }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = "#0EA5E9"; e.currentTarget.style.color = "#0EA5E9"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = "#CBD5E1"; e.currentTarget.style.color = "#94A3B8"; }}
+      >+ Other</button>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   const c = STATUS_COLORS[status] || { bg: "#F1F5F9", text: "#475569", border: "#94A3B8" };
   return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: c.bg, color: c.text, border: `1px solid ${c.border}`, whiteSpace: "nowrap" }}>{status}</span>;
@@ -304,7 +356,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
             {f.paidDate || "Auto-set when marked Paid"}
           </div>
         </Field>
-        <Field label="Open By"><input style={inp} value={f.openBy} onChange={e => s("openBy", e.target.value)} placeholder="Name" /></Field>
+        <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} placeholder="Select name" /></Field>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
@@ -975,7 +1027,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
             {f.paidDate ? new Date(f.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Auto-set when Received"}
           </div>
         </Field>
-        <Field label="Open By"><input style={inp} value={f.openBy} onChange={e => s("openBy", e.target.value)} placeholder="Name" /></Field>
+        <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} /></Field>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
@@ -1229,15 +1281,6 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
 /* ── CRG Deals Page ── */
 const CRG_INITIAL = [];
 
-const CRG_PEOPLE_COLORS = {
-  Alex: "#0EA5E9", Katie: "#E91E63", Oksana: "#9C27B0", Joy: "#4CAF50", John: "#3F51B5",
-};
-const getCrgColor = name => {
-  if (CRG_PEOPLE_COLORS[name]) return CRG_PEOPLE_COLORS[name];
-  let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  const colors = ["#FF6B9D","#00BCD4","#FF9800","#9C27B0","#4CAF50","#E91E63","#3F51B5","#009688"];
-  return colors[Math.abs(h) % colors.length];
-};
 
 function CRGForm({ deal, onSave, onClose }) {
   const [f, setF] = useState(deal || { affiliate: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: new Date().toISOString().split("T")[0] });
@@ -1254,9 +1297,9 @@ function CRGForm({ deal, onSave, onClose }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Affiliate"><input style={inp} value={f.affiliate} onChange={e => s("affiliate", e.target.value)} placeholder="e.g. 33 AU, 47 DE" /></Field>
         <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
-        <Field label="Manage the AFF"><input style={inp} value={f.manageAff} onChange={e => s("manageAff", e.target.value)} placeholder="e.g. Alex, Joy" /></Field>
+        <Field label="Manage the AFF"><NameCombo value={f.manageAff} onChange={v => s("manageAff", v)} /></Field>
         <Field label="CAP"><input style={inp} type="number" value={f.cap} onChange={e => s("cap", e.target.value)} placeholder="0" /></Field>
-        <Field label="Made the SALE"><input style={inp} value={f.madeSale} onChange={e => s("madeSale", e.target.value)} placeholder="e.g. John, Oksana" /></Field>
+        <Field label="Made the SALE"><NameCombo value={f.madeSale} onChange={v => s("madeSale", v)} /></Field>
         <Field label="Started">
           <div onClick={() => s("started", !f.started)} style={{ ...inp, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ width: 20, height: 20, borderRadius: 4, border: f.started ? "none" : "2px solid #CBD5E1", background: f.started ? "#10B981" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFF", fontSize: 14, fontWeight: 700 }}>{f.started ? "✓" : ""}</span>
@@ -1329,7 +1372,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
 
   const personBadge = (name) => {
     if (!name) return <span style={{ color: "#CBD5E1" }}>—</span>;
-    return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 4, background: getCrgColor(name), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{name}</span>;
+    return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 4, background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{name}</span>;
   };
 
   return (
@@ -1496,7 +1539,7 @@ function DCForm({ entry, onSave, onClose }) {
   return (
     <>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Agent"><input style={inp} value={f.agent} onChange={e => s("agent", e.target.value)} placeholder="e.g. Katie, Alex" /></Field>
+        <Field label="Agent"><NameCombo value={f.agent} onChange={v => s("agent", v)} /></Field>
         <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
         <Field label="Affiliates"><input style={inp} type="number" value={f.affiliates} onChange={e => s("affiliates", e.target.value)} placeholder="0" /></Field>
         <Field label="Brands"><input style={inp} type="number" value={f.brands} onChange={e => s("brands", e.target.value)} placeholder="0" /></Field>
