@@ -1,13 +1,22 @@
 import { useState, useEffect } from "react";
 
+/* ── Password Hashing (SHA-256) ── */
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
 const INITIAL_USERS = [
-  { email: "sophia@blitz-affiliates.marketing", password: "Odessa2020", name: "Sophia" },
-  { email: "office1092021@gmail.com", password: "Odessa2020", name: "Office" },
-  { email: "y0505300530@gmail.com", password: "Odessa2020", name: "Y Admin" },
+  { email: "sophia@blitz-affiliates.marketing", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Sophia" },
+  { email: "office1092021@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Office" },
+  { email: "y0505300530@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Y Admin" },
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.009";
+const VERSION = "1.012";
 
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
 const OPEN_STATUSES = ["Open", "On the way", "Approved to pay"];
@@ -304,17 +313,19 @@ function AdminPanel({ users, setUsers, onBack }) {
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "" });
   const [delConfirm, setDelConfirm] = useState(null);
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
     if (users.some(u => u.email === newUser.email)) return;
-    setUsers(prev => [...prev, { ...newUser }]);
+    const hashed = await hashPassword(newUser.password);
+    setUsers(prev => [...prev, { email: newUser.email, passwordHash: hashed, name: newUser.name }]);
     setNewUser({ email: "", password: "", name: "" });
     setAddOpen(false);
   };
 
-  const handleUpdateUser = () => {
+  const handleUpdateUser = async () => {
     if (!editUser) return;
-    setUsers(prev => prev.map(u => u.email === editUser.originalEmail ? { email: editUser.email, password: editUser.password, name: editUser.name } : u));
+    const hashed = await hashPassword(editUser.password);
+    setUsers(prev => prev.map(u => u.email === editUser.originalEmail ? { email: editUser.email, passwordHash: hashed, name: editUser.name } : u));
     setEditUser(null);
   };
 
@@ -368,7 +379,7 @@ function AdminPanel({ users, setUsers, onBack }) {
                   )}
                 </div>
                 <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'Space Mono',monospace" }}>{u.email}</div>
-                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>{u.password.replace(/./g, "•")}</span></div>
+                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setEditUser({ ...u, originalEmail: u.email })} title="Edit"
@@ -426,7 +437,7 @@ function AdminPanel({ users, setUsers, onBack }) {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin }) {
+function Dashboard({ user, onLogout, onAdmin, onCustomers }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -484,6 +495,12 @@ function Dashboard({ user, onLogout, onAdmin }) {
           {I.logo}
           <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+          <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Payments</span>
+          <button onClick={onCustomers} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >Customer Payments</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
@@ -576,13 +593,14 @@ function LoginScreen({ onLogin, users }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const submit = e => {
+  const submit = async (e) => {
     e.preventDefault(); setLoading(true); setError("");
-    setTimeout(() => {
-      const u = users.find(u => u.email === email && u.password === password);
+    try {
+      const hashed = await hashPassword(password);
+      const u = users.find(u => u.email === email && u.passwordHash === hashed);
       if (u) onLogin(u); else setError("Invalid email or password");
-      setLoading(false);
-    }, 500);
+    } catch { setError("Login error"); }
+    setLoading(false);
   };
 
   return (
@@ -616,15 +634,268 @@ function LoginScreen({ onLogin, users }) {
   );
 }
 
+/* ── Customer Payments Page ── */
+const CP_STATUS_OPTIONS = ["Open", "Pending", "Received"];
+const CP_STATUS_COLORS = {
+  Open: { background: "#FEF3C7", color: "#92400E" },
+  Pending: { background: "#818CF8", color: "#FFF" },
+  Received: { background: "#10B981", color: "#FFF" },
+};
+
+const CP_INITIAL = [
+  { id: genId(), invoice: "Swin", paidDate: "2026-02-02", status: "Received", amount: "21436", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "12Mark", paidDate: "2026-02-02", status: "Received", amount: "8120", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Tdex", paidDate: "2026-02-02", status: "Received", amount: "5150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "Miltonia", paidDate: "2026-02-02", status: "Received", amount: "3537", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+  { id: genId(), invoice: "No limit", paidDate: "2026-02-03", status: "Received", amount: "23514", openBy: "Rose", instructions: "", month: 1, year: 2026 },
+];
+
+function CPForm({ payment, onSave, onClose, userName }) {
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", openBy: userName || "", instructions: "" });
+  const [error, setError] = useState("");
+  const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  const handleSave = () => {
+    if (!f.invoice.trim()) { setError("Invoice name is required"); return; }
+    if (!f.amount || parseFloat(f.amount) <= 0) { setError("Amount is required"); return; }
+    onSave(f);
+  };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Invoice (Name)"><input style={inp} value={f.invoice} onChange={e => s("invoice", e.target.value)} placeholder="e.g. Swin, 12Mark" /></Field>
+        <Field label="Invoice Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
+        <Field label="Status">
+          <select style={{ ...inp, cursor: "pointer" }} value={f.status} onChange={e => {
+            const ns = e.target.value;
+            setF(prev => ({ ...prev, status: ns, paidDate: ns === "Received" ? new Date().toISOString().split("T")[0] : "" }));
+            setError("");
+          }}>
+            {CP_STATUS_OPTIONS.map(st => <option key={st} value={st}>{st}</option>)}
+          </select>
+        </Field>
+        <Field label="Paid Date">
+          <div style={{ ...inp, background: "#E2E8F0", color: f.paidDate ? "#1E293B" : "#94A3B8", cursor: "default", display: "flex", alignItems: "center" }}>
+            {f.paidDate ? new Date(f.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "Auto-set when Received"}
+          </div>
+        </Field>
+        <Field label="Open By"><input style={inp} value={f.openBy} onChange={e => s("openBy", e.target.value)} placeholder="Name" /></Field>
+      </div>
+      <Field label="Instructions"><textarea style={{ ...inp, minHeight: 60, resize: "vertical" }} value={f.instructions} onChange={e => s("instructions", e.target.value)} placeholder="Notes..." /></Field>
+      {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
+        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(14,165,233,0.3)" }}>{payment ? "Save Changes" : "Add Payment"}</button>
+      </div>
+    </>
+  );
+}
+
+function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
+  const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
+  const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
+  const fmtShort = d => { const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return `${m[d.getMonth()]} ${d.getDate()}`; };
+  const dateRange = dates.length > 0 ? (dates.length === 1 ? fmtShort(dates[0]) : `${fmtShort(dates[0])} - ${fmtShort(dates[dates.length - 1])}`) : "";
+
+  const openByColors = ["#FF6B9D", "#00BCD4", "#FF9800", "#9C27B0", "#4CAF50", "#E91E63"];
+  const getColor = name => { let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return openByColors[Math.abs(h) % openByColors.length]; };
+
+  if (payments.length === 0) return <div style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>{emptyMsg}</div>;
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+        <thead>
+          <tr style={{ background: "#F8FAFC" }}>
+            {["Invoice","Paid Date","Status","Invoice Amount","Open By","Instructions","Actions"].map(h =>
+              <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {payments.map((p, i) => (
+            <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <td style={{ padding: "11px 14px", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>{p.invoice}</td>
+              <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
+              </td>
+              <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
+              </td>
+              <td style={{ padding: "11px 14px", color: "#475569", maxWidth: 250, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9", fontSize: 13 }}>{p.instructions || "—"}</td>
+              <td style={{ padding: "11px 14px" }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                  <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 6, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 20px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
+        {dateRange && <span style={{ padding: "5px 16px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{dateRange}</span>}
+        <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{payments.length} invoices</span>
+        <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+        <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
+      </div>
+    </div>
+  );
+}
+
+function CustomerPayments({ user, onLogout, onBack, onAdmin }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const [payments, setPayments] = useState(CP_INITIAL);
+  const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editPay, setEditPay] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+
+  const matchSearch = p => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [p.invoice, p.openBy, p.status, p.instructions].some(v => (v || "").toLowerCase().includes(q));
+  };
+
+  const openPayments = payments.filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
+  const receivedPayments = payments.filter(p => p.status === "Received" && p.month === month && p.year === year && matchSearch(p));
+
+  const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const receivedTotal = receivedPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+
+  const handleSave = form => {
+    if (editPay) {
+      const updated = { ...editPay, ...form };
+      if (form.status === "Received" && editPay.status !== "Received") {
+        updated.month = month;
+        updated.year = year;
+        if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
+      }
+      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
+    } else {
+      setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
+    }
+    setModalOpen(false);
+    setEditPay(null);
+  };
+
+  const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {I.logo}
+          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+          <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >Payments</button>
+          <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Customer Payments</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >{I.logout}<span>Logout</span></button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={prevMonth} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, padding: 8, cursor: "pointer", color: "#64748B", display: "flex" }}>{I.chevL}</button>
+            <div style={{ minWidth: 200, textAlign: "center" }}>
+              <span style={{ fontSize: 22, fontWeight: 700 }}>{MONTHS[month]}</span>
+              <span style={{ fontSize: 22, fontWeight: 300, color: "#64748B", marginLeft: 10 }}>{year}</span>
+            </div>
+            <button onClick={nextMonth} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, padding: 8, cursor: "pointer", color: "#64748B", display: "flex" }}>{I.chevR}</button>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14 }} />
+            </div>
+            <button onClick={() => { setEditPay(null); setModalOpen(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(14,165,233,0.3)", whiteSpace: "nowrap" }}
+            >{I.plus} New Invoice</button>
+          </div>
+        </div>
+
+        {/* Summary */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+          {[
+            { label: "Open Invoices", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
+            { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "#FFFBEB", isMoney: true },
+            { label: "Received This Month", value: receivedPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
+            { label: "Received Total", value: receivedTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
+          ].map((c, i) => (
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
+              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>
+                {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg="No open invoices — all caught up!" />
+        </GroupHeader>
+
+        <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} />
+        </GroupHeader>
+      </main>
+
+      {modalOpen && (
+        <Modal title={editPay ? "Edit Invoice" : "New Customer Invoice"} onClose={() => { setModalOpen(false); setEditPay(null); }}>
+          <CPForm payment={editPay} onSave={handleSave} onClose={() => { setModalOpen(false); setEditPay(null); }} userName={user.name} />
+        </Modal>
+      )}
+      {delConfirm && (
+        <Modal title="Delete Invoice" onClose={() => setDelConfirm(null)}>
+          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 /* ── App ── */
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState(INITIAL_USERS);
-  const [page, setPage] = useState("dashboard"); // "dashboard" | "admin"
+  const [page, setPage] = useState("dashboard");
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
   if (!user) return <LoginScreen onLogin={setUser} users={users} />;
   if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage("dashboard")} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} />;
+  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} />;
 }
