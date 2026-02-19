@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.036";
+const VERSION = "1.037";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1355,8 +1355,8 @@ const CRG_INITIAL = [
 ];
 
 
-function CRGForm({ deal, onSave, onClose }) {
-  const [f, setF] = useState(deal || { affiliate: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: new Date().toISOString().split("T")[0] });
+function CRGForm({ deal, onSave, onClose, defaultDate }) {
+  const [f, setF] = useState(deal || { affiliate: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -1367,6 +1367,19 @@ function CRGForm({ deal, onSave, onClose }) {
 
   return (
     <>
+      {/* Date selector - prominent at top */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "linear-gradient(135deg, #FFFBEB, #FEF3C7)", borderRadius: 10, marginBottom: 16, border: "1px solid #F59E0B40" }}>
+        <span style={{ fontSize: 20 }}>📅</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: "#92400E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Date</div>
+          <input style={{ ...inp, background: "#FFF", border: "2px solid #F59E0B", fontWeight: 700, fontSize: 15 }} type="date" value={f.date} onChange={e => s("date", e.target.value)} />
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#92400E" }}>
+            {(() => { const d = new Date(f.date + "T00:00:00"); const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${days[d.getDay()]}`; })()}
+          </div>
+        </div>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Affiliate"><input style={inp} value={f.affiliate} onChange={e => s("affiliate", e.target.value)} placeholder="e.g. 33 AU, 47 DE" /></Field>
         <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
@@ -1382,7 +1395,6 @@ function CRGForm({ deal, onSave, onClose }) {
         <Field label="CAP Received"><input style={inp} type="number" value={f.capReceived} onChange={e => s("capReceived", e.target.value)} placeholder="0" /></Field>
         <Field label="FTD"><input style={inp} type="number" value={f.ftd} onChange={e => s("ftd", e.target.value)} placeholder="0" /></Field>
         <Field label="Hours"><input style={inp} value={f.hours} onChange={e => s("hours", e.target.value)} placeholder="e.g. 04-13 gmt+2" /></Field>
-        <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
       </div>
       <Field label="Comment"><textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} value={f.comment} onChange={e => s("comment", e.target.value)} placeholder="Notes..." /></Field>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
@@ -1399,6 +1411,24 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
+  const [newDayDate, setNewDayDate] = useState(null); // date string for "new day" modal
+
+  // Get the latest date in deals
+  const allDates = [...new Set(deals.map(d => d.date).filter(Boolean))].sort();
+  const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
+
+  const handleCopyPrevDay = (targetDate) => {
+    // Copy all entries from the latest date to the target date
+    const prevDayEntries = deals.filter(d => d.date === latestDate);
+    if (prevDayEntries.length === 0) return;
+    const newEntries = prevDayEntries.map(d => ({
+      ...d, id: genId(), date: targetDate,
+      started: false, capReceived: "", ftd: "", comment: "", // Reset progress fields
+    }));
+    setDeals(prev => [...prev, ...newEntries]);
+  };
 
   const matchSearch = d => {
     if (!search) return true;
@@ -1433,6 +1463,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
     }
     setModalOpen(false);
     setEditDeal(null);
+    setNewDayDate(null);
   };
 
   const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
@@ -1489,10 +1520,26 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
                 style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14 }} />
             </div>
-            <button onClick={() => { setEditDeal(null); setModalOpen(true); }}
+            <button onClick={() => { setEditDeal(null); setNewDayDate(today); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(245,158,11,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Affiliate</button>
           </div>
+        </div>
+
+        {/* Day action buttons */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          <button onClick={() => { setEditDeal(null); setNewDayDate(today); setModalOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#10B981", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📅 New Entry (Today)</button>
+          <button onClick={() => { setEditDeal(null); setNewDayDate(tomorrow); setModalOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#6366F1", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📅 New Entry (Tomorrow)</button>
+          <button onClick={() => handleCopyPrevDay(today)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #F59E0B", borderRadius: 8, color: "#F59E0B", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📋 Copy Last Day → Today</button>
+          <button onClick={() => handleCopyPrevDay(tomorrow)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #6366F1", borderRadius: 8, color: "#6366F1", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📋 Copy Last Day → Tomorrow</button>
         </div>
 
         {/* Summary cards */}
@@ -1595,7 +1642,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
 
       {modalOpen && (
         <Modal title={editDeal ? "Edit Affiliate" : "New Affiliate"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
-          <CRGForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
+          <CRGForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); setNewDayDate(null); }} defaultDate={newDayDate} />
         </Modal>
       )}
       {delConfirm && (
@@ -1614,8 +1661,8 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
 /* ── Daily Cap Page ── */
 const DC_INITIAL = [];
 
-function DCForm({ entry, onSave, onClose }) {
-  const [f, setF] = useState(entry || { agent: "", affiliates: "", brands: "", date: new Date().toISOString().split("T")[0] });
+function DCForm({ entry, onSave, onClose, defaultDate }) {
+  const [f, setF] = useState(entry || { agent: "", affiliates: "", brands: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const total = (parseInt(f.affiliates) || 0) + (parseInt(f.brands) || 0);
@@ -1627,9 +1674,22 @@ function DCForm({ entry, onSave, onClose }) {
 
   return (
     <>
+      {/* Date selector - prominent at top */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "linear-gradient(135deg, #F5F3FF, #EDE9FE)", borderRadius: 10, marginBottom: 16, border: "1px solid #8B5CF640" }}>
+        <span style={{ fontSize: 20 }}>📅</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: "#5B21B6", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Date</div>
+          <input style={{ ...inp, background: "#FFF", border: "2px solid #8B5CF6", fontWeight: 700, fontSize: 15 }} type="date" value={f.date} onChange={e => s("date", e.target.value)} />
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: "#5B21B6" }}>
+            {(() => { const d = new Date(f.date + "T00:00:00"); const days = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"]; return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${days[d.getDay()]}`; })()}
+          </div>
+        </div>
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Agent"><NameCombo value={f.agent} onChange={v => s("agent", v)} /></Field>
-        <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
+        <div />
         <Field label="Affiliates"><input style={inp} type="number" value={f.affiliates} onChange={e => s("affiliates", e.target.value)} placeholder="0" /></Field>
         <Field label="Brands"><input style={inp} type="number" value={f.brands} onChange={e => s("brands", e.target.value)} placeholder="0" /></Field>
       </div>
@@ -1651,6 +1711,22 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
   const [modalOpen, setModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
+  const [newDayDate, setNewDayDate] = useState(null);
+
+  const allDates = [...new Set(entries.map(d => d.date).filter(Boolean))].sort();
+  const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
+  const today = new Date().toISOString().split("T")[0];
+  const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
+
+  const handleCopyPrevDay = (targetDate) => {
+    const prevDayEntries = entries.filter(d => d.date === latestDate);
+    if (prevDayEntries.length === 0) return;
+    const newEntries = prevDayEntries.map(d => ({
+      ...d, id: genId(), date: targetDate,
+      affiliates: "", brands: "", // Reset numbers
+    }));
+    setEntries(prev => [...prev, ...newEntries]);
+  };
 
   const matchSearch = d => {
     if (!search) return true;
@@ -1682,6 +1758,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
     }
     setModalOpen(false);
     setEditEntry(null);
+    setNewDayDate(null);
   };
 
   const handleDelete = id => { setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
@@ -1730,10 +1807,26 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search agent..."
                 style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14, width: 220 }} />
             </div>
-            <button onClick={() => { setEditEntry(null); setModalOpen(true); }}
+            <button onClick={() => { setEditEntry(null); setNewDayDate(today); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#8B5CF6,#A78BFA)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(139,92,246,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Agent</button>
           </div>
+        </div>
+
+        {/* Day action buttons */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          <button onClick={() => { setEditEntry(null); setNewDayDate(today); setModalOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#10B981", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📅 New Entry (Today)</button>
+          <button onClick={() => { setEditEntry(null); setNewDayDate(tomorrow); setModalOpen(true); }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "#6366F1", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📅 New Entry (Tomorrow)</button>
+          <button onClick={() => handleCopyPrevDay(today)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #8B5CF6", borderRadius: 8, color: "#8B5CF6", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📋 Copy Last Day → Today</button>
+          <button onClick={() => handleCopyPrevDay(tomorrow)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #6366F1", borderRadius: 8, color: "#6366F1", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📋 Copy Last Day → Tomorrow</button>
         </div>
 
         {/* Summary cards */}
@@ -1809,8 +1902,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
       </main>
 
       {modalOpen && (
-        <Modal title={editEntry ? "Edit Agent" : "New Agent"} onClose={() => { setModalOpen(false); setEditEntry(null); }}>
-          <DCForm entry={editEntry} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); }} />
+        <Modal title={editEntry ? "Edit Agent" : "New Agent"} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }}>
+          <DCForm entry={editEntry} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }} defaultDate={newDayDate} />
         </Modal>
       )}
       {delConfirm && (
