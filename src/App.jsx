@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.037";
+const VERSION = "1.038";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1325,38 +1325,38 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
 /* ── CRG Deals Page ── */
 const CRG_INITIAL = [
   // 13/02 Friday
-  { id: genId(), affiliate: "122 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "5", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "123 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "4", ftd: "", hours: "10-19 gmt+3", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "134 GCC", brokerCap: "Capex 8", manageAff: "Katie", cap: "8", madeSale: "Katie", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+3", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 10", manageAff: "Joy", cap: "10", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "10-20 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 10", manageAff: "Joy", cap: "10", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 20", manageAff: "Joy", cap: "20", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 15", manageAff: "Alex", cap: "15", madeSale: "Oksana", started: true, capReceived: "15", ftd: "2", hours: "11-19 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "GLB 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "15", ftd: "1", hours: "12-18 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Leadstream 10", manageAff: "Alex", cap: "10", madeSale: "Joy", started: true, capReceived: "10", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "MN FR 20", manageAff: "Alex", cap: "20", madeSale: "Katie", started: true, capReceived: "20", ftd: "1", hours: "11-20 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "211 UK", brokerCap: "Capitan 10", manageAff: "Katie", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "10-16 gmt+2", comment: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "122 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "5", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "123 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "4", ftd: "", hours: "10-19 gmt+3", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "134 GCC", brokerCap: "Capex 8", manageAff: "Katie", cap: "8", madeSale: "Katie", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+3", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 10", manageAff: "Joy", cap: "10", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "10-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 10", manageAff: "Joy", cap: "10", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 20", manageAff: "Joy", cap: "20", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 15", manageAff: "Alex", cap: "15", madeSale: "Oksana", started: true, capReceived: "15", ftd: "2", hours: "11-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "GLB 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "15", ftd: "1", hours: "12-18 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Leadstream 10", manageAff: "Alex", cap: "10", madeSale: "Joy", started: true, capReceived: "10", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "MN FR 20", manageAff: "Alex", cap: "20", madeSale: "Katie", started: true, capReceived: "20", ftd: "1", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "211 UK", brokerCap: "Capitan 10", manageAff: "Katie", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "10-16 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", deal: "", funnel: "", date: "2026-02-13" },
   // 19/02 Thursday
-  { id: genId(), affiliate: "33 AU", brokerCap: "Swin 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "5", ftd: "", hours: "04-13 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "47 DE", brokerCap: "Capitan 20", manageAff: "Katie", cap: "20", madeSale: "Alex", started: true, capReceived: "1", ftd: "", hours: "11-17 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "64 MY", brokerCap: "12Mark 10", manageAff: "Oksana", cap: "10", madeSale: "Oksana", started: true, capReceived: "8", ftd: "1", hours: "03-14 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 15", manageAff: "Joy", cap: "15", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 11", manageAff: "Joy", cap: "11", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-20 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 20", manageAff: "Joy", cap: "20", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "171 AU", brokerCap: "Swin 5", manageAff: "Joy", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "04-11:30 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 AU", brokerCap: "Swin 10", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "1", ftd: "", hours: "04-13 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 20", manageAff: "Alex", cap: "20", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "196 HR", brokerCap: "EMP 15", manageAff: "Oksana", cap: "15", madeSale: "Oksana", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "196 HR", brokerCap: "Imperious 10", manageAff: "Oksana", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "211 FR", brokerCap: "Avelux 10", manageAff: "Katie", cap: "10", madeSale: "Oksana", started: true, capReceived: "10", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "211 UK", brokerCap: "Swin 10", manageAff: "Katie", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-18 gmt+2", comment: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "FPmarket 9", manageAff: "Alex", cap: "9", madeSale: "Oksana", started: true, capReceived: "1", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "33 AU", brokerCap: "Swin 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "5", ftd: "", hours: "04-13 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "47 DE", brokerCap: "Capitan 20", manageAff: "Katie", cap: "20", madeSale: "Alex", started: true, capReceived: "1", ftd: "", hours: "11-17 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "64 MY", brokerCap: "12Mark 10", manageAff: "Oksana", cap: "10", madeSale: "Oksana", started: true, capReceived: "8", ftd: "1", hours: "03-14 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 15", manageAff: "Joy", cap: "15", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 11", manageAff: "Joy", cap: "11", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 20", manageAff: "Joy", cap: "20", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "171 AU", brokerCap: "Swin 5", manageAff: "Joy", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "04-11:30 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 AU", brokerCap: "Swin 10", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "1", ftd: "", hours: "04-13 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 20", manageAff: "Alex", cap: "20", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "196 HR", brokerCap: "EMP 15", manageAff: "Oksana", cap: "15", madeSale: "Oksana", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "196 HR", brokerCap: "Imperious 10", manageAff: "Oksana", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "211 FR", brokerCap: "Avelux 10", manageAff: "Katie", cap: "10", madeSale: "Oksana", started: true, capReceived: "10", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "211 UK", brokerCap: "Swin 10", manageAff: "Katie", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-18 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "FPmarket 9", manageAff: "Alex", cap: "9", madeSale: "Oksana", started: true, capReceived: "1", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
 ];
 
 
 function CRGForm({ deal, onSave, onClose, defaultDate }) {
-  const [f, setF] = useState(deal || { affiliate: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: defaultDate || new Date().toISOString().split("T")[0] });
+  const [f, setF] = useState(deal || { affiliate: "", deal: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", funnel: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -1382,6 +1382,7 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Affiliate"><input style={inp} value={f.affiliate} onChange={e => s("affiliate", e.target.value)} placeholder="e.g. 33 AU, 47 DE" /></Field>
+        <Field label="Deal"><input style={inp} value={f.deal || ""} onChange={e => s("deal", e.target.value)} placeholder="Deal info" /></Field>
         <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
         <Field label="Manage the AFF"><NameCombo value={f.manageAff} onChange={v => s("manageAff", v)} /></Field>
         <Field label="CAP"><input style={inp} type="number" value={f.cap} onChange={e => s("cap", e.target.value)} placeholder="0" /></Field>
@@ -1396,7 +1397,7 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
         <Field label="FTD"><input style={inp} type="number" value={f.ftd} onChange={e => s("ftd", e.target.value)} placeholder="0" /></Field>
         <Field label="Hours"><input style={inp} value={f.hours} onChange={e => s("hours", e.target.value)} placeholder="e.g. 04-13 gmt+2" /></Field>
       </div>
-      <Field label="Comment"><textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} value={f.comment} onChange={e => s("comment", e.target.value)} placeholder="Notes..." /></Field>
+      <Field label="Funnel"><textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} value={f.funnel || ""} onChange={e => s("funnel", e.target.value)} placeholder="Funnel info..." /></Field>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -1425,7 +1426,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
     if (prevDayEntries.length === 0) return;
     const newEntries = prevDayEntries.map(d => ({
       ...d, id: genId(), date: targetDate,
-      started: false, capReceived: "", ftd: "", comment: "", // Reset progress fields
+      started: false, capReceived: "", ftd: "", funnel: "", // Reset progress fields
     }));
     setDeals(prev => [...prev, ...newEntries]);
   };
@@ -1433,7 +1434,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   const matchSearch = d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [d.affiliate, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.comment].some(v => (v || "").toLowerCase().includes(q));
+    return [d.affiliate, d.deal, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.funnel].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const filtered = deals.filter(matchSearch);
@@ -1572,7 +1573,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "#FFFFFF" }}>
-                      {["Affiliate","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Comment","Actions"].map(h =>
+                      {["Affiliate","Deal","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Funnel","Actions"].map(h =>
                         <th key={h} style={{ padding: "8px 12px", textAlign: "center", color: "#676879", fontSize: 12, fontWeight: 600, borderBottom: "1px solid #E6E9EF", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap", ...(h === "Affiliate" ? { textAlign: "left", paddingLeft: 14 } : {}) }}>{h}</th>
                       )}
                     </tr>
@@ -1588,6 +1589,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                             onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}
                           >{d.affiliate}</span>
                         </td>
+                        <td style={{ padding: "0 12px", borderRight: "1px solid #E6E9EF", fontSize: 13, color: "#323338" }}>{d.deal || ""}</td>
                         <td style={{ padding: "0 14px", borderRight: "1px solid #E6E9EF", fontSize: 13, color: "#323338", textAlign: "center" }}>{d.brokerCap || ""}</td>
                         <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
@@ -1602,7 +1604,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                         <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
                         <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
                         <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
-                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.comment || ""}</td>
+                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
                         <td style={{ padding: "10px 12px" }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
