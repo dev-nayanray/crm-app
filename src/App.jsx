@@ -77,29 +77,58 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.030";
+const VERSION = "1.031";
 
-// ── API Configuration ──
+// ── Storage Layer (localStorage first, API sync optional) ──
+const STORAGE_KEYS = {
+  users: 'blitz_users',
+  payments: 'blitz_payments',
+  'customer-payments': 'blitz_cp',
+  'crg-deals': 'blitz_crg',
+  'daily-cap': 'blitz_dc',
+};
+
+function lsGet(key, fallback) {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS[key]);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return fallback;
+}
+
+function lsSave(key, data) {
+  try {
+    localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
+  } catch (e) { console.error('localStorage save error:', e); }
+}
+
 const API_BASE = window.location.hostname === 'localhost'
   ? 'http://localhost:3001/api'
   : `http://${window.location.hostname}:3001/api`;
 
+let apiAvailable = null; // null = unknown, true/false after first check
+
 async function apiGet(endpoint) {
+  if (apiAvailable === false) return null;
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}`);
+    const res = await fetch(`${API_BASE}/${endpoint}`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return null;
+    apiAvailable = true;
     return await res.json();
-  } catch (e) { console.error(`API GET ${endpoint}:`, e); return null; }
+  } catch (e) { apiAvailable = false; return null; }
 }
 
 async function apiSave(endpoint, data) {
+  if (apiAvailable === false) return;
   try {
-    return await fetch(`${API_BASE}/${endpoint}`, {
+    await fetch(`${API_BASE}/${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
+      signal: AbortSignal.timeout(3000),
     });
-  } catch (e) { console.error(`API POST ${endpoint}:`, e); }
+    apiAvailable = true;
+  } catch (e) { apiAvailable = false; }
 }
 
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
@@ -1785,17 +1814,16 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
 /* ── App ── */
 export default function App() {
   const [user, setUser] = useState(null);
-  const [users, setUsers] = useState(INITIAL_USERS);
-  const [payments, setPayments] = useState(INITIAL);
-  const [cpPayments, setCpPayments] = useState(CP_INITIAL);
-  const [crgDeals, setCrgDeals] = useState(CRG_INITIAL);
-  const [dcEntries, setDcEntries] = useState(DC_INITIAL);
+  const [users, setUsers] = useState(() => lsGet('users', INITIAL_USERS));
+  const [payments, setPayments] = useState(() => lsGet('payments', INITIAL));
+  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', CP_INITIAL));
+  const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', CRG_INITIAL));
+  const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', DC_INITIAL));
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
-  const isSaving = useRef(false);
 
-  // Load from API on startup
+  // Load: try API first, then localStorage is already loaded as default
   useEffect(() => {
     (async () => {
       const [u, p, cp, crg, dc] = await Promise.all([
@@ -1805,75 +1833,74 @@ export default function App() {
         apiGet('crg-deals'),
         apiGet('daily-cap'),
       ]);
+      skipSave.current = true;
       if (u !== null && u.length > 0) setUsers(u);
       if (p !== null && p.length > 0) setPayments(p);
       if (cp !== null && cp.length > 0) setCpPayments(cp);
       if (crg !== null && crg.length > 0) setCrgDeals(crg);
       if (dc !== null && dc.length > 0) setDcEntries(dc);
       setLoaded(true);
-      setTimeout(() => { skipSave.current = false; }, 1000);
+      setTimeout(() => { skipSave.current = false; }, 500);
     })();
   }, []);
 
-  // Auto-poll every 12 seconds to pick up changes from other users
+  // Auto-poll every 12 seconds (only if API is available)
   useEffect(() => {
     if (!loaded) return;
     const interval = setInterval(async () => {
-      if (isSaving.current) return; // Don't poll while saving
+      if (!apiAvailable) return;
       try {
         const [u, p, cp, crg, dc] = await Promise.all([
-          apiGet('users'),
-          apiGet('payments'),
-          apiGet('customer-payments'),
-          apiGet('crg-deals'),
-          apiGet('daily-cap'),
+          apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
         ]);
-        // Only update if server returned data and it's different
-        skipSave.current = true; // Prevent save loop
+        skipSave.current = true;
         if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
         if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
         if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
         if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
         if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
         setTimeout(() => { skipSave.current = false; }, 500);
-      } catch (e) { /* silent fail on poll */ }
+      } catch (e) {}
     }, 12000);
     return () => clearInterval(interval);
   }, [loaded]);
 
-  // Auto-save to API whenever data changes (skip during initial load and polling)
+  // Auto-save: ALWAYS save to localStorage, also try API
   useEffect(() => {
-    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('users', users).finally(() => { isSaving.current = false; }); }
+    if (skipSave.current) return;
+    lsSave('users', users); apiSave('users', users);
   }, [users]);
   useEffect(() => {
-    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('payments', payments).finally(() => { isSaving.current = false; }); }
+    if (skipSave.current) return;
+    lsSave('payments', payments); apiSave('payments', payments);
   }, [payments]);
   useEffect(() => {
-    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('customer-payments', cpPayments).finally(() => { isSaving.current = false; }); }
+    if (skipSave.current) return;
+    lsSave('customer-payments', cpPayments); apiSave('customer-payments', cpPayments);
   }, [cpPayments]);
   useEffect(() => {
-    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('crg-deals', crgDeals).finally(() => { isSaving.current = false; }); }
+    if (skipSave.current) return;
+    lsSave('crg-deals', crgDeals); apiSave('crg-deals', crgDeals);
   }, [crgDeals]);
   useEffect(() => {
-    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('daily-cap', dcEntries).finally(() => { isSaving.current = false; }); }
+    if (skipSave.current) return;
+    lsSave('daily-cap', dcEntries); apiSave('daily-cap', dcEntries);
   }, [dcEntries]);
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
   const handleRefresh = async () => {
     skipSave.current = true;
+    // Try API first
+    apiAvailable = null; // Reset to re-check
     const [u, p, cp, crg, dc] = await Promise.all([
-      apiGet('users'),
-      apiGet('payments'),
-      apiGet('customer-payments'),
-      apiGet('crg-deals'),
-      apiGet('daily-cap'),
+      apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
     ]);
-    if (u !== null && u.length > 0) setUsers(u);
-    if (p !== null) setPayments(p);
-    if (cp !== null) setCpPayments(cp);
-    if (crg !== null) setCrgDeals(crg);
-    if (dc !== null) setDcEntries(dc);
+    if (u !== null && u.length > 0) { setUsers(u); lsSave('users', u); }
+    if (p !== null) { setPayments(p); lsSave('payments', p); }
+    if (cp !== null) { setCpPayments(cp); lsSave('customer-payments', cp); }
+    if (crg !== null) { setCrgDeals(crg); lsSave('crg-deals', crg); }
+    if (dc !== null) { setDcEntries(dc); lsSave('daily-cap', dc); }
     setTimeout(() => { skipSave.current = false; }, 500);
   };
 
