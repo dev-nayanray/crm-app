@@ -74,61 +74,51 @@ const INITIAL_USERS = [
   { email: "y0505300530@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Y Admin" },
   { email: "zack@blitz-affiliates.marketing", passwordHash: "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e", name: "Zack" },
   { email: "cameron@blitz-affiliates.marketing", passwordHash: "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476", name: "Cameron" },
+  { email: "wpnayanray@gmail.com", passwordHash: "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0", name: "Nayan" },
 ];
 
-const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.031";
+const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
+const isAdmin = (email) => ADMIN_EMAILS.includes(email);
+const VERSION = "1.034";
 
-// ── Storage Layer (localStorage first, API sync optional) ──
-const STORAGE_KEYS = {
-  users: 'blitz_users',
-  payments: 'blitz_payments',
-  'customer-payments': 'blitz_cp',
-  'crg-deals': 'blitz_crg',
-  'daily-cap': 'blitz_dc',
-};
+// ── Storage Layer ──
+// Priority: API (shared between all users) > localStorage (offline backup)
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc' };
 
-function lsGet(key, fallback) {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS[key]);
-    if (raw) return JSON.parse(raw);
-  } catch (e) {}
-  return fallback;
-}
+function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
+function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.stringify(data)); } catch(e) {} }
 
-function lsSave(key, data) {
-  try {
-    localStorage.setItem(STORAGE_KEYS[key], JSON.stringify(data));
-  } catch (e) { console.error('localStorage save error:', e); }
-}
+const API_BASE = (() => {
+  const h = window.location.hostname;
+  if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
+  return `http://${h}:3001/api`;
+})();
 
-const API_BASE = window.location.hostname === 'localhost'
-  ? 'http://localhost:3001/api'
-  : `http://${window.location.hostname}:3001/api`;
-
-let apiAvailable = null; // null = unknown, true/false after first check
+let serverOnline = false;
 
 async function apiGet(endpoint) {
-  if (apiAvailable === false) return null;
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) return null;
-    apiAvailable = true;
-    return await res.json();
-  } catch (e) { apiAvailable = false; return null; }
+    const res = await fetch(`${API_BASE}/${endpoint}`, { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error('not ok');
+    serverOnline = true;
+    const data = await res.json();
+    // Also backup to localStorage
+    lsSave(endpoint, data);
+    return data;
+  } catch (e) { serverOnline = false; return null; }
 }
 
 async function apiSave(endpoint, data) {
-  if (apiAvailable === false) return;
+  // Always save to localStorage first (instant)
+  lsSave(endpoint, data);
+  // Then try API
   try {
     await fetch(`${API_BASE}/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-      signal: AbortSignal.timeout(3000),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data), signal: AbortSignal.timeout(4000),
     });
-    apiAvailable = true;
-  } catch (e) { apiAvailable = false; }
+    serverOnline = true;
+  } catch (e) { serverOnline = false; }
 }
 
 const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
@@ -269,6 +259,25 @@ function NameCombo({ value, onChange, placeholder }) {
         onMouseEnter={e => { e.currentTarget.style.borderColor = "#0EA5E9"; e.currentTarget.style.color = "#0EA5E9"; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = "#CBD5E1"; e.currentTarget.style.color = "#94A3B8"; }}
       >+ Other</button>
+    </div>
+  );
+}
+
+function SyncStatus() {
+  const [online, setOnline] = useState(serverOnline);
+  useEffect(() => {
+    const iv = setInterval(() => setOnline(serverOnline), 3000);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <div title={online ? "Connected to server — data syncs between all users" : "Server offline — data saved locally only. Run setup.sh on your server to enable sync."}
+      style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, cursor: "default",
+        background: online ? "rgba(16,185,129,0.1)" : "rgba(245,158,11,0.1)",
+        border: `1px solid ${online ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
+        color: online ? "#10B981" : "#F59E0B",
+      }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "#10B981" : "#F59E0B", display: "inline-block" }} />
+      {online ? "Synced" : "Local"}
     </div>
   );
 }
@@ -551,7 +560,7 @@ const ALL_PAGES = [
 ];
 
 function getPageAccess(user) {
-  if (user.email === ADMIN_EMAIL) return ALL_PAGES.map(p => p.key);
+  if (isAdmin(user.email)) return ALL_PAGES.map(p => p.key);
   return user.pageAccess || ALL_PAGES.map(p => p.key);
 }
 
@@ -620,7 +629,7 @@ function AdminPanel({ users, setUsers, onBack }) {
   };
 
   const handleDeleteUser = (email) => {
-    if (email === ADMIN_EMAIL) return; // can't delete admin
+    if (isAdmin(email)) return; // can't delete admin
     setUsers(prev => prev.filter(u => u.email !== email));
     setDelConfirm(null);
   };
@@ -664,7 +673,7 @@ function AdminPanel({ users, setUsers, onBack }) {
               <div style={{ flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                   <span style={{ fontWeight: 700, fontSize: 16 }}>{u.name}</span>
-                  {u.email === ADMIN_EMAIL && (
+                  {isAdmin(u.email) && (
                     <span style={{ padding: "2px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.3)", fontSize: 10, fontWeight: 700, color: "#F87171", textTransform: "uppercase", letterSpacing: 0.5 }}>Admin</span>
                   )}
                 </div>
@@ -672,7 +681,7 @@ function AdminPanel({ users, setUsers, onBack }) {
                 <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
                   {ALL_PAGES.map(pg => {
-                    const hasAccess = u.email === ADMIN_EMAIL || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
+                    const hasAccess = isAdmin(u.email) || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
                     return <span key={pg.key} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: hasAccess ? `${pg.color}15` : "#F1F5F9", color: hasAccess ? pg.color : "#CBD5E1", border: `1px solid ${hasAccess ? pg.color + "30" : "#E2E8F0"}` }}>{pg.label}</span>;
                   })}
                 </div>
@@ -681,7 +690,7 @@ function AdminPanel({ users, setUsers, onBack }) {
                 <button onClick={() => setEditUser({ ...u, originalEmail: u.email })} title="Edit"
                   style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", color: "#38BDF8", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
                 >{I.edit} Edit</button>
-                {u.email !== ADMIN_EMAIL && (
+                {!isAdmin(u.email) && (
                   <button onClick={() => setDelConfirm(u.email)} title="Delete"
                     style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", color: "#F87171", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
                   >{I.trash} Remove</button>
@@ -714,7 +723,7 @@ function AdminPanel({ users, setUsers, onBack }) {
           <Field label="Name"><input style={inp} value={editUser.name} onChange={e => setEditUser(p => ({ ...p, name: e.target.value }))} /></Field>
           <Field label="Email"><input style={inp} type="email" value={editUser.email} onChange={e => setEditUser(p => ({ ...p, email: e.target.value }))} /></Field>
           <Field label="New Password"><input style={inp} value={editUser.password || ""} onChange={e => setEditUser(p => ({ ...p, password: e.target.value }))} placeholder="Leave blank to keep current" /></Field>
-          {editUser.email !== ADMIN_EMAIL && (
+          {!isAdmin(editUser.email) && (
             <Field label="Page Access">
               <PageAccessToggles access={editUser.pageAccess || ALL_PAGES.map(p => p.key)} onChange={pa => setEditUser(p => ({ ...p, pageAccess: pa }))} />
             </Field>
@@ -828,7 +837,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
           >Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
+          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.05)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
           >⚙️ Admin Panel</button>
@@ -837,6 +846,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
             onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
           >{I.refresh}<span>Refresh</span></button>
+          <SyncStatus />
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -1229,12 +1239,13 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
           >Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
           <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
           <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
           >{I.refresh}<span>Refresh</span></button>
+          <SyncStatus />
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -1454,12 +1465,13 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
             onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
           <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
           <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
           >{I.refresh}<span>Refresh</span></button>
+          <SyncStatus />
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
           >{I.logout}<span>Logout</span></button>
@@ -1694,12 +1706,13 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
           <span style={{ background: "#8B5CF6", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Daily Cap</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
           <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
           <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
             onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
             onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
           >{I.refresh}<span>Refresh</span></button>
+          <SyncStatus />
           <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
             onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
           >{I.logout}<span>Logout</span></button>
@@ -1823,84 +1836,65 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
 
-  // Load: try API first, then localStorage is already loaded as default
+  // On startup: try to load from server (shared data), fall back to localStorage
   useEffect(() => {
     (async () => {
-      const [u, p, cp, crg, dc] = await Promise.all([
-        apiGet('users'),
-        apiGet('payments'),
-        apiGet('customer-payments'),
-        apiGet('crg-deals'),
-        apiGet('daily-cap'),
-      ]);
       skipSave.current = true;
+      const [u, p, cp, crg, dc] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
+      ]);
+      // If server has data, use it (it's the shared truth). Otherwise keep localStorage/defaults.
       if (u !== null && u.length > 0) setUsers(u);
       if (p !== null && p.length > 0) setPayments(p);
       if (cp !== null && cp.length > 0) setCpPayments(cp);
       if (crg !== null && crg.length > 0) setCrgDeals(crg);
       if (dc !== null && dc.length > 0) setDcEntries(dc);
       setLoaded(true);
-      setTimeout(() => { skipSave.current = false; }, 500);
+      setTimeout(() => { skipSave.current = false; }, 800);
     })();
   }, []);
 
-  // Auto-poll every 12 seconds (only if API is available)
+  // Poll server every 8 seconds for changes from other users
   useEffect(() => {
     if (!loaded) return;
-    const interval = setInterval(async () => {
-      if (!apiAvailable) return;
-      try {
-        const [u, p, cp, crg, dc] = await Promise.all([
-          apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
-        ]);
-        skipSave.current = true;
-        if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
-        if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
-        if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
-        if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
-        if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
-        setTimeout(() => { skipSave.current = false; }, 500);
-      } catch (e) {}
-    }, 12000);
+    const poll = async () => {
+      if (!serverOnline) { await apiGet('health').catch(() => {}); } // retry connection
+      if (!serverOnline) return;
+      const [u, p, cp, crg, dc] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
+      ]);
+      skipSave.current = true;
+      if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
+      if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
+      if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
+      if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
+      if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
+      setTimeout(() => { skipSave.current = false; }, 500);
+    };
+    const interval = setInterval(poll, 8000);
     return () => clearInterval(interval);
   }, [loaded]);
 
-  // Auto-save: ALWAYS save to localStorage, also try API
-  useEffect(() => {
-    if (skipSave.current) return;
-    lsSave('users', users); apiSave('users', users);
-  }, [users]);
-  useEffect(() => {
-    if (skipSave.current) return;
-    lsSave('payments', payments); apiSave('payments', payments);
-  }, [payments]);
-  useEffect(() => {
-    if (skipSave.current) return;
-    lsSave('customer-payments', cpPayments); apiSave('customer-payments', cpPayments);
-  }, [cpPayments]);
-  useEffect(() => {
-    if (skipSave.current) return;
-    lsSave('crg-deals', crgDeals); apiSave('crg-deals', crgDeals);
-  }, [crgDeals]);
-  useEffect(() => {
-    if (skipSave.current) return;
-    lsSave('daily-cap', dcEntries); apiSave('daily-cap', dcEntries);
-  }, [dcEntries]);
+  // Save on every change: localStorage (instant) + API (shared)
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('users', users); }, [users]);
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('payments', payments); }, [payments]);
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('customer-payments', cpPayments); }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('crg-deals', crgDeals); }, [crgDeals]);
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('daily-cap', dcEntries); }, [dcEntries]);
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
   const handleRefresh = async () => {
     skipSave.current = true;
-    // Try API first
-    apiAvailable = null; // Reset to re-check
+    serverOnline = false; // force re-check
     const [u, p, cp, crg, dc] = await Promise.all([
       apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
     ]);
-    if (u !== null && u.length > 0) { setUsers(u); lsSave('users', u); }
-    if (p !== null) { setPayments(p); lsSave('payments', p); }
-    if (cp !== null) { setCpPayments(cp); lsSave('customer-payments', cp); }
-    if (crg !== null) { setCrgDeals(crg); lsSave('crg-deals', crg); }
-    if (dc !== null) { setDcEntries(dc); lsSave('daily-cap', dc); }
+    if (u !== null && u.length > 0) setUsers(u);
+    if (p !== null) setPayments(p);
+    if (cp !== null) setCpPayments(cp);
+    if (crg !== null) setCrgDeals(crg);
+    if (dc !== null) setDcEntries(dc);
     setTimeout(() => { skipSave.current = false; }, 500);
   };
 
@@ -1925,7 +1919,7 @@ export default function App() {
     return null;
   }
 
-  if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} />;
+  if (page === "admin" && isAdmin(user.email)) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} />;
   if (page === "customers" && canAccess("customers")) return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} />;
   if (page === "crg" && canAccess("crg")) return <CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} />;
   if (page === "dailycap" && canAccess("dailycap")) return <DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} userAccess={userAccess} />;
