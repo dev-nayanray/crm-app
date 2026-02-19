@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.026";
+const VERSION = "1.027";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -460,25 +460,79 @@ function GroupHeader({ icon, title, count, total, accentColor, defaultOpen, chil
 }
 
 /* ── Admin Panel ── */
+const ALL_PAGES = [
+  { key: "dashboard", label: "Payments", color: "#0EA5E9" },
+  { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
+  { key: "crg", label: "CRG Deals", color: "#F59E0B" },
+  { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
+];
+
+function getPageAccess(user) {
+  if (user.email === ADMIN_EMAIL) return ALL_PAGES.map(p => p.key);
+  return user.pageAccess || ALL_PAGES.map(p => p.key);
+}
+
+function PageAccessToggles({ access, onChange }) {
+  const toggle = key => {
+    const current = access || ALL_PAGES.map(p => p.key);
+    if (current.includes(key)) {
+      if (current.length <= 1) return; // must have at least 1
+      onChange(current.filter(k => k !== key));
+    } else {
+      onChange([...current, key]);
+    }
+  };
+  const current = access || ALL_PAGES.map(p => p.key);
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {ALL_PAGES.map(pg => {
+        const active = current.includes(pg.key);
+        return (
+          <button key={pg.key} onClick={() => toggle(pg.key)}
+            style={{
+              padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+              border: active ? `2px solid ${pg.color}` : "2px solid #E2E8F0",
+              background: active ? `${pg.color}15` : "transparent",
+              color: active ? pg.color : "#94A3B8",
+              transition: "all 0.15s",
+            }}
+          >
+            {active ? "✓ " : ""}{pg.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function AdminPanel({ users, setUsers, onBack }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
-  const [newUser, setNewUser] = useState({ email: "", password: "", name: "" });
+  const [newUser, setNewUser] = useState({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
   const [delConfirm, setDelConfirm] = useState(null);
 
   const handleAddUser = () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
     if (users.some(u => u.email === newUser.email)) return;
     const hashed = hashPassword(newUser.password);
-    setUsers(prev => [...prev, { email: newUser.email, passwordHash: hashed, name: newUser.name }]);
-    setNewUser({ email: "", password: "", name: "" });
+    setUsers(prev => [...prev, { email: newUser.email, passwordHash: hashed, name: newUser.name, pageAccess: newUser.pageAccess }]);
+    setNewUser({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
     setAddOpen(false);
   };
 
   const handleUpdateUser = () => {
     if (!editUser) return;
-    const hashed = hashPassword(editUser.password);
-    setUsers(prev => prev.map(u => u.email === editUser.originalEmail ? { email: editUser.email, passwordHash: hashed, name: editUser.name } : u));
+    setUsers(prev => prev.map(u => {
+      if (u.email !== editUser.originalEmail) return u;
+      const updated = { email: editUser.email, name: editUser.name, pageAccess: editUser.pageAccess || ALL_PAGES.map(p => p.key) };
+      if (editUser.password && editUser.password.trim()) {
+        updated.passwordHash = hashPassword(editUser.password);
+      } else {
+        updated.passwordHash = u.passwordHash;
+      }
+      return updated;
+    }));
     setEditUser(null);
   };
 
@@ -533,6 +587,12 @@ function AdminPanel({ users, setUsers, onBack }) {
                 </div>
                 <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'Space Mono',monospace" }}>{u.email}</div>
                 <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
+                  {ALL_PAGES.map(pg => {
+                    const hasAccess = u.email === ADMIN_EMAIL || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
+                    return <span key={pg.key} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: hasAccess ? `${pg.color}15` : "#F1F5F9", color: hasAccess ? pg.color : "#CBD5E1", border: `1px solid ${hasAccess ? pg.color + "30" : "#E2E8F0"}` }}>{pg.label}</span>;
+                  })}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setEditUser({ ...u, originalEmail: u.email })} title="Edit"
@@ -555,6 +615,9 @@ function AdminPanel({ users, setUsers, onBack }) {
           <Field label="Name"><input style={inp} value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} placeholder="Display name" /></Field>
           <Field label="Email"><input style={inp} type="email" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} placeholder="user@email.com" /></Field>
           <Field label="Password"><input style={inp} value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} placeholder="Password" /></Field>
+          <Field label="Page Access">
+            <PageAccessToggles access={newUser.pageAccess} onChange={pa => setNewUser(p => ({ ...p, pageAccess: pa }))} />
+          </Field>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
             <button onClick={() => setAddOpen(false)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
             <button onClick={handleAddUser} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(14,165,233,0.3)" }}>Add User</button>
@@ -567,7 +630,12 @@ function AdminPanel({ users, setUsers, onBack }) {
         <Modal title="Edit User" onClose={() => setEditUser(null)}>
           <Field label="Name"><input style={inp} value={editUser.name} onChange={e => setEditUser(p => ({ ...p, name: e.target.value }))} /></Field>
           <Field label="Email"><input style={inp} type="email" value={editUser.email} onChange={e => setEditUser(p => ({ ...p, email: e.target.value }))} /></Field>
-          <Field label="New Password"><input style={inp} value={editUser.password} onChange={e => setEditUser(p => ({ ...p, password: e.target.value }))} placeholder="Enter new password" /></Field>
+          <Field label="New Password"><input style={inp} value={editUser.password || ""} onChange={e => setEditUser(p => ({ ...p, password: e.target.value }))} placeholder="Leave blank to keep current" /></Field>
+          {editUser.email !== ADMIN_EMAIL && (
+            <Field label="Page Access">
+              <PageAccessToggles access={editUser.pageAccess || ALL_PAGES.map(p => p.key)} onChange={pa => setEditUser(p => ({ ...p, pageAccess: pa }))} />
+            </Field>
+          )}
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
             <button onClick={() => setEditUser(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
             <button onClick={handleUpdateUser} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(14,165,233,0.3)" }}>Save Changes</button>
@@ -590,7 +658,7 @@ function AdminPanel({ users, setUsers, onBack }) {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, payments, setPayments, onRefresh }) {
+function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, payments, setPayments, onRefresh, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -663,18 +731,18 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
           <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Payments</span>
-          <button onClick={onCustomers} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          {(userAccess || []).includes("customers") && <button onClick={onCustomers} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Customer Payments</button>
-          <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          >Customer Payments</button>}
+          {(userAccess || []).includes("crg") && <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >CRG Deals</button>
-          <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          >CRG Deals</button>}
+          {(userAccess || []).includes("dailycap") && <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Daily Cap</button>
+          >Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
@@ -998,7 +1066,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
   );
 }
 
-function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, payments, setPayments, onRefresh }) {
+function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, payments, setPayments, onRefresh, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1063,19 +1131,19 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
           <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          {(userAccess || []).includes("dashboard") && <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Payments</button>
+          >Payments</button>}
           <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Customer Payments</span>
-          <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          {(userAccess || []).includes("crg") && <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >CRG Deals</button>
-          <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+          >CRG Deals</button>}
+          {(userAccess || []).includes("dailycap") && <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
             onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Daily Cap</button>
+          >Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
@@ -1210,7 +1278,7 @@ function CRGForm({ deal, onSave, onClose }) {
   );
 }
 
-function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh }) {
+function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -1274,13 +1342,13 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh }
           <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>
-          <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>
+          {(userAccess || []).includes("dashboard") && <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>}
+          {(userAccess || []).includes("customers") && <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>}
           <span style={{ background: "#F59E0B", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>CRG Deals</span>
-          <button onClick={() => onNav("dailycap")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>
+          {(userAccess || []).includes("dailycap") && <button onClick={() => onNav("dailycap")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
@@ -1446,7 +1514,7 @@ function DCForm({ entry, onSave, onClose }) {
   );
 }
 
-function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefresh }) {
+function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefresh, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
@@ -1499,12 +1567,12 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
           <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>
-          <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>
-          <button onClick={() => onNav("crg")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>CRG Deals</button>
+          {(userAccess || []).includes("dashboard") && <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>}
+          {(userAccess || []).includes("customers") && <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>}
+          {(userAccess || []).includes("crg") && <button onClick={() => onNav("crg")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>CRG Deals</button>}
           <span style={{ background: "#8B5CF6", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Daily Cap</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1730,9 +1798,20 @@ export default function App() {
   );
 
   if (!user) return <LoginScreen onLogin={setUser} users={users} />;
-  if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage("dashboard")} />;
-  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} />;
-  if (page === "crg") return <CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} />;
-  if (page === "dailycap") return <DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} />;
+
+  const userAccess = getPageAccess(user);
+  const canAccess = pg => userAccess.includes(pg);
+  const firstPage = userAccess[0] || "dashboard";
+
+  // Redirect to first allowed page if current page is blocked
+  if (page !== "admin" && !canAccess(page)) {
+    setPage(firstPage);
+    return null;
+  }
+
+  if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} />;
+  if (page === "customers" && canAccess("customers")) return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} />;
+  if (page === "crg" && canAccess("crg")) return <CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} />;
+  if (page === "dailycap" && canAccess("dailycap")) return <DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} userAccess={userAccess} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} />;
 }
