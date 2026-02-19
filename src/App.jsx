@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.034";
+const VERSION = "1.035";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -90,8 +90,10 @@ function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.strin
 
 const API_BASE = (() => {
   const h = window.location.hostname;
+  // Always point to the actual server IP for API
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
-  return `http://${h}:3001/api`;
+  // Try same host first, then hardcoded server IP
+  return `http://147.182.250.249:3001/api`;
 })();
 
 let serverOnline = false;
@@ -1834,23 +1836,65 @@ export default function App() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', DC_INITIAL));
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
+  const [syncBanner, setSyncBanner] = useState(null); // null | "pushing" | "synced" | "offline"
   const skipSave = useRef(true);
 
-  // On startup: try to load from server (shared data), fall back to localStorage
+  // On startup: connect to server and sync
   useEffect(() => {
     (async () => {
       skipSave.current = true;
+
+      // Step 1: Try to reach the server
       const [u, p, cp, crg, dc] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
       ]);
-      // If server has data, use it (it's the shared truth). Otherwise keep localStorage/defaults.
-      if (u !== null && u.length > 0) setUsers(u);
-      if (p !== null && p.length > 0) setPayments(p);
-      if (cp !== null && cp.length > 0) setCpPayments(cp);
-      if (crg !== null && crg.length > 0) setCrgDeals(crg);
-      if (dc !== null && dc.length > 0) setDcEntries(dc);
+
+      if (serverOnline) {
+        // Server is up! Check if server has data or is empty
+        const serverHasPayments = p !== null && p.length > 0;
+        const serverHasUsers = u !== null && u.length > 0;
+        const localPayments = lsGet('payments', INITIAL);
+        const localHasData = localPayments.length > INITIAL.length;
+
+        if (serverHasPayments || serverHasUsers) {
+          // Server has data — use it as truth
+          if (u !== null && u.length > 0) setUsers(u);
+          if (p !== null) setPayments(p);
+          if (cp !== null) setCpPayments(cp);
+          if (crg !== null) setCrgDeals(crg);
+          if (dc !== null) setDcEntries(dc);
+          setSyncBanner("synced");
+        } else if (localHasData) {
+          // Server is empty but we have local data — push it up
+          setSyncBanner("pushing");
+          const lu = lsGet('users', INITIAL_USERS);
+          const lp = lsGet('payments', INITIAL);
+          const lcp = lsGet('customer-payments', CP_INITIAL);
+          const lcrg = lsGet('crg-deals', CRG_INITIAL);
+          const ldc = lsGet('daily-cap', DC_INITIAL);
+          await Promise.all([
+            apiSave('users', lu), apiSave('payments', lp), apiSave('customer-payments', lcp),
+            apiSave('crg-deals', lcrg), apiSave('daily-cap', ldc),
+          ]);
+          setSyncBanner("synced");
+        } else {
+          // Server empty, local empty — use defaults (already set)
+          // Push defaults to server so other users get them
+          await Promise.all([
+            apiSave('users', INITIAL_USERS), apiSave('payments', INITIAL),
+            apiSave('customer-payments', CP_INITIAL), apiSave('crg-deals', CRG_INITIAL),
+            apiSave('daily-cap', DC_INITIAL),
+          ]);
+          setSyncBanner("synced");
+        }
+      } else {
+        setSyncBanner("offline");
+      }
+
       setLoaded(true);
       setTimeout(() => { skipSave.current = false; }, 800);
+      // Clear banner after 5 seconds
+      setTimeout(() => setSyncBanner(null), 5000);
     })();
   }, []);
 
@@ -1858,7 +1902,10 @@ export default function App() {
   useEffect(() => {
     if (!loaded) return;
     const poll = async () => {
-      if (!serverOnline) { await apiGet('health').catch(() => {}); } // retry connection
+      // If server was offline, try to reconnect
+      if (!serverOnline) {
+        try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch(e) {}
+      }
       if (!serverOnline) return;
       const [u, p, cp, crg, dc] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
@@ -1902,12 +1949,30 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif" }}>
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", marginBottom: 8 }}>Blitz Payments</div>
-        <div style={{ color: "#64748B" }}>Loading...</div>
+        <div style={{ color: "#64748B" }}>Connecting to server...</div>
       </div>
     </div>
   );
 
-  if (!user) return <LoginScreen onLogin={setUser} users={users} />;
+  // Sync banner component
+  const SyncBanner = () => {
+    if (!syncBanner) return null;
+    const msgs = {
+      pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
+      synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
+      offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only. Other users won't see your changes." },
+    };
+    const m = msgs[syncBanner];
+    if (!m) return null;
+    return (
+      <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "10px 20px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 13, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        {m.text}
+        <button onClick={() => setSyncBanner(null)} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
+      </div>
+    );
+  };
+
+  if (!user) return (<><SyncBanner /><LoginScreen onLogin={setUser} users={users} /></>);
 
   const userAccess = getPageAccess(user);
   const canAccess = pg => userAccess.includes(pg);
@@ -1919,9 +1984,9 @@ export default function App() {
     return null;
   }
 
-  if (page === "admin" && isAdmin(user.email)) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} />;
-  if (page === "customers" && canAccess("customers")) return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} />;
-  if (page === "crg" && canAccess("crg")) return <CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} />;
-  if (page === "dailycap" && canAccess("dailycap")) return <DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} userAccess={userAccess} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} />;
+  if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} /></>);
+  if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  if (page === "crg" && canAccess("crg")) return (<><SyncBanner /><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
 }
