@@ -72,15 +72,15 @@ const INITIAL_USERS = [
   { email: "sophia@blitz-affiliates.marketing", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Sophia" },
   { email: "office1092021@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Office" },
   { email: "y0505300530@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Y Admin" },
+  { email: "zack@blitz-affiliates.marketing", passwordHash: "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e", name: "Zack" },
+  { email: "cameron@blitz-affiliates.marketing", passwordHash: "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476", name: "Cameron" },
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.028";
+const VERSION = "1.030";
 
 // ── API Configuration ──
-const API_BASE = window.location.hostname === 'localhost'
-  ? 'http://localhost:3001/api'
-  : `http://${window.location.hostname}:3001/api`;
+const API_BASE = "https://leeds-crm.com/api";
 
 async function apiGet(endpoint) {
   try {
@@ -193,7 +193,7 @@ const inp = {
 const TEAM_NAMES = ["Alex", "John", "Katie", "Joy", "Oksana", "Donald"];
 
 const PEOPLE_COLORS = {
-  Alex: "#0EA5E9", Katie: "#E91E63", Oksana: "#9C27B0", Joy: "#4CAF50", John: "#3F51B5", Donald: "#FF9800",
+  Alex: "#579BFC", Katie: "#E2445C", Oksana: "#A25DDC", Joy: "#00C875", John: "#7F5347", Donald: "#FDAB3D",
 };
 const getPersonColor = name => {
   if (PEOPLE_COLORS[name]) return PEOPLE_COLORS[name];
@@ -440,7 +440,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
               <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getOpenByColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
+                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
               </td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
@@ -1094,7 +1094,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
               <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
+                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
               </td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
@@ -1279,7 +1279,36 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
 }
 
 /* ── CRG Deals Page ── */
-const CRG_INITIAL = [];
+const CRG_INITIAL = [
+  // 13/02 Friday
+  { id: genId(), affiliate: "122 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "5", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "123 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "4", ftd: "", hours: "10-19 gmt+3", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "134 GCC", brokerCap: "Capex 8", manageAff: "Katie", cap: "8", madeSale: "Katie", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+3", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 10", manageAff: "Joy", cap: "10", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "10-20 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 10", manageAff: "Joy", cap: "10", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 20", manageAff: "Joy", cap: "20", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 15", manageAff: "Alex", cap: "15", madeSale: "Oksana", started: true, capReceived: "15", ftd: "2", hours: "11-19 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "GLB 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "15", ftd: "1", hours: "12-18 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Leadstream 10", manageAff: "Alex", cap: "10", madeSale: "Joy", started: true, capReceived: "10", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "MN FR 20", manageAff: "Alex", cap: "20", madeSale: "Katie", started: true, capReceived: "20", ftd: "1", hours: "11-20 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "211 UK", brokerCap: "Capitan 10", manageAff: "Katie", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "10-16 gmt+2", comment: "", date: "2026-02-13" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: "2026-02-13" },
+  // 19/02 Thursday
+  { id: genId(), affiliate: "33 AU", brokerCap: "Swin 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "5", ftd: "", hours: "04-13 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "47 DE", brokerCap: "Capitan 20", manageAff: "Katie", cap: "20", madeSale: "Alex", started: true, capReceived: "1", ftd: "", hours: "11-17 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "64 MY", brokerCap: "12Mark 10", manageAff: "Oksana", cap: "10", madeSale: "Oksana", started: true, capReceived: "8", ftd: "1", hours: "03-14 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 15", manageAff: "Joy", cap: "15", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 11", manageAff: "Joy", cap: "11", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-20 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 20", manageAff: "Joy", cap: "20", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "171 AU", brokerCap: "Swin 5", manageAff: "Joy", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "04-11:30 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 AU", brokerCap: "Swin 10", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "1", ftd: "", hours: "04-13 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 20", manageAff: "Alex", cap: "20", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "196 HR", brokerCap: "EMP 15", manageAff: "Oksana", cap: "15", madeSale: "Oksana", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "196 HR", brokerCap: "Imperious 10", manageAff: "Oksana", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "211 FR", brokerCap: "Avelux 10", manageAff: "Katie", cap: "10", madeSale: "Oksana", started: true, capReceived: "10", ftd: "", hours: "10-19 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "211 UK", brokerCap: "Swin 10", manageAff: "Katie", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-18 gmt+2", comment: "", date: "2026-02-19" },
+  { id: genId(), affiliate: "175 FR", brokerCap: "FPmarket 9", manageAff: "Alex", cap: "9", madeSale: "Oksana", started: true, capReceived: "1", ftd: "", hours: "11-20 gmt+2", comment: "", date: "2026-02-19" },
+];
 
 
 function CRGForm({ deal, onSave, onClose }) {
@@ -1371,8 +1400,8 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   const startedCount = filtered.filter(d => d.started).length;
 
   const personBadge = (name) => {
-    if (!name) return <span style={{ color: "#CBD5E1" }}>—</span>;
-    return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 4, background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{name}</span>;
+    if (!name) return <span style={{ color: "#CBD5E1", fontSize: 13 }}>—</span>;
+    return <span style={{ display: "inline-block", padding: "6px 0", borderRadius: 0, background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 13, textAlign: "center", width: "100%", letterSpacing: 0.3 }}>{name}</span>;
   };
 
   return (
@@ -1450,34 +1479,38 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: "#F8FAFC" }}>
+                    <tr style={{ background: "#FFFFFF" }}>
                       {["Affiliate","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Comment","Actions"].map(h =>
-                        <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: "#64748B", fontSize: 11, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "center", color: "#676879", fontSize: 12, fontWeight: 600, borderBottom: "1px solid #E6E9EF", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap", ...(h === "Affiliate" ? { textAlign: "left", paddingLeft: 14 } : {}) }}>{h}</th>
                       )}
                     </tr>
                   </thead>
                   <tbody>
                     {items.map(d => (
-                      <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+                      <tr key={d.id} style={{ borderBottom: "1px solid #E6E9EF", transition: "background 0.15s", height: 37 }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#F5F6F8"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <td style={{ padding: "10px 12px", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
-                          <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
-                            onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
-                            onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
+                        <td style={{ padding: "0 14px", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", color: "#323338" }}>
+                          <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0073EA", textDecoration: "none" }}
+                            onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"}
+                            onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}
                           >{d.affiliate}</span>
                         </td>
-                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9", fontSize: 13 }}>{d.brokerCap || "—"}</td>
-                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9" }}>{personBadge(d.manageAff)}</td>
-                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9", textAlign: "center" }}>{d.cap || "—"}</td>
-                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9" }}>{personBadge(d.madeSale)}</td>
-                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9", textAlign: "center" }}>
-                          {d.started ? <span style={{ color: "#10B981", fontSize: 18, fontWeight: 700 }}>✓</span> : <span style={{ color: "#CBD5E1" }}>—</span>}
+                        <td style={{ padding: "0 14px", borderRight: "1px solid #E6E9EF", fontSize: 13, color: "#323338", textAlign: "center" }}>{d.brokerCap || ""}</td>
+                        <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
+                          <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
                         </td>
-                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #F1F5F9", textAlign: "center", color: d.capReceived ? "#6366F1" : "#CBD5E1" }}>{d.capReceived || "—"}</td>
-                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #F1F5F9", textAlign: "center", color: d.ftd ? "#EC4899" : "#CBD5E1" }}>{d.ftd || "—"}</td>
-                        <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{d.hours || "—"}</td>
-                        <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569", borderRight: "1px solid #F1F5F9", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.comment || "—"}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
+                        <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
+                          <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.madeSale || ""}</span>
+                        </td>
+                        <td style={{ padding: "0 10px", borderRight: "1px solid #E6E9EF", textAlign: "center" }}>
+                          {d.started ? <span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span> : ""}
+                        </td>
+                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
+                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
+                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.comment || ""}</td>
                         <td style={{ padding: "10px 12px" }}>
                           <div style={{ display: "flex", gap: 6 }}>
                             <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
@@ -1489,12 +1522,23 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                   </tbody>
                 </table>
                 {/* Day footer */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, padding: "10px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
-                  <span style={{ padding: "4px 14px", borderRadius: 20, background: "#F59E0B", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{items.length} affiliates</span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13 }}><span style={{ color: "#64748B" }}>CAP:</span> {dayCap}</span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13 }}><span style={{ color: "#64748B" }}>Started:</span> {dayStarted}/{items.length}</span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13, color: "#6366F1" }}><span style={{ color: "#64748B" }}>CAP Rec:</span> {dayCapRec}</span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13, color: "#EC4899" }}><span style={{ color: "#64748B" }}>FTD:</span> {dayFtd}</span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, padding: "8px 16px", background: "#FFFFFF", borderTop: "1px solid #E6E9EF", flexWrap: "wrap" }}>
+                  {/* Color bars for Manage AFF */}
+                  <div style={{ display: "flex", height: 18, borderRadius: 4, overflow: "hidden", minWidth: 80 }}>
+                    {Object.entries(items.reduce((acc, d) => { if (d.manageAff) acc[d.manageAff] = (acc[d.manageAff] || 0) + 1; return acc; }, {})).map(([name, count]) =>
+                      <div key={name} style={{ width: count * 20, background: getPersonColor(name), minWidth: 12 }} title={`${name}: ${count}`} />
+                    )}
+                  </div>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayCap} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
+                  {/* Color bars for Made SALE */}
+                  <div style={{ display: "flex", height: 18, borderRadius: 4, overflow: "hidden", minWidth: 80 }}>
+                    {Object.entries(items.reduce((acc, d) => { if (d.madeSale) acc[d.madeSale] = (acc[d.madeSale] || 0) + 1; return acc; }, {})).map(([name, count]) =>
+                      <div key={name} style={{ width: count * 20, background: getPersonColor(name), minWidth: 12 }} title={`${name}: ${count}`} />
+                    )}
+                  </div>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayStarted}/{items.length}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayCapRec} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayFtd} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
                 </div>
               </div>
             </GroupHeader>
