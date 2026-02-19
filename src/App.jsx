@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.023";
+const VERSION = "1.026";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -325,6 +325,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
 /* ── Payment Table ── */
 function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
+  const sorted = [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
   // Date range
@@ -358,7 +359,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
           </tr>
         </thead>
         <tbody>
-          {payments.map((p, i) => (
+          {sorted.map((p, i) => (
             <tr key={p.id}
               style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
@@ -589,7 +590,7 @@ function AdminPanel({ users, setUsers, onBack }) {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments, onRefresh }) {
+function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, payments, setPayments, onRefresh }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -666,6 +667,14 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments
             onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
           >Customer Payments</button>
+          <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >CRG Deals</button>
+          <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >Daily Cap</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
@@ -915,6 +924,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
 
 function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
+  const sorted = [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
   const fmtShort = d => { const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return `${m[d.getMonth()]} ${d.getDate()}`; };
@@ -936,7 +946,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
           </tr>
         </thead>
         <tbody>
-          {payments.map((p, i) => (
+          {sorted.map((p, i) => (
             <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -988,7 +998,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
   );
 }
 
-function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPayments, onRefresh }) {
+function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, payments, setPayments, onRefresh }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1058,6 +1068,14 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
             onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
           >Payments</button>
           <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Customer Payments</span>
+          <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >CRG Deals</button>
+          <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
+            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >Daily Cap</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
@@ -1140,12 +1158,481 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
   );
 }
 
+/* ── CRG Deals Page ── */
+const CRG_INITIAL = [];
+
+const CRG_PEOPLE_COLORS = {
+  Alex: "#0EA5E9", Katie: "#E91E63", Oksana: "#9C27B0", Joy: "#4CAF50", John: "#3F51B5",
+};
+const getCrgColor = name => {
+  if (CRG_PEOPLE_COLORS[name]) return CRG_PEOPLE_COLORS[name];
+  let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  const colors = ["#FF6B9D","#00BCD4","#FF9800","#9C27B0","#4CAF50","#E91E63","#3F51B5","#009688"];
+  return colors[Math.abs(h) % colors.length];
+};
+
+function CRGForm({ deal, onSave, onClose }) {
+  const [f, setF] = useState(deal || { affiliate: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", comment: "", date: new Date().toISOString().split("T")[0] });
+  const [error, setError] = useState("");
+  const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  const handleSave = () => {
+    if (!f.affiliate.trim()) { setError("Affiliate is required"); return; }
+    onSave(f);
+  };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Affiliate"><input style={inp} value={f.affiliate} onChange={e => s("affiliate", e.target.value)} placeholder="e.g. 33 AU, 47 DE" /></Field>
+        <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
+        <Field label="Manage the AFF"><input style={inp} value={f.manageAff} onChange={e => s("manageAff", e.target.value)} placeholder="e.g. Alex, Joy" /></Field>
+        <Field label="CAP"><input style={inp} type="number" value={f.cap} onChange={e => s("cap", e.target.value)} placeholder="0" /></Field>
+        <Field label="Made the SALE"><input style={inp} value={f.madeSale} onChange={e => s("madeSale", e.target.value)} placeholder="e.g. John, Oksana" /></Field>
+        <Field label="Started">
+          <div onClick={() => s("started", !f.started)} style={{ ...inp, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ width: 20, height: 20, borderRadius: 4, border: f.started ? "none" : "2px solid #CBD5E1", background: f.started ? "#10B981" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: "#FFF", fontSize: 14, fontWeight: 700 }}>{f.started ? "✓" : ""}</span>
+            <span style={{ color: f.started ? "#10B981" : "#94A3B8", fontWeight: 500 }}>{f.started ? "Yes" : "No"}</span>
+          </div>
+        </Field>
+        <Field label="CAP Received"><input style={inp} type="number" value={f.capReceived} onChange={e => s("capReceived", e.target.value)} placeholder="0" /></Field>
+        <Field label="FTD"><input style={inp} type="number" value={f.ftd} onChange={e => s("ftd", e.target.value)} placeholder="0" /></Field>
+        <Field label="Hours"><input style={inp} value={f.hours} onChange={e => s("hours", e.target.value)} placeholder="e.g. 04-13 gmt+2" /></Field>
+        <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
+      </div>
+      <Field label="Comment"><textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} value={f.comment} onChange={e => s("comment", e.target.value)} placeholder="Notes..." /></Field>
+      {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
+        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(245,158,11,0.3)" }}>{deal ? "Save Changes" : "Add Affiliate"}</button>
+      </div>
+    </>
+  );
+}
+
+function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh }) {
+  const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editDeal, setEditDeal] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+
+  const matchSearch = d => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [d.affiliate, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.comment].some(v => (v || "").toLowerCase().includes(q));
+  };
+
+  const filtered = deals.filter(matchSearch);
+
+  // Group by date
+  const grouped = {};
+  filtered.forEach(d => {
+    const key = d.date || "Unknown";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(d);
+  });
+  const sortedDates = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+  const fmtDate = ds => {
+    if (!ds || ds === "Unknown") return "Unknown";
+    const d = new Date(ds + "T00:00:00");
+    const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${days[d.getDay()]}`;
+  };
+
+  const handleSave = form => {
+    if (editDeal) {
+      setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form } : d));
+    } else {
+      setDeals(prev => [...prev, { ...form, id: genId() }]);
+    }
+    setModalOpen(false);
+    setEditDeal(null);
+  };
+
+  const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+
+  // Summary totals
+  const totalCap = filtered.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const totalCapRec = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+  const totalFtd = filtered.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+  const startedCount = filtered.filter(d => d.started).length;
+
+  const personBadge = (name) => {
+    if (!name) return <span style={{ color: "#CBD5E1" }}>—</span>;
+    return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 4, background: getCrgColor(name), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{name}</span>;
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {I.logo}
+          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+          <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>
+          <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>
+          <span style={{ background: "#F59E0B", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>CRG Deals</span>
+          <button onClick={() => onNav("dailycap")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+          >{I.refresh}<span>Refresh</span></button>
+          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >{I.logout}<span>Logout</span></button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>CRG Deals</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14 }} />
+            </div>
+            <button onClick={() => { setEditDeal(null); setModalOpen(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(245,158,11,0.3)", whiteSpace: "nowrap" }}
+            >{I.plus} New Affiliate</button>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+          {[
+            { label: "Total Affiliates", value: filtered.length, accent: "#F59E0B", bg: "#FFFBEB" },
+            { label: "CAP Sum", value: totalCap, accent: "#6366F1", bg: "#EEF2FF" },
+            { label: "Started", value: `${startedCount} / ${filtered.length}`, accent: "#10B981", bg: "#ECFDF5" },
+            { label: "FTD Sum", value: totalFtd, accent: "#EC4899", bg: "#FDF2F8" },
+          ].map((c, i) => (
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
+              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Grouped by date */}
+        {sortedDates.map(dateKey => {
+          const items = grouped[dateKey];
+          const dayCap = items.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const dayCapRec = items.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const dayFtd = items.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          const dayStarted = items.filter(d => d.started).length;
+
+          return (
+            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={items.length} total={dayCap} accentColor="#F59E0B" defaultOpen={true}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC" }}>
+                      {["Affiliate","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Comment","Actions"].map(h =>
+                        <th key={h} style={{ padding: "10px 12px", textAlign: "left", color: "#64748B", fontSize: 11, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(d => (
+                      <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding: "10px 12px", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
+                          <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
+                            onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
+                            onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
+                          >{d.affiliate}</span>
+                        </td>
+                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9", fontSize: 13 }}>{d.brokerCap || "—"}</td>
+                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9" }}>{personBadge(d.manageAff)}</td>
+                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9", textAlign: "center" }}>{d.cap || "—"}</td>
+                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9" }}>{personBadge(d.madeSale)}</td>
+                        <td style={{ padding: "10px 12px", borderRight: "1px solid #F1F5F9", textAlign: "center" }}>
+                          {d.started ? <span style={{ color: "#10B981", fontSize: 18, fontWeight: 700 }}>✓</span> : <span style={{ color: "#CBD5E1" }}>—</span>}
+                        </td>
+                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #F1F5F9", textAlign: "center", color: d.capReceived ? "#6366F1" : "#CBD5E1" }}>{d.capReceived || "—"}</td>
+                        <td style={{ padding: "10px 12px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #F1F5F9", textAlign: "center", color: d.ftd ? "#EC4899" : "#CBD5E1" }}>{d.ftd || "—"}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{d.hours || "—"}</td>
+                        <td style={{ padding: "10px 12px", fontSize: 12, color: "#475569", borderRight: "1px solid #F1F5F9", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.comment || "—"}</td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                            <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {/* Day footer */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, padding: "10px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
+                  <span style={{ padding: "4px 14px", borderRadius: 20, background: "#F59E0B", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{items.length} affiliates</span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13 }}><span style={{ color: "#64748B" }}>CAP:</span> {dayCap}</span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13 }}><span style={{ color: "#64748B" }}>Started:</span> {dayStarted}/{items.length}</span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13, color: "#6366F1" }}><span style={{ color: "#64748B" }}>CAP Rec:</span> {dayCapRec}</span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 13, color: "#EC4899" }}><span style={{ color: "#64748B" }}>FTD:</span> {dayFtd}</span>
+                </div>
+              </div>
+            </GroupHeader>
+          );
+        })}
+
+        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No deals yet. Click "New Affiliate" to add one.</div>}
+      </main>
+
+      {modalOpen && (
+        <Modal title={editDeal ? "Edit Affiliate" : "New Affiliate"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
+          <CRGForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
+        </Modal>
+      )}
+      {delConfirm && (
+        <Modal title="Delete Affiliate" onClose={() => setDelConfirm(null)}>
+          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+/* ── Daily Cap Page ── */
+const DC_INITIAL = [];
+
+function DCForm({ entry, onSave, onClose }) {
+  const [f, setF] = useState(entry || { agent: "", affiliates: "", brands: "", date: new Date().toISOString().split("T")[0] });
+  const [error, setError] = useState("");
+  const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+  const total = (parseInt(f.affiliates) || 0) + (parseInt(f.brands) || 0);
+
+  const handleSave = () => {
+    if (!f.agent.trim()) { setError("Agent name is required"); return; }
+    onSave(f);
+  };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Agent"><input style={inp} value={f.agent} onChange={e => s("agent", e.target.value)} placeholder="e.g. Katie, Alex" /></Field>
+        <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
+        <Field label="Affiliates"><input style={inp} type="number" value={f.affiliates} onChange={e => s("affiliates", e.target.value)} placeholder="0" /></Field>
+        <Field label="Brands"><input style={inp} type="number" value={f.brands} onChange={e => s("brands", e.target.value)} placeholder="0" /></Field>
+      </div>
+      <div style={{ padding: "12px 16px", background: "#F8FAFC", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ color: "#64748B", fontSize: 13, fontWeight: 600 }}>Total:</span>
+        <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>{total}</span>
+      </div>
+      {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
+      <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
+        <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
+        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#8B5CF6,#A78BFA)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(139,92,246,0.3)" }}>{entry ? "Save Changes" : "Add Agent"}</button>
+      </div>
+    </>
+  );
+}
+
+function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefresh }) {
+  const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+
+  const matchSearch = d => {
+    if (!search) return true;
+    return (d.agent || "").toLowerCase().includes(search.toLowerCase());
+  };
+
+  const filtered = entries.filter(matchSearch);
+
+  // Group by date
+  const grouped = {};
+  filtered.forEach(d => {
+    const key = d.date || "Unknown";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(d);
+  });
+  const sortedDates = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+
+  const fmtDate = ds => {
+    if (!ds || ds === "Unknown") return "Unknown";
+    const d = new Date(ds + "T00:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  };
+
+  const handleSave = form => {
+    if (editEntry) {
+      setEntries(prev => prev.map(d => d.id === editEntry.id ? { ...editEntry, ...form } : d));
+    } else {
+      setEntries(prev => [...prev, { ...form, id: genId() }]);
+    }
+    setModalOpen(false);
+    setEditEntry(null);
+  };
+
+  const handleDelete = id => { setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+
+  const grandAff = filtered.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
+  const grandBrands = filtered.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {I.logo}
+          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+          <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>
+          <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>
+          <button onClick={() => onNav("crg")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>CRG Deals</button>
+          <span style={{ background: "#8B5CF6", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Daily Cap</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button onClick={onAdmin} style={{ display: user.email === ADMIN_EMAIL ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
+          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
+            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
+          >{I.refresh}<span>Refresh</span></button>
+          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
+            onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+          >{I.logout}<span>Logout</span></button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Daily Cap</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ position: "relative" }}>
+              <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search agent..."
+                style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14, width: 220 }} />
+            </div>
+            <button onClick={() => { setEditEntry(null); setModalOpen(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#8B5CF6,#A78BFA)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(139,92,246,0.3)", whiteSpace: "nowrap" }}
+            >{I.plus} New Agent</button>
+          </div>
+        </div>
+
+        {/* Summary cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
+          {[
+            { label: "Affiliates", value: grandAff, accent: "#8B5CF6", bg: "#F5F3FF" },
+            { label: "Brands", value: grandBrands, accent: "#0EA5E9", bg: "#EFF6FF" },
+            { label: "Total", value: grandAff + grandBrands, accent: "#10B981", bg: "#ECFDF5" },
+          ].map((c, i) => (
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
+              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {sortedDates.map(dateKey => {
+          const items = grouped[dateKey];
+          const dayAff = items.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
+          const dayBrands = items.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+          const dayTotal = dayAff + dayBrands;
+
+          return (
+            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={items.length} total={dayTotal} accentColor="#8B5CF6" defaultOpen={true}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC" }}>
+                      {["Agent","Affiliates","Brands","Total","Actions"].map(h =>
+                        <th key={h} style={{ padding: "12px 16px", textAlign: h === "Agent" ? "left" : "center", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map(d => {
+                      const t = (parseInt(d.affiliates) || 0) + (parseInt(d.brands) || 0);
+                      return (
+                        <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "12px 16px", borderRight: "1px solid #F1F5F9" }}>
+                            <span onClick={() => { setEditEntry(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3, fontWeight: 700, fontSize: 15 }}
+                              onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
+                              onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
+                            >{d.agent}</span>
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.affiliates || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.brands || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{t || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                              <button onClick={() => { setEditEntry(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                              <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Affiliates:</span> <span style={{ color: "#8B5CF6" }}>{dayAff}</span></span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Brands:</span> <span style={{ color: "#0EA5E9" }}>{dayBrands}</span></span>
+                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 14 }}><span style={{ color: "#64748B" }}>Total:</span> {dayTotal}</span>
+                </div>
+              </div>
+            </GroupHeader>
+          );
+        })}
+
+        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No entries yet. Click "New Agent" to add one.</div>}
+      </main>
+
+      {modalOpen && (
+        <Modal title={editEntry ? "Edit Agent" : "New Agent"} onClose={() => { setModalOpen(false); setEditEntry(null); }}>
+          <DCForm entry={editEntry} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); }} />
+        </Modal>
+      )}
+      {delConfirm && (
+        <Modal title="Delete Agent" onClose={() => setDelConfirm(null)}>
+          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 /* ── App ── */
 export default function App() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState(INITIAL_USERS);
   const [payments, setPayments] = useState(INITIAL);
   const [cpPayments, setCpPayments] = useState(CP_INITIAL);
+  const [crgDeals, setCrgDeals] = useState(CRG_INITIAL);
+  const [dcEntries, setDcEntries] = useState(DC_INITIAL);
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
@@ -1154,14 +1641,18 @@ export default function App() {
   // Load from API on startup
   useEffect(() => {
     (async () => {
-      const [u, p, cp] = await Promise.all([
+      const [u, p, cp, crg, dc] = await Promise.all([
         apiGet('users'),
         apiGet('payments'),
         apiGet('customer-payments'),
+        apiGet('crg-deals'),
+        apiGet('daily-cap'),
       ]);
       if (u !== null && u.length > 0) setUsers(u);
       if (p !== null && p.length > 0) setPayments(p);
       if (cp !== null && cp.length > 0) setCpPayments(cp);
+      if (crg !== null && crg.length > 0) setCrgDeals(crg);
+      if (dc !== null && dc.length > 0) setDcEntries(dc);
       setLoaded(true);
       setTimeout(() => { skipSave.current = false; }, 1000);
     })();
@@ -1173,16 +1664,20 @@ export default function App() {
     const interval = setInterval(async () => {
       if (isSaving.current) return; // Don't poll while saving
       try {
-        const [u, p, cp] = await Promise.all([
+        const [u, p, cp, crg, dc] = await Promise.all([
           apiGet('users'),
           apiGet('payments'),
           apiGet('customer-payments'),
+          apiGet('crg-deals'),
+          apiGet('daily-cap'),
         ]);
         // Only update if server returned data and it's different
         skipSave.current = true; // Prevent save loop
         if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
         if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
         if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
+        if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
+        if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
         setTimeout(() => { skipSave.current = false; }, 500);
       } catch (e) { /* silent fail on poll */ }
     }, 12000);
@@ -1199,19 +1694,29 @@ export default function App() {
   useEffect(() => {
     if (!skipSave.current && loaded) { isSaving.current = true; apiSave('customer-payments', cpPayments).finally(() => { isSaving.current = false; }); }
   }, [cpPayments]);
+  useEffect(() => {
+    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('crg-deals', crgDeals).finally(() => { isSaving.current = false; }); }
+  }, [crgDeals]);
+  useEffect(() => {
+    if (!skipSave.current && loaded) { isSaving.current = true; apiSave('daily-cap', dcEntries).finally(() => { isSaving.current = false; }); }
+  }, [dcEntries]);
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
   const handleRefresh = async () => {
     skipSave.current = true;
-    const [u, p, cp] = await Promise.all([
+    const [u, p, cp, crg, dc] = await Promise.all([
       apiGet('users'),
       apiGet('payments'),
       apiGet('customer-payments'),
+      apiGet('crg-deals'),
+      apiGet('daily-cap'),
     ]);
     if (u !== null && u.length > 0) setUsers(u);
     if (p !== null) setPayments(p);
     if (cp !== null) setCpPayments(cp);
+    if (crg !== null) setCrgDeals(crg);
+    if (dc !== null) setDcEntries(dc);
     setTimeout(() => { skipSave.current = false; }, 500);
   };
 
@@ -1226,6 +1731,8 @@ export default function App() {
 
   if (!user) return <LoginScreen onLogin={setUser} users={users} />;
   if (page === "admin" && user.email === ADMIN_EMAIL) return <AdminPanel users={users} setUsers={setUsers} onBack={() => setPage("dashboard")} />;
-  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} />;
-  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} />;
+  if (page === "customers") return <CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} />;
+  if (page === "crg") return <CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} />;
+  if (page === "dailycap") return <DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} />;
 }
