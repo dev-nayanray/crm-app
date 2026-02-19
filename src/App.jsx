@@ -75,7 +75,7 @@ const INITIAL_USERS = [
 ];
 
 const ADMIN_EMAIL = "y0505300530@gmail.com";
-const VERSION = "1.022";
+const VERSION = "1.023";
 
 // ── API Configuration ──
 const API_BASE = window.location.hostname === 'localhost'
@@ -323,7 +323,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
 }
 
 /* ── Payment Table ── */
-function PaymentTable({ payments, onEdit, onDelete, emptyMsg }) {
+function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
@@ -364,13 +364,25 @@ function PaymentTable({ payments, onEdit, onDelete, emptyMsg }) {
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "11px 14px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 15, borderRight: "1px solid #F1F5F9" }}>{p.invoice}</td>
+              <td style={{ padding: "11px 14px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
+                <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
+                  onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
+                  onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
+                >{p.invoice}</span>
+              </td>
               <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Affiliate Payment"}</span>
               </td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
+                {p.status !== "Paid" && statusOptions && onStatusChange ? (
+                  <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
+                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(statusStyle(p.status)), appearance: "auto", outline: "none" }}>
+                    {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
+                )}
               </td>
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
               <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
@@ -585,6 +597,20 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments
   const [modalOpen, setModalOpen] = useState(false);
   const [editPay, setEditPay] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
+  const availStatuses = getAvailableStatuses(user.email);
+
+  const handleStatusChange = (id, newStatus) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const updated = { ...p, status: newStatus };
+      if (newStatus === "Paid") {
+        updated.month = month;
+        updated.year = year;
+        if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
+      }
+      return updated;
+    }));
+  };
 
   const matchSearch = p => {
     if (!search) return true;
@@ -701,7 +727,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, payments, setPayments
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg="No open payments — all caught up!" />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" />
         </GroupHeader>
 
         {/* Paid This Month Group */}
@@ -887,7 +913,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
+function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
@@ -915,13 +941,25 @@ function CPTable({ payments, onEdit, onDelete, emptyMsg }) {
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "11px 14px", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>{p.invoice}</td>
+              <td style={{ padding: "11px 14px", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
+                <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
+                  onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
+                  onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
+                >{p.invoice}</span>
+              </td>
               <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Brand Payment"}</span>
               </td>
               <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
+                {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange ? (
+                  <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
+                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(CP_STATUS_COLORS[p.status] || {}), appearance: "auto", outline: "none" }}>
+                    {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                ) : (
+                  <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
+                )}
               </td>
               <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
               <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
@@ -991,6 +1029,19 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
   };
 
   const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+
+  const handleCpStatusChange = (id, newStatus) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const updated = { ...p, status: newStatus };
+      if (["Received", "Refund"].includes(newStatus)) {
+        updated.month = month;
+        updated.year = year;
+        if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
+      }
+      return updated;
+    }));
+  };
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
@@ -1063,7 +1114,7 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, payments, setPaymen
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg="No open invoices — all caught up!" />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
