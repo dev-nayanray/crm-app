@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.035";
+const VERSION = "1.036";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -90,10 +90,10 @@ function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.strin
 
 const API_BASE = (() => {
   const h = window.location.hostname;
-  // Always point to the actual server IP for API
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
-  // Try same host first, then hardcoded server IP
-  return `http://147.182.250.249:3001/api`;
+  // Use same-origin /api path — Nginx proxies to Node.js backend
+  // This works with both HTTP and HTTPS, no mixed content issues
+  return '/api';
 })();
 
 let serverOnline = false;
