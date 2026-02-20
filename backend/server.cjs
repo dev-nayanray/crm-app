@@ -17,10 +17,34 @@ const FINANCE_GROUP_CHAT_ID = "-4744920512";
 
 // Initialize Telegram Bot (for commands)
 let bot;
+let consecutiveErrors = 0;
+const MAX_ERRORS_BEFORE_STOP = 10;
+
 if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   try {
-    bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+    // Use polling with better error handling
+    bot = new TelegramBot(TELEGRAM_TOKEN, { 
+      polling: true,
+      filepath: false,
+    });
     console.log("🤖 Telegram bot initialized - polling for commands...");
+    
+    // Handle polling errors gracefully - stop after too many failures
+    bot.on('polling_error', (error) => {
+      consecutiveErrors++;
+      if (consecutiveErrors >= MAX_ERRORS_BEFORE_STOP) {
+        console.log("🛑 Stopping bot polling - network issues detected. Commands won't work until network is fixed.");
+        bot.stopPolling().catch(() => {});
+        return;
+      }
+      // Only log every few errors to reduce spam
+      if (consecutiveErrors % 5 === 0) {
+        console.log(`⚠️ Polling error (${consecutiveErrors}/${MAX_ERRORS_BEFORE_STOP}):`, error.code || error.message);
+      }
+    });
+    
+    // Reset error count on successful message
+    bot.on('message', () => { consecutiveErrors = 0; });
     
     // Register bot commands with Telegram (shows in command suggestions)
     bot.setMyCommands([
