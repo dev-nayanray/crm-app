@@ -33,8 +33,8 @@ endpoints.forEach(ep => {
 });
 
 // ── Telegram Bot ──
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "8401443081:AAFxgf6IGa01l0ZPXhWppdWPqTp7mUpPlsQ";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "2830517753";
 
 async function sendTelegram(message) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
