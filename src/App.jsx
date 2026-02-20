@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.038";
+const VERSION = "1.041";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -439,9 +439,11 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
 }
 
 /* ── Payment Table ── */
-function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions }) {
+function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
-  const sorted = [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
+  const sorted = sortMode === "alpha"
+    ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
+    : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
   // Date range
@@ -509,8 +511,14 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#94A3B8", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
-              <td style={{ padding: "11px 14px" }}>
-                <div style={{ display: "flex", gap: 6 }}>
+              <td style={{ padding: "8px 8px" }}>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  {onMove && sortMode !== "alpha" && <>
+                    <button onClick={() => onMove(p.id, "up")} title="Move up" disabled={i === 0}
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                    <button onClick={() => onMove(p.id, "down")} title="Move down" disabled={i === sorted.length - 1}
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                  </>}
                   <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                   <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 6, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                 </div>
@@ -723,9 +731,31 @@ function AdminPanel({ users, setUsers, onBack }) {
             </div>
           ))}
         </div>
-      </main>
 
-      {/* Add User Modal */}
+        {/* Telegram Bot Section */}
+        <div style={{ marginTop: 32 }}>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>📬 Telegram Notifications</h2>
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "24px" }}>
+            <p style={{ color: "#64748B", fontSize: 14, marginBottom: 16 }}>
+              Notifications are sent to your Telegram group when payments are created, status changes, etc.
+            </p>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <button onClick={async () => {
+                const res = await telegramTest();
+                alert(res.status === "ok" ? "✅ Telegram bot is connected!" : "❌ Telegram not configured: " + (res.error || "Unknown error"));
+              }}
+                style={{ padding: "10px 20px", background: "linear-gradient(135deg, #0088cc, #00aaff)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+              >🤖 Test Connection</button>
+              <button onClick={async () => {
+                const res = await telegramNotify("🔔 Test notification from Blitz CRM — everything is working!");
+                alert(res.ok ? "✅ Test message sent!" : "❌ Failed: " + (res.error || "Unknown error"));
+              }}
+                style={{ padding: "10px 20px", background: "transparent", border: "2px solid #0088cc", borderRadius: 8, color: "#0088cc", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
+              >📤 Send Test Message</button>
+            </div>
+          </div>
+        </div>
+      </main>
       {addOpen && (
         <Modal title="Add New User" onClose={() => setAddOpen(false)}>
           <Field label="Name"><input style={inp} value={newUser.name} onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))} placeholder="Display name" /></Field>
@@ -782,7 +812,25 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
   const [modalOpen, setModalOpen] = useState(false);
   const [editPay, setEditPay] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
+  const [paySort, setPaySort] = useState("manual");
   const availStatuses = getAvailableStatuses(user.email);
+
+  const handlePayMove = (id, direction) => {
+    setPayments(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(p => p.id === id);
+      if (idx < 0) return prev;
+      if (direction === "up" && idx > 0) [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
+      if (direction === "down" && idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+      return arr;
+    });
+  };
+
+  const handlePaySortAlpha = () => {
+    if (paySort === "alpha") { setPaySort("manual"); return; }
+    setPaySort("alpha");
+    setPayments(prev => [...prev].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true })));
+  };
 
   const handleStatusChange = (id, newStatus) => {
     setPayments(prev => prev.map(p => {
@@ -792,6 +840,9 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
+        telegramNotify(`💰 Payment #${p.invoice} marked as PAID — ${parseFloat(p.amount).toLocaleString()}$ by ${user.name}`);
+      } else {
+        telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
       }
       return updated;
     }));
@@ -816,7 +867,6 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
 
   const handleSave = form => {
     if (editPay) {
-      // If status changed to Paid, set the month/year to current selected month
       const updated = { ...editPay, ...form };
       if (form.status === "Paid" && editPay.status !== "Paid") {
         updated.month = month;
@@ -824,10 +874,14 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
         if (!updated.paidDate) {
           updated.paidDate = new Date().toISOString().split("T")[0];
         }
+        telegramNotify(`💰 Payment #${updated.invoice} marked as PAID — ${parseFloat(updated.amount).toLocaleString()}$ by ${user.name}`);
+      } else if (!editPay) {
+        telegramNotify(`📝 Payment #${form.invoice} updated by ${user.name}`);
       }
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
       setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
+      telegramNotify(`🆕 New payment #${form.invoice} — ${parseFloat(form.amount).toLocaleString()}$ opened by ${user.name}`);
     }
     setModalOpen(false);
     setEditPay(null);
@@ -898,6 +952,9 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
             <button onClick={() => { setEditPay(null); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(14,165,233,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Payment</button>
+            <button onClick={handlePaySortAlpha}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: paySort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${paySort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 10, color: paySort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+            >{paySort === "alpha" ? "✓ A→Z" : "A→Z"}</button>
           </div>
         </div>
 
@@ -921,12 +978,12 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, pa
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} />
         </GroupHeader>
       </main>
 
@@ -1107,9 +1164,11 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg }) {
+function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
-  const sorted = [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
+  const sorted = sortMode === "alpha"
+    ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
+    : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
   const fmtShort = d => { const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return `${m[d.getMonth()]} ${d.getDate()}`; };
@@ -1163,8 +1222,14 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
               </td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "11px 14px" }}>
-                <div style={{ display: "flex", gap: 6 }}>
+              <td style={{ padding: "8px 8px" }}>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  {onMove && sortMode !== "alpha" && <>
+                    <button onClick={() => onMove(p.id, "up")} title="Move up" disabled={i === 0}
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                    <button onClick={() => onMove(p.id, "down")} title="Move down" disabled={i === sorted.length - 1}
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                  </>}
                   <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                   <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 6, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                 </div>
@@ -1191,6 +1256,24 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
   const [modalOpen, setModalOpen] = useState(false);
   const [editPay, setEditPay] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
+  const [cpSort, setCpSort] = useState("manual");
+
+  const handleCpMove = (id, direction) => {
+    setPayments(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(p => p.id === id);
+      if (idx < 0) return prev;
+      if (direction === "up" && idx > 0) [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
+      if (direction === "down" && idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+      return arr;
+    });
+  };
+
+  const handleCpSortAlpha = () => {
+    if (cpSort === "alpha") { setCpSort("manual"); return; }
+    setCpSort("alpha");
+    setPayments(prev => [...prev].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true })));
+  };
 
   const matchSearch = p => {
     if (!search) return true;
@@ -1296,6 +1379,9 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
             <button onClick={() => { setEditPay(null); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(14,165,233,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Invoice</button>
+            <button onClick={handleCpSortAlpha}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: cpSort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${cpSort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 10, color: cpSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+            >{cpSort === "alpha" ? "✓ A→Z" : "A→Z"}</button>
           </div>
         </div>
 
@@ -1318,11 +1404,11 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} />
         </GroupHeader>
       </main>
 
@@ -1434,7 +1520,8 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
-  const [newDayDate, setNewDayDate] = useState(null); // date string for "new day" modal
+  const [newDayDate, setNewDayDate] = useState(null);
+  const [crgSort, setCrgSort] = useState("manual"); // "manual" | "alpha"
 
   // Get the latest date in deals
   const allDates = [...new Set(deals.map(d => d.date).filter(Boolean))].sort();
@@ -1443,14 +1530,64 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
 
   const handleCopyPrevDay = (targetDate) => {
-    // Copy all entries from the latest date to the target date
     const prevDayEntries = deals.filter(d => d.date === latestDate);
     if (prevDayEntries.length === 0) return;
     const newEntries = prevDayEntries.map(d => ({
       ...d, id: genId(), date: targetDate,
-      started: false, capReceived: "", ftd: "", funnel: "", // Reset progress fields
+      started: false, capReceived: "", ftd: "", funnel: "",
     }));
     setDeals(prev => [...prev, ...newEntries]);
+  };
+
+  // Move a deal up or down within its date group
+  const handleMove = (dealId, direction) => {
+    setDeals(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(d => d.id === dealId);
+      if (idx < 0) return prev;
+      const item = arr[idx];
+      const dateKey = item.date;
+      // Find all indices for this date
+      const dateIndices = arr.map((d, i) => d.date === dateKey ? i : -1).filter(i => i >= 0);
+      const posInDate = dateIndices.indexOf(idx);
+      if (direction === "up" && posInDate > 0) {
+        const swapIdx = dateIndices[posInDate - 1];
+        [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+      } else if (direction === "down" && posInDate < dateIndices.length - 1) {
+        const swapIdx = dateIndices[posInDate + 1];
+        [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+      }
+      return arr;
+    });
+  };
+
+  // Sort all deals alphabetically by affiliate within each date group
+  const handleSortAlpha = () => {
+    if (crgSort === "alpha") {
+      setCrgSort("manual");
+      return;
+    }
+    setCrgSort("alpha");
+    setDeals(prev => {
+      const arr = [...prev];
+      // Group by date, sort each group, reassemble
+      const groups = {};
+      const order = [];
+      arr.forEach((d, i) => {
+        const key = d.date || "Unknown";
+        if (!groups[key]) { groups[key] = []; order.push(key); }
+        groups[key].push(d);
+      });
+      const sorted = [];
+      // Keep date order, sort items within each date
+      const dateOrder = [...new Set(arr.map(d => d.date || "Unknown"))];
+      dateOrder.forEach(dk => {
+        const items = arr.filter(d => (d.date || "Unknown") === dk);
+        items.sort((a, b) => (a.affiliate || "").localeCompare(b.affiliate || "", undefined, { numeric: true }));
+        sorted.push(...items);
+      });
+      return sorted;
+    });
   };
 
   const matchSearch = d => {
@@ -1563,6 +1700,9 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
           <button onClick={() => handleCopyPrevDay(tomorrow)}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #6366F1", borderRadius: 8, color: "#6366F1", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
           >📋 Copy Last Day → Tomorrow</button>
+          <button onClick={handleSortAlpha}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: crgSort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${crgSort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 8, color: crgSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600, marginLeft: "auto" }}
+          >{crgSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
         </div>
 
         {/* Summary cards */}
@@ -1584,13 +1724,16 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
         {/* Grouped by date */}
         {sortedDates.map(dateKey => {
           const items = grouped[dateKey];
-          const dayCap = items.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-          const dayCapRec = items.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
-          const dayFtd = items.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-          const dayStarted = items.filter(d => d.started).length;
+          const sortedItems = crgSort === "alpha"
+            ? [...items].sort((a, b) => (a.affiliate || "").localeCompare(b.affiliate || "", undefined, { numeric: true }))
+            : items;
+          const dayCap = sortedItems.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const dayCapRec = sortedItems.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const dayFtd = sortedItems.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          const dayStarted = sortedItems.filter(d => d.started).length;
 
           return (
-            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={items.length} total={dayCap} accentColor="#F59E0B" defaultOpen={true}>
+            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={sortedItems.length} total={dayCap} accentColor="#F59E0B" defaultOpen={true}>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
@@ -1601,7 +1744,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(d => (
+                    {sortedItems.map((d, rowIdx) => (
                       <tr key={d.id} style={{ borderBottom: "1px solid #E6E9EF", transition: "background 0.15s", height: 37 }}
                         onMouseEnter={e => e.currentTarget.style.background = "#F5F6F8"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -1627,8 +1770,14 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                         <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
                         <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
                         <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
-                        <td style={{ padding: "10px 12px" }}>
-                          <div style={{ display: "flex", gap: 6 }}>
+                        <td style={{ padding: "4px 8px" }}>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                            {crgSort === "manual" && <>
+                              <button onClick={() => handleMove(d.id, "up")} title="Move up" disabled={rowIdx === 0}
+                                style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === 0 ? "default" : "pointer", color: rowIdx === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                              <button onClick={() => handleMove(d.id, "down")} title="Move down" disabled={rowIdx === sortedItems.length - 1}
+                                style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === sortedItems.length - 1 ? "default" : "pointer", color: rowIdx === sortedItems.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                            </>}
                             <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                             <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                           </div>
@@ -1637,22 +1786,28 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                     ))}
                   </tbody>
                 </table>
+                {/* Quick add inside the group */}
+                <button onClick={() => { setEditDeal(null); setNewDayDate(dateKey); setModalOpen(true); }}
+                  style={{ width: "100%", padding: "8px 16px", background: "transparent", border: "none", borderTop: "1px dashed #E6E9EF", color: "#F59E0B", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, transition: "background 0.15s" }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#FFFBEB"}
+                  onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                >{I.plus} Add Affiliate</button>
                 {/* Day footer */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, padding: "8px 16px", background: "#FFFFFF", borderTop: "1px solid #E6E9EF", flexWrap: "wrap" }}>
                   {/* Color bars for Manage AFF */}
                   <div style={{ display: "flex", height: 18, borderRadius: 4, overflow: "hidden", minWidth: 80 }}>
-                    {Object.entries(items.reduce((acc, d) => { if (d.manageAff) acc[d.manageAff] = (acc[d.manageAff] || 0) + 1; return acc; }, {})).map(([name, count]) =>
+                    {Object.entries(sortedItems.reduce((acc, d) => { if (d.manageAff) acc[d.manageAff] = (acc[d.manageAff] || 0) + 1; return acc; }, {})).map(([name, count]) =>
                       <div key={name} style={{ width: count * 20, background: getPersonColor(name), minWidth: 12 }} title={`${name}: ${count}`} />
                     )}
                   </div>
                   <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayCap} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
                   {/* Color bars for Made SALE */}
                   <div style={{ display: "flex", height: 18, borderRadius: 4, overflow: "hidden", minWidth: 80 }}>
-                    {Object.entries(items.reduce((acc, d) => { if (d.madeSale) acc[d.madeSale] = (acc[d.madeSale] || 0) + 1; return acc; }, {})).map(([name, count]) =>
+                    {Object.entries(sortedItems.reduce((acc, d) => { if (d.madeSale) acc[d.madeSale] = (acc[d.madeSale] || 0) + 1; return acc; }, {})).map(([name, count]) =>
                       <div key={name} style={{ width: count * 20, background: getPersonColor(name), minWidth: 12 }} title={`${name}: ${count}`} />
                     )}
                   </div>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayStarted}/{items.length}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayStarted}/{sortedItems.length}</span>
                   <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayCapRec} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
                   <span style={{ fontWeight: 600, fontSize: 13, color: "#323338" }}>{dayFtd} <span style={{ color: "#C5C7D0", fontWeight: 400 }}>sum</span></span>
                 </div>
@@ -1736,6 +1891,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
   const [editEntry, setEditEntry] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
   const [newDayDate, setNewDayDate] = useState(null);
+  const [dcSort, setDcSort] = useState("manual");
 
   const allDates = [...new Set(entries.map(d => d.date).filter(Boolean))].sort();
   const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
@@ -1747,9 +1903,44 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
     if (prevDayEntries.length === 0) return;
     const newEntries = prevDayEntries.map(d => ({
       ...d, id: genId(), date: targetDate,
-      affiliates: "", brands: "", // Reset numbers
+      affiliates: "", brands: "",
     }));
     setEntries(prev => [...prev, ...newEntries]);
+  };
+
+  const handleDcMove = (id, direction) => {
+    setEntries(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(d => d.id === id);
+      if (idx < 0) return prev;
+      const item = arr[idx];
+      const dateKey = item.date;
+      const dateIndices = arr.map((d, i) => d.date === dateKey ? i : -1).filter(i => i >= 0);
+      const posInDate = dateIndices.indexOf(idx);
+      if (direction === "up" && posInDate > 0) {
+        const swapIdx = dateIndices[posInDate - 1];
+        [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+      } else if (direction === "down" && posInDate < dateIndices.length - 1) {
+        const swapIdx = dateIndices[posInDate + 1];
+        [arr[idx], arr[swapIdx]] = [arr[swapIdx], arr[idx]];
+      }
+      return arr;
+    });
+  };
+
+  const handleDcSortAlpha = () => {
+    if (dcSort === "alpha") { setDcSort("manual"); return; }
+    setDcSort("alpha");
+    setEntries(prev => {
+      const dateOrder = [...new Set(prev.map(d => d.date || "Unknown"))];
+      const sorted = [];
+      dateOrder.forEach(dk => {
+        const items = prev.filter(d => (d.date || "Unknown") === dk);
+        items.sort((a, b) => (a.agent || "").localeCompare(b.agent || "", undefined, { numeric: true }));
+        sorted.push(...items);
+      });
+      return sorted;
+    });
   };
 
   const matchSearch = d => {
@@ -1851,6 +2042,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
           <button onClick={() => handleCopyPrevDay(tomorrow)}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #6366F1", borderRadius: 8, color: "#6366F1", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
           >📋 Copy Last Day → Tomorrow</button>
+          <button onClick={handleDcSortAlpha}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: dcSort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${dcSort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 8, color: dcSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600, marginLeft: "auto" }}
+          >{dcSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
         </div>
 
         {/* Summary cards */}
@@ -1870,12 +2064,15 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
 
         {sortedDates.map(dateKey => {
           const items = grouped[dateKey];
-          const dayAff = items.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
-          const dayBrands = items.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+          const sortedItems = dcSort === "alpha"
+            ? [...items].sort((a, b) => (a.agent || "").localeCompare(b.agent || "", undefined, { numeric: true }))
+            : items;
+          const dayAff = sortedItems.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
+          const dayBrands = sortedItems.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
           const dayTotal = dayAff + dayBrands;
 
           return (
-            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={items.length} total={dayTotal} accentColor="#8B5CF6" defaultOpen={true}>
+            <GroupHeader key={dateKey} icon={I.calendar} title={fmtDate(dateKey)} count={sortedItems.length} total={dayTotal} accentColor="#8B5CF6" defaultOpen={true}>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
                   <thead>
@@ -1886,7 +2083,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map(d => {
+                    {sortedItems.map((d, rowIdx) => {
                       const t = (parseInt(d.affiliates) || 0) + (parseInt(d.brands) || 0);
                       return (
                         <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
@@ -1901,8 +2098,14 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.affiliates || ""}</td>
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.brands || ""}</td>
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{t || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                            <div style={{ display: "flex", gap: 6, justifyContent: "center" }}>
+                          <td style={{ padding: "8px 8px", textAlign: "center" }}>
+                            <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
+                              {dcSort !== "alpha" && <>
+                                <button onClick={() => handleDcMove(d.id, "up")} title="Move up" disabled={rowIdx === 0}
+                                  style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === 0 ? "default" : "pointer", color: rowIdx === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                                <button onClick={() => handleDcMove(d.id, "down")} title="Move down" disabled={rowIdx === sortedItems.length - 1}
+                                  style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === sortedItems.length - 1 ? "default" : "pointer", color: rowIdx === sortedItems.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                              </>}
                               <button onClick={() => { setEditEntry(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                               <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                             </div>
