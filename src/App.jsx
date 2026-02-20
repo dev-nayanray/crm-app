@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.046";
+const VERSION = "1.048";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2221,7 +2221,18 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
-  const [dealsSort, setDealsSort] = useState("manual");
+  const [sortCol, setSortCol] = useState(null); // null | "affiliate" | "country" | "price" | "crg" | "funnels" | "source" | "deduction"
+  const [sortDir, setSortDir] = useState("asc"); // "asc" | "desc"
+
+  const handleColumnSort = col => {
+    if (sortCol === col) {
+      if (sortDir === "asc") setSortDir("desc");
+      else { setSortCol(null); setSortDir("asc"); } // third click = clear sort
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  };
 
   const handleMove = (dealId, direction) => {
     setDeals(prev => {
@@ -2232,12 +2243,6 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
       if (direction === "down" && idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
       return arr;
     });
-  };
-
-  const handleSortAlpha = () => {
-    if (dealsSort === "alpha") { setDealsSort("manual"); return; }
-    setDealsSort("alpha");
-    setDeals(prev => [...prev].sort((a, b) => (a.affiliate || "").localeCompare(b.affiliate || "", undefined, { numeric: true })));
   };
 
   const handleSave = form => {
@@ -2259,9 +2264,21 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   };
 
   const filtered = deals.filter(matchSearch);
-  const sorted = dealsSort === "alpha"
-    ? [...filtered].sort((a, b) => (a.affiliate || "").localeCompare(b.affiliate || "", undefined, { numeric: true }))
-    : filtered;
+  const sorted = (() => {
+    if (!sortCol) return filtered;
+    const arr = [...filtered];
+    const numCols = ["price", "crg", "deduction", "affiliate"];
+    const isNum = numCols.includes(sortCol);
+    arr.sort((a, b) => {
+      const va = a[sortCol] || "";
+      const vb = b[sortCol] || "";
+      let cmp;
+      if (isNum) cmp = (parseFloat(va) || 0) - (parseFloat(vb) || 0);
+      else cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: "base" });
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+    return arr;
+  })();
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
@@ -2304,9 +2321,9 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals..."
                 style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14 }} />
             </div>
-            <button onClick={handleSortAlpha}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: dealsSort === "alpha" ? "#10B981" : "transparent", border: `2px solid ${dealsSort === "alpha" ? "#10B981" : "#94A3B8"}`, borderRadius: 10, color: dealsSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
-            >{dealsSort === "alpha" ? "✓ A→Z" : "A→Z"}</button>
+            {sortCol && <button onClick={() => { setSortCol(null); setSortDir("asc"); }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#10B981", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+            >↕ Sort: {sortCol} {sortDir === "asc" ? "↑" : "↓"} ✕</button>}
             <button onClick={() => { setEditDeal(null); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Deal</button>
@@ -2328,8 +2345,27 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ background: "#F8FAFC" }}>
-                  {["Affiliate","Country","Price","CRG","Funnels","Source","Deduction","Actions"].map(h =>
-                    <th key={h} style={{ padding: "12px 14px", textAlign: h === "Funnels" || h === "Source" ? "left" : "center", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+                  {[
+                    { key: "affiliate", label: "Affiliate" },
+                    { key: "country", label: "Country" },
+                    { key: "price", label: "Price" },
+                    { key: "crg", label: "CRG" },
+                    { key: "funnels", label: "Funnels" },
+                    { key: "source", label: "Source" },
+                    { key: "deduction", label: "Deduction" },
+                    { key: null, label: "Actions" },
+                  ].map(h =>
+                    <th key={h.label} onClick={h.key ? () => handleColumnSort(h.key) : undefined}
+                      style={{ padding: "12px 14px", textAlign: h.label === "Funnels" || h.label === "Source" ? "left" : "center", color: sortCol === h.key ? "#0F172A" : "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", cursor: h.key ? "pointer" : "default", userSelect: "none", background: sortCol === h.key ? "#E2E8F0" : "transparent", transition: "background 0.15s" }}
+                      onMouseEnter={e => { if (h.key) e.currentTarget.style.background = "#E2E8F0"; }}
+                      onMouseLeave={e => { if (h.key) e.currentTarget.style.background = sortCol === h.key ? "#E2E8F0" : "transparent"; }}
+                    >
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        {h.label}
+                        {h.key && sortCol === h.key && <span style={{ fontSize: 14, color: "#0EA5E9" }}>{sortDir === "asc" ? "▲" : "▼"}</span>}
+                        {h.key && sortCol !== h.key && <span style={{ fontSize: 10, color: "#CBD5E1", marginLeft: 2 }}>↕</span>}
+                      </span>
+                    </th>
                   )}
                 </tr>
               </thead>
@@ -2348,7 +2384,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       >{d.affiliate}</span>
                     </td>
                     <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9", letterSpacing: 1 }}>
-                      {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 17 }}>{countryFlag(d.country)}</span>{d.country}</span> : ""}
+                      {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{d.country}</span> : ""}
                     </td>
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
                       {d.price ? `${parseFloat(d.price).toLocaleString("en-US")}$` : ""}
@@ -2363,7 +2399,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                     </td>
                     <td style={{ padding: "8px 8px" }}>
                       <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center" }}>
-                        {dealsSort !== "alpha" && <>
+                        {!sortCol && <>
                           <button onClick={() => handleMove(d.id, "up")} title="Move up" disabled={i === 0}
                             style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
                           <button onClick={() => handleMove(d.id, "down")} title="Move down" disabled={i === sorted.length - 1}
