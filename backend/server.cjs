@@ -93,18 +93,19 @@ I can help you manage payments and get wallet information.
         return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; 
       })() : "N/A";
       
-      const walletMessage = `💳 <b>Current Wallets</b> (${dateStr})
+const walletMessage = `💳 Current Wallets (${dateStr})
 
-<b>TRC-20:</b>
-<code>${latestWallet.trc || "—"}</code>
+TRC-20:
+${latestWallet.trc || "—"}
 
-<b>ERC-20 (USDT/USDC):</b>
-<code>${latestWallet.erc || "—"}</code>
+ERC-20 (USDT/USDC):
+${latestWallet.erc || "—"}
 
-<b>BTC:</b>
-<code>${latestWallet.btc || "—"}</code>
+BTC:
+${latestWallet.btc || "—"}
 
-<i>Last updated: ${dateStr}</i>`;
+Last updated: ${dateStr}
+*3% fee`;
       
       bot.sendMessage(chatId, walletMessage, { parse_mode: "HTML" });
       console.log("📱 /wallets command responded to chat:", chatId);

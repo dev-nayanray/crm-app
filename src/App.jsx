@@ -657,7 +657,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
   const [delConfirm, setDelConfirm] = useState(null);
   const [editingWallet, setEditingWallet] = useState(null); // null or wallet id being edited
-  const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "" });
+const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "", fee: "" });
 
   const handleAddUser = () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
@@ -799,10 +799,10 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg, #0088cc, #00aaff)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(0,136,204,0.3)" }}
               >📤 Send to Telegram</button>
               <button onClick={() => {
-                const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
+                const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "", fee: "" };
                 setWallets(prev => [newW, ...prev]);
                 setEditingWallet(newW.id);
-                setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
+                setWalletForm({ date: newW.date, trc: "", erc: "", btc: "", fee: "" });
               }}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
               >{I.plus} Add Wallet</button>
@@ -837,6 +837,11 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>BTC</label>
                         <input value={walletForm.btc} onChange={e => setWalletForm(p => ({ ...p, btc: e.target.value }))}
                           style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="BTC address..." />
+                      </div>
+                      <div style={{ marginBottom: 14 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Fee</label>
+                        <input value={walletForm.fee || ""} onChange={e => setWalletForm(p => ({ ...p, fee: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="e.g. 3%" />
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button onClick={() => {
