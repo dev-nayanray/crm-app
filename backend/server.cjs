@@ -6,13 +6,13 @@ const https = require("https");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.044";
+const VERSION = "1.051";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 
 // Telegram Bot Configuration
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = "-1002830517753";
+const FINANCE_GROUP_CHAT_ID = "-4744920512";
 
 // Helper function to send Telegram notifications using direct API
 function sendTelegramNotification(message) {
@@ -105,7 +105,7 @@ function writeJSON(filename, data) {
 }
 
 // ── Data Endpoints ──
-const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals"];
+const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
 
 // GET /api/payments — load payments
 app.get("/api/payments", (req, res) => {
@@ -162,7 +162,7 @@ app.post("/api/payments", (req, res) => {
 });
 
 // Other data endpoints (generic GET/POST)
-["customer-payments", "users", "crg-deals", "daily-cap", "deals"].forEach(ep => {
+["customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
   const file = ep + ".json";
   app.get(`/api/${ep}`, (req, res) => res.json(readJSON(file, [])));
   app.post(`/api/${ep}`, (req, res) => { writeJSON(file, req.body); res.json({ ok: true, count: req.body.length }); });
