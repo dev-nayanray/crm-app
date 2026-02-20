@@ -61,13 +61,13 @@ function sendTelegramNotification(message) {
 }
 
 // Format message for open payment
-// function formatOpenPaymentMessage(payment) {
-//   return `💰 <b>NEW OPEN PAYMENT</b>
+function formatOpenPaymentMessage(payment) {
+  return `💰 <b>NEW OPEN PAYMENT</b>
 
-// 📋 Invoice: <b>#${payment.invoice}</b>
-// 💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
-// 👤 Opened by: ${payment.openBy || "Unknown"}`;
-// }
+📋 Invoice: <b>#${payment.invoice}</b>
+💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
+👤 Opened by: ${payment.openBy || "Unknown"}`;
+}
 
 // Format message for paid payment
 function formatPaidPaymentMessage(payment) {
