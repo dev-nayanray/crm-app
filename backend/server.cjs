@@ -64,18 +64,17 @@ function formatOpenPaymentMessage(payment) {
 
 📋 Invoice: <b>#${payment.invoice}</b>
 💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
-👤 Opened by: ${payment.openBy || "Unknown"}
-📝 Type: ${payment.type || "Affiliate Payment"}`;
+👤 Opened by: ${payment.openBy || "Unknown"}`;
 }
 
 // Format message for paid payment
 function formatPaidPaymentMessage(payment) {
-  return `✅ <b>PAYMENT PAID</b>
+  return `💰 <b>PAYMENT DONE</b>
 
 📋 Invoice: <b>#${payment.invoice}</b>
 💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
-🔗 Hash: <code>${payment.paymentHash || "N/A"}</code>
-👤 Opened by: ${payment.openBy || "Unknown"}`;
+👤 Paid by: ${payment.openBy || "Unknown"}
+Payment Hash: <code>${payment.paymentHash || "N/A"}</code>`;
 }
 
 // Ensure data directory exists
@@ -118,21 +117,39 @@ app.post("/api/payments", (req, res) => {
   // Track payments by ID for easy lookup
   const oldPaymentsMap = new Map(oldPayments.map(p => [p.id, p]));
   
-  // Check for new payments (Open status)
+  console.log("📊 Processing payments update:", newPayments.length, "items");
+  
+  // Check for each payment
   newPayments.forEach(p => {
     const oldP = oldPaymentsMap.get(p.id);
+    
     if (!oldP) {
-      // New payment added - if it's Open, notify
+      // NEW payment - notify based on status
+      console.log("📋 NEW Payment:", p.invoice, "| Status:", p.status);
       if (p.status === "Open" || p.status === "On the way" || p.status === "Approved to pay") {
         const message = formatOpenPaymentMessage(p);
-        console.log("📱 Sending notification for new open payment:", p.invoice);
+        console.log("📱 → Sending NEW OPEN notification:", p.invoice);
+        sendTelegramNotification(message);
+      } else if (p.status === "Paid") {
+        const message = formatPaidPaymentMessage(p);
+        console.log("📱 → Sending NEW PAID notification:", p.invoice);
         sendTelegramNotification(message);
       }
-    } else if (oldP.status !== "Paid" && p.status === "Paid") {
-      // Payment changed to Paid - send notification with hash
-      const message = formatPaidPaymentMessage(p);
-      console.log("📱 Sending notification for paid payment:", p.invoice);
-      sendTelegramNotification(message);
+    } else if (oldP.status !== p.status) {
+      // EXISTING payment - status changed
+      console.log("📋 Payment:", p.invoice, "| Old:", oldP.status, "| New:", p.status);
+      
+      if (p.status === "Paid" && oldP.status !== "Paid") {
+        // Changed TO Paid
+        console.log("📱 → Sending PAID status change notification:", p.invoice);
+        const message = formatPaidPaymentMessage(p);
+        sendTelegramNotification(message);
+      } else if ((p.status === "Open" || p.status === "On the way" || p.status === "Approved to pay") && oldP.status === "Paid") {
+        // Changed FROM Paid back to Open - send as new open
+        console.log("📱 → Sending RE-OPENED notification:", p.invoice);
+        const message = formatOpenPaymentMessage(p);
+        sendTelegramNotification(message);
+      }
     }
   });
   

@@ -604,7 +604,7 @@
   {
     "invoice": "202",
     "paidDate": "",
-    "status": "Open",
+    "status": "On the way",
     "amount": "244",
     "fee": "3",
     "openBy": "Nayan",
@@ -643,6 +643,21 @@
     "ercAddress": "",
     "paymentHash": "",
     "id": "4fq43bp5m",
+    "month": 1,
+    "year": 2026
+  },
+  {
+    "invoice": "245",
+    "paidDate": "",
+    "status": "Open",
+    "amount": "4000",
+    "fee": "4",
+    "openBy": "Nayan",
+    "type": "Affiliate Payment",
+    "trcAddress": "232hdsghggasutyytw",
+    "ercAddress": "0Xkdhsfuisdhaeiusdnifio",
+    "paymentHash": "0Xkdhsfuisdhaeiusdnifio",
+    "id": "cujaagf7m",
     "month": 1,
     "year": 2026
   }
