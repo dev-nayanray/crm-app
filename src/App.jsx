@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.041";
+const VERSION = "1.043";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1111,7 +1111,7 @@ const CP_INITIAL = [
 ];
 
 function CPForm({ payment, onSave, onClose, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -1154,6 +1154,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
         <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
+        <Field label="Payment Hash"><input style={inp} value={f.paymentHash || ""} onChange={e => s("paymentHash", e.target.value)} placeholder="Transaction hash..." /></Field>
       </div>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
@@ -1184,7 +1185,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Type","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Actions"].map(h =>
+            {["Invoice","Paid Date","Type","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Payment Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
             )}
           </tr>
@@ -1222,6 +1223,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
               </td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#94A3B8", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "8px 8px" }}>
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
@@ -2160,6 +2162,8 @@ export default function App() {
   const skipSave = useRef(true);
 
   // On startup: connect to server and sync
+  // PRIORITY: Server data > localStorage > hardcoded defaults
+  // NEVER overwrite real data with hardcoded defaults
   useEffect(() => {
     (async () => {
       skipSave.current = true;
@@ -2169,37 +2173,41 @@ export default function App() {
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'),
       ]);
 
-      if (serverOnline) {
-        // Server is up! Check if server has data or is empty
-        const serverHasPayments = p !== null && p.length > 0;
-        const serverHasUsers = u !== null && u.length > 0;
-        const localPayments = lsGet('payments', INITIAL);
-        const localHasData = localPayments.length > INITIAL.length;
+      // Step 2: Get localStorage data
+      const lu = lsGet('users', null);
+      const lp = lsGet('payments', null);
+      const lcp = lsGet('customer-payments', null);
+      const lcrg = lsGet('crg-deals', null);
+      const ldc = lsGet('daily-cap', null);
 
-        if (serverHasPayments || serverHasUsers) {
+      if (serverOnline) {
+        const serverHasData = [u, p, cp, crg, dc].some(d => d !== null && d.length > 0);
+        const localHasData = [lu, lp, lcp, lcrg, ldc].some(d => d !== null && d.length > 0);
+
+        if (serverHasData) {
           // Server has data — use it as truth
           if (u !== null && u.length > 0) setUsers(u);
-          if (p !== null) setPayments(p);
-          if (cp !== null) setCpPayments(cp);
-          if (crg !== null) setCrgDeals(crg);
-          if (dc !== null) setDcEntries(dc);
+          if (p !== null && p.length > 0) setPayments(p);
+          if (cp !== null && cp.length > 0) setCpPayments(cp);
+          if (crg !== null && crg.length > 0) setCrgDeals(crg);
+          if (dc !== null && dc.length > 0) setDcEntries(dc);
           setSyncBanner("synced");
         } else if (localHasData) {
-          // Server is empty but we have local data — push it up
+          // Server is empty but localStorage has data — push local up
           setSyncBanner("pushing");
-          const lu = lsGet('users', INITIAL_USERS);
-          const lp = lsGet('payments', INITIAL);
-          const lcp = lsGet('customer-payments', CP_INITIAL);
-          const lcrg = lsGet('crg-deals', CRG_INITIAL);
-          const ldc = lsGet('daily-cap', DC_INITIAL);
+          const pushU = lu || INITIAL_USERS;
+          const pushP = lp || INITIAL;
+          const pushCp = lcp || CP_INITIAL;
+          const pushCrg = lcrg || CRG_INITIAL;
+          const pushDc = ldc || DC_INITIAL;
+          setUsers(pushU); setPayments(pushP); setCpPayments(pushCp); setCrgDeals(pushCrg); setDcEntries(pushDc);
           await Promise.all([
-            apiSave('users', lu), apiSave('payments', lp), apiSave('customer-payments', lcp),
-            apiSave('crg-deals', lcrg), apiSave('daily-cap', ldc),
+            apiSave('users', pushU), apiSave('payments', pushP), apiSave('customer-payments', pushCp),
+            apiSave('crg-deals', pushCrg), apiSave('daily-cap', pushDc),
           ]);
           setSyncBanner("synced");
         } else {
-          // Server empty, local empty — use defaults (already set)
-          // Push defaults to server so other users get them
+          // Both empty — first time setup, push defaults
           await Promise.all([
             apiSave('users', INITIAL_USERS), apiSave('payments', INITIAL),
             apiSave('customer-payments', CP_INITIAL), apiSave('crg-deals', CRG_INITIAL),
@@ -2208,12 +2216,17 @@ export default function App() {
           setSyncBanner("synced");
         }
       } else {
+        // Server offline — use localStorage if available (already loaded as defaults)
+        if (lu && lu.length > 0) setUsers(lu);
+        if (lp && lp.length > 0) setPayments(lp);
+        if (lcp && lcp.length > 0) setCpPayments(lcp);
+        if (lcrg && lcrg.length > 0) setCrgDeals(lcrg);
+        if (ldc && ldc.length > 0) setDcEntries(ldc);
         setSyncBanner("offline");
       }
 
       setLoaded(true);
       setTimeout(() => { skipSave.current = false; }, 800);
-      // Clear banner after 5 seconds
       setTimeout(() => setSyncBanner(null), 5000);
     })();
   }, []);
