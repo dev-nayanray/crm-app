@@ -77,13 +77,13 @@ const INITIAL_USERS = [
   { email: "wpnayanray@gmail.com", passwordHash: "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0", name: "Nayan" },
 ];
 
-const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
+const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.050";
+const VERSION = "1.051";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
-const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals' };
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets' };
 
 function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
 function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.stringify(data)); } catch(e) {} }
@@ -651,11 +651,13 @@ function PageAccessToggles({ access, onChange }) {
   );
 }
 
-function AdminPanel({ users, setUsers, onBack }) {
+function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
   const [delConfirm, setDelConfirm] = useState(null);
+  const [editingWallet, setEditingWallet] = useState(null); // null or wallet id being edited
+  const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "" });
 
   const handleAddUser = () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
@@ -774,6 +776,96 @@ function AdminPanel({ users, setUsers, onBack }) {
                 style={{ padding: "10px 20px", background: "transparent", border: "2px solid #0088cc", borderRadius: 8, color: "#0088cc", cursor: "pointer", fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}
               >📤 Send Test Message</button>
             </div>
+          </div>
+        </div>
+
+        {/* Wallets Section */}
+        <div style={{ marginTop: 32 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>💳 Wallets</h2>
+            <button onClick={() => {
+              const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
+              setWallets(prev => [newW, ...prev]);
+              setEditingWallet(newW.id);
+              setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
+            }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
+            >{I.plus} Add Wallet</button>
+          </div>
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
+            {(!wallets || wallets.length === 0) && (
+              <div style={{ padding: "30px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No wallets added yet.</div>
+            )}
+            {(wallets || []).map((w, wi) => {
+              const isEditing = editingWallet === w.id;
+              return (
+                <div key={w.id} style={{ padding: "18px 24px", borderBottom: wi < wallets.length - 1 ? "1px solid #F1F5F9" : "none" }}>
+                  {isEditing ? (
+                    <div>
+                      <div style={{ marginBottom: 12 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Date</label>
+                        <input type="date" value={walletForm.date} onChange={e => setWalletForm(p => ({ ...p, date: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, maxWidth: 200 }} />
+                      </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>TRC</label>
+                        <input value={walletForm.trc} onChange={e => setWalletForm(p => ({ ...p, trc: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="TRC20 address..." />
+                      </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>ERC USDT/USDC</label>
+                        <input value={walletForm.erc} onChange={e => setWalletForm(p => ({ ...p, erc: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="ERC20 address..." />
+                      </div>
+                      <div style={{ marginBottom: 14 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>BTC</label>
+                        <input value={walletForm.btc} onChange={e => setWalletForm(p => ({ ...p, btc: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="BTC address..." />
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button onClick={() => {
+                          setWallets(prev => prev.map(ww => ww.id === w.id ? { ...ww, ...walletForm } : ww));
+                          setEditingWallet(null);
+                        }}
+                          style={{ padding: "8px 18px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Save</button>
+                        <button onClick={() => setEditingWallet(null)}
+                          style={{ padding: "8px 18px", background: "transparent", border: "1px solid #E2E8F0", borderRadius: 8, color: "#64748B", cursor: "pointer", fontSize: 13 }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "#0F172A" }}>
+                          Wallets ({w.date ? (() => { const d = new Date(w.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })() : "—"})
+                        </span>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => { setEditingWallet(w.id); setWalletForm({ date: w.date || "", trc: w.trc || "", erc: w.erc || "", btc: w.btc || "" }); }}
+                            style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                          <button onClick={() => setWallets(prev => prev.filter(ww => ww.id !== w.id))}
+                            style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                        </div>
+                      </div>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <tbody>
+                          <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
+                            <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B", width: 120 }}>TRC:</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.trc || "—"}</td>
+                          </tr>
+                          <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
+                            <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>ERC USDT/USDC:</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.erc || "—"}</td>
+                          </tr>
+                          <tr>
+                            <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>BTC:</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.btc || "—"}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </main>
@@ -2544,6 +2636,7 @@ export default function App() {
   const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', CRG_INITIAL));
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', DC_INITIAL));
   const [dealsData, setDealsData] = useState(() => lsGet('deals', DEALS_INITIAL));
+  const [walletsData, setWalletsData] = useState(() => lsGet('wallets', [{ id: genId(), date: "2026-02-19", trc: "TAXupFc6A9Svhy22bJn7QQzPaLtZ6tGQ15", erc: "0xbF7178Bd7526C25387df412cbe12927b593E31E5", btc: "bc1qqhtk4fhlnkf7sv768jdss5da7ce0wnpue6ltwd" }]));
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const [syncBanner, setSyncBanner] = useState(null); // null | "pushing" | "synced" | "offline"
@@ -2557,8 +2650,8 @@ export default function App() {
       skipSave.current = true;
 
       // Step 1: Try to reach the server
-      const [u, p, cp, crg, dc, dl] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'),
+      const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
       ]);
 
       // Step 2: Get localStorage data
@@ -2568,10 +2661,11 @@ export default function App() {
       const lcrg = lsGet('crg-deals', null);
       const ldc = lsGet('daily-cap', null);
       const ldl = lsGet('deals', null);
+      const lwl = lsGet('wallets', null);
 
       if (serverOnline) {
-        const serverHasData = [u, p, cp, crg, dc, dl].some(d => d !== null && d.length > 0);
-        const localHasData = [lu, lp, lcp, lcrg, ldc, ldl].some(d => d !== null && d.length > 0);
+        const serverHasData = [u, p, cp, crg, dc, dl, wl].some(d => d !== null && d.length > 0);
+        const localHasData = [lu, lp, lcp, lcrg, ldc, ldl, lwl].some(d => d !== null && d.length > 0);
 
         if (serverHasData) {
           // Server has data — use it as truth
@@ -2581,6 +2675,7 @@ export default function App() {
           if (crg !== null && crg.length > 0) setCrgDeals(crg);
           if (dc !== null && dc.length > 0) setDcEntries(dc);
           if (dl !== null && dl.length > 0) setDealsData(dl);
+          if (wl !== null && wl.length > 0) setWalletsData(wl);
           setSyncBanner("synced");
         } else if (localHasData) {
           // Server is empty but localStorage has data — push local up
@@ -2591,10 +2686,11 @@ export default function App() {
           const pushCrg = lcrg || CRG_INITIAL;
           const pushDc = ldc || DC_INITIAL;
           const pushDl = ldl || DEALS_INITIAL;
-          setUsers(pushU); setPayments(pushP); setCpPayments(pushCp); setCrgDeals(pushCrg); setDcEntries(pushDc); setDealsData(pushDl);
+          const pushWl = lwl || walletsData;
+          setUsers(pushU); setPayments(pushP); setCpPayments(pushCp); setCrgDeals(pushCrg); setDcEntries(pushDc); setDealsData(pushDl); setWalletsData(pushWl);
           await Promise.all([
             apiSave('users', pushU), apiSave('payments', pushP), apiSave('customer-payments', pushCp),
-            apiSave('crg-deals', pushCrg), apiSave('daily-cap', pushDc), apiSave('deals', pushDl),
+            apiSave('crg-deals', pushCrg), apiSave('daily-cap', pushDc), apiSave('deals', pushDl), apiSave('wallets', pushWl),
           ]);
           setSyncBanner("synced");
         } else {
@@ -2602,7 +2698,7 @@ export default function App() {
           await Promise.all([
             apiSave('users', INITIAL_USERS), apiSave('payments', INITIAL),
             apiSave('customer-payments', CP_INITIAL), apiSave('crg-deals', CRG_INITIAL),
-            apiSave('daily-cap', DC_INITIAL), apiSave('deals', DEALS_INITIAL),
+            apiSave('daily-cap', DC_INITIAL), apiSave('deals', DEALS_INITIAL), apiSave('wallets', walletsData),
           ]);
           setSyncBanner("synced");
         }
@@ -2614,6 +2710,7 @@ export default function App() {
         if (lcrg && lcrg.length > 0) setCrgDeals(lcrg);
         if (ldc && ldc.length > 0) setDcEntries(ldc);
         if (ldl && ldl.length > 0) setDealsData(ldl);
+        if (lwl && lwl.length > 0) setWalletsData(lwl);
         setSyncBanner("offline");
       }
 
@@ -2632,8 +2729,8 @@ export default function App() {
         try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch(e) {}
       }
       if (!serverOnline) return;
-      const [u, p, cp, crg, dc, dl] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'),
+      const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
       ]);
       skipSave.current = true;
       if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
@@ -2642,6 +2739,7 @@ export default function App() {
       if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
       if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
       if (dl !== null) setDealsData(prev => JSON.stringify(prev) !== JSON.stringify(dl) ? dl : prev);
+      if (wl !== null) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
       setTimeout(() => { skipSave.current = false; }, 500);
     };
     const interval = setInterval(poll, 8000);
@@ -2655,14 +2753,15 @@ export default function App() {
   useEffect(() => { if (!skipSave.current && loaded) apiSave('crg-deals', crgDeals); }, [crgDeals]);
   useEffect(() => { if (!skipSave.current && loaded) apiSave('daily-cap', dcEntries); }, [dcEntries]);
   useEffect(() => { if (!skipSave.current && loaded) apiSave('deals', dealsData); }, [dealsData]);
+  useEffect(() => { if (!skipSave.current && loaded) apiSave('wallets', walletsData); }, [walletsData]);
 
   const handleLogout = () => { setUser(null); setPage("dashboard"); };
 
   const handleRefresh = async () => {
     skipSave.current = true;
     serverOnline = false; // force re-check
-    const [u, p, cp, crg, dc, dl] = await Promise.all([
-      apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'),
+    const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+      apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
     ]);
     if (u !== null && u.length > 0) setUsers(u);
     if (p !== null) setPayments(p);
@@ -2670,6 +2769,7 @@ export default function App() {
     if (crg !== null) setCrgDeals(crg);
     if (dc !== null) setDcEntries(dc);
     if (dl !== null) setDealsData(dl);
+    if (wl !== null) setWalletsData(wl);
     setTimeout(() => { skipSave.current = false; }, 500);
   };
 
@@ -2712,7 +2812,7 @@ export default function App() {
     return null;
   }
 
-  if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} /></>);
+  if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
   if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} onDeals={() => setPage("deals")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><SyncBanner /><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
