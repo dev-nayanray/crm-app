@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
 const https = require("https");
+const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
@@ -13,6 +14,84 @@ const BACKUP_DIR = path.join(__dirname, "backups");
 // Telegram Bot Configuration
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = "-4744920512";
+
+// Initialize Telegram Bot (for commands)
+let bot;
+if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
+  try {
+    bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
+    console.log("🤖 Telegram bot initialized - polling for commands...");
+    
+    // Register bot commands with Telegram (shows in command suggestions)
+    bot.setMyCommands([
+      { command: "/start", description: "Show welcome message and help" },
+      { command: "/wallets", description: "Get current wallet addresses" }
+    ]).then(() => {
+      console.log("✅ Bot commands registered with Telegram");
+    }).catch((err) => {
+      console.log("⚠️ Failed to register commands:", err.message);
+    });
+    
+    // ── Bot Commands ──
+    
+    // /start command - Show welcome message with available commands
+    bot.onText(/\/start/, (msg) => {
+      const chatId = msg.chat.id;
+      const welcomeMessage = `👋 <b>Welcome to Blitz Finance Bot!</b>
+
+I can help you manage payments and get wallet information.
+
+<b>Available Commands:</b>
+/wallets - Get current wallet addresses
+/start - Show this help message
+
+<i>More commands coming soon!</i>`;
+      
+      bot.sendMessage(chatId, welcomeMessage, { parse_mode: "HTML" });
+    });
+    
+    // /wallets command - Send current wallet addresses
+    bot.onText(/\/wallets/, (msg) => {
+      const chatId = msg.chat.id;
+      
+      // Read wallets from data file
+      const wallets = readJSON("wallets.json", []);
+      
+      if (!wallets || wallets.length === 0) {
+        bot.sendMessage(chatId, "❌ No wallets found. Please add wallets in the admin panel first.", { parse_mode: "HTML" });
+        return;
+      }
+      
+      // Get the most recent wallet (first one)
+      const latestWallet = wallets[0];
+      const dateStr = latestWallet.date ? (() => { 
+        const d = new Date(latestWallet.date + "T00:00:00"); 
+        return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; 
+      })() : "N/A";
+      
+      const walletMessage = `💳 <b>Current Wallets</b> (${dateStr})
+
+<b>TRC-20:</b>
+<code>${latestWallet.trc || "—"}</code>
+
+<b>ERC-20 (USDT/USDC):</b>
+<code>${latestWallet.erc || "—"}</code>
+
+<b>BTC:</b>
+<code>${latestWallet.btc || "—"}</code>
+
+<i>Last updated: ${dateStr}</i>`;
+      
+      bot.sendMessage(chatId, walletMessage, { parse_mode: "HTML" });
+      console.log("📱 /wallets command responded to chat:", chatId);
+    });
+    
+    console.log("✅ Bot command handlers ready: /start, /wallets");
+    
+  } catch (err) {
+    console.log("⚠️ Failed to initialize Telegram bot:", err.message);
+  }
+}
 
 // Helper function to send Telegram notifications using direct API
 function sendTelegramNotification(message) {
