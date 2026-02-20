@@ -9,7 +9,7 @@ const PORT = 3001;
 const DATA_DIR = path.join(__dirname, "data");
 
 // Telegram Bot Configuration - REPLACE WITH YOUR VALID TOKEN
-const TELEGRAM_TOKEN = "7703980080:AAH-Z2zei7-NRKagYL-Kja5Yp7PI8rk03E8";  // Get from @BotFather
+const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";  // Get from @BotFather
 const FINANCE_GROUP_CHAT_ID = "-4744920512";
 
 // Helper function to send Telegram notifications using direct API
@@ -84,7 +84,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// ── Helper: read/write JSON files ──
+// Helper: read/write JSON files
 function readJSON(filename, fallback) {
   const filepath = path.join(DATA_DIR, filename);
   try {
@@ -102,7 +102,7 @@ function writeJSON(filename, data) {
   fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8");
 }
 
-// ── API Routes ──
+// API Routes
 
 // GET /api/payments — load payments
 app.get("/api/payments", (req, res) => {
@@ -117,7 +117,6 @@ app.post("/api/payments", (req, res) => {
   
   // Track payments by ID for easy lookup
   const oldPaymentsMap = new Map(oldPayments.map(p => [p.id, p]));
-  const newPaymentsMap = new Map(newPayments.map(p => [p.id, p]));
   
   // Check for new payments (Open status)
   newPayments.forEach(p => {
@@ -194,7 +193,7 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
-// ── Telegram Notification Endpoints ──
+// Telegram Notification Endpoints
 
 // POST /api/telegram/notify - Send custom notification (for testing)
 app.post("/api/telegram/notify", (req, res) => {
@@ -206,7 +205,7 @@ app.post("/api/telegram/notify", (req, res) => {
   res.json({ ok: true });
 });
 
-// POST /api/telegram/test - Test bot connection
+// GET /api/telegram/test - Test bot connection
 app.get("/api/telegram/test", (req, res) => {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
     return res.json({ status: "no_token", message: "Please configure your Telegram bot token in server.cjs" });
@@ -220,7 +219,7 @@ app.get("/api/telegram/test", (req, res) => {
     method: 'GET'
   };
 
-  const req = https.request(options, (response) => {
+  const botReq = https.request(options, (response) => {
     let data = '';
     response.on('data', (chunk) => { data += chunk; });
     response.on('end', () => {
@@ -237,15 +236,15 @@ app.get("/api/telegram/test", (req, res) => {
     });
   });
 
-  req.on('error', (err) => {
+  botReq.on('error', (err) => {
     res.json({ status: "error", error: err.message });
   });
 
-  req.end();
+  botReq.end();
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Blitz Payments API running on port ${PORT}`);
   console.log(`   Data stored in: ${DATA_DIR}`);
-  console.log(`   Telegram bot: @stratus_finance_bot`);
+  console.log(`   Telegram bot: @blitzfinance_bot`);
 });
