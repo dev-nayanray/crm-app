@@ -783,14 +783,30 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
         <div style={{ marginTop: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>💳 Wallets</h2>
-            <button onClick={() => {
-              const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
-              setWallets(prev => [newW, ...prev]);
-              setEditingWallet(newW.id);
-              setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
-            }}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
-            >{I.plus} Add Wallet</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={async () => {
+                if (!wallets || wallets.length === 0) {
+                  alert("No wallets to send. Please add a wallet first.");
+                  return;
+                }
+                // Get the most recent wallet (first one)
+                const latestWallet = wallets[0];
+                const dateStr = latestWallet.date ? (() => { const d = new Date(latestWallet.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })() : "N/A";
+                const message = `Wallets (${dateStr}):\nTRC: ${latestWallet.trc || "—"}\nERC USDT/USDC: ${latestWallet.erc || "—"}\nBTC: ${latestWallet.btc || "—"}`;
+                const res = await telegramNotify(message);
+                alert(res.ok ? "✅ Wallet info sent to Telegram group!" : "❌ Failed to send: " + (res.error || "Unknown error"));
+              }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg, #0088cc, #00aaff)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(0,136,204,0.3)" }}
+              >📤 Send to Telegram</button>
+              <button onClick={() => {
+                const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
+                setWallets(prev => [newW, ...prev]);
+                setEditingWallet(newW.id);
+                setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
+              }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
+              >{I.plus} Add Wallet</button>
+            </div>
           </div>
           <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
             {(!wallets || wallets.length === 0) && (
@@ -994,7 +1010,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, on
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
       setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
-      telegramNotify(`🆕 New payment #${form.invoice} — ${parseFloat(form.amount).toLocaleString()}$ opened by ${user.name}`);
+        telegramNotify(`💰 NEW OPEN PAYMENT\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString("en-US")}\n👤 Opened by: ${user.name}`);
     }
     setModalOpen(false);
     setEditPay(null);
