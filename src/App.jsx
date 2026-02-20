@@ -2068,7 +2068,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(d);
   });
-  const sortedDates = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a)); // newest first
 
   const fmtDate = ds => {
     if (!ds || ds === "Unknown") return "Unknown";
