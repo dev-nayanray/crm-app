@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.048";
+const VERSION = "1.050";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -475,11 +475,24 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "6%" }} />{/* Invoice */}
+          <col style={{ width: "7%" }} />{/* Paid Date */}
+          <col style={{ width: "9%" }} />{/* Type */}
+          <col style={{ width: "10%" }} />{/* Status */}
+          <col style={{ width: "8%" }} />{/* Amount */}
+          <col style={{ width: "6%" }} />{/* Fee */}
+          <col style={{ width: "8%" }} />{/* Open By */}
+          <col style={{ width: "14%" }} />{/* TRC */}
+          <col style={{ width: "14%" }} />{/* ERC */}
+          <col style={{ width: "10%" }} />{/* Hash */}
+          <col style={{ width: "8%" }} />{/* Actions */}
+        </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Payment Hash","Actions"].map(h =>
-              <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+            {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
@@ -490,44 +503,44 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "11px 14px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                 >{p.invoice}</span>
               </td>
-              <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Affiliate Payment"}</span>
+              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Affiliate Payment"}</span>
               </td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
                 {p.status !== "Paid" && statusOptions && onStatusChange ? (
                   <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
-                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(statusStyle(p.status)), appearance: "auto", outline: "none" }}>
+                    style={{ padding: "3px 4px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(statusStyle(p.status)), appearance: "auto", outline: "none", maxWidth: "100%" }}>
                     {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
                   </select>
                 ) : (
-                  <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
+                  <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#94A3B8", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
-              <td style={{ padding: "8px 8px" }}>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "4px 4px" }}>
+                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
                     <button onClick={() => onMove(p.id, "up")} title="Move up" disabled={i === 0}
-                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 3, padding: "1px 3px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 10 }}>▲</button>
                     <button onClick={() => onMove(p.id, "down")} title="Move down" disabled={i === sorted.length - 1}
-                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 3, padding: "1px 3px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 10 }}>▼</button>
                   </>}
-                  <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                  <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 6, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                  <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 5, padding: 4, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                  <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 5, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                 </div>
               </td>
             </tr>
@@ -1194,11 +1207,24 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
 
   return (
     <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "7%" }} />
+          <col style={{ width: "9%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "6%" }} />
+          <col style={{ width: "8%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "14%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "8%" }} />
+        </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Paid Date","Type","Status","Invoice Amount","Fee","Open By","TRC Address","ERC Address","Payment Hash","Actions"].map(h =>
-              <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+            {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
@@ -1208,44 +1234,44 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "11px 14px", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                 >{p.invoice}</span>
               </td>
-              <td style={{ padding: "11px 14px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ padding: "4px 10px", borderRadius: 6, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 12, fontWeight: 600 }}>{p.type || "Brand Payment"}</span>
+              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Brand Payment"}</span>
               </td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
                 {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange ? (
                   <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
-                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(CP_STATUS_COLORS[p.status] || {}), appearance: "auto", outline: "none" }}>
+                    style={{ padding: "3px 4px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(CP_STATUS_COLORS[p.status] || {}), appearance: "auto", outline: "none", maxWidth: "100%" }}>
                     {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
                   </select>
                 ) : (
-                  <span style={{ display: "inline-block", padding: "5px 16px", borderRadius: 4, fontSize: 13, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
+                  <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "11px 14px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "11px 14px", fontSize: 12, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
-              <td style={{ padding: "11px 14px", borderRight: "1px solid #F1F5F9" }}>
-                <span style={{ display: "inline-block", padding: "4px 14px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 13 }}>{p.openBy}</span>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+                <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#475569", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "11px 14px", fontFamily: "'Space Mono',monospace", fontSize: 11, color: "#94A3B8", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
-              <td style={{ padding: "8px 8px" }}>
-                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "4px 4px" }}>
+                <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
                     <button onClick={() => onMove(p.id, "up")} title="Move up" disabled={i === 0}
-                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▲</button>
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 3, padding: "1px 3px", cursor: i === 0 ? "default" : "pointer", color: i === 0 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 10 }}>▲</button>
                     <button onClick={() => onMove(p.id, "down")} title="Move down" disabled={i === sorted.length - 1}
-                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
+                      style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 3, padding: "1px 3px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 10 }}>▼</button>
                   </>}
-                  <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 6, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                  <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 6, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                  <button onClick={() => onEdit(p)} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 5, padding: 4, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                  <button onClick={() => onDelete(p.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 5, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                 </div>
               </td>
             </tr>
@@ -1905,13 +1931,78 @@ function DCForm({ entry, onSave, onClose, defaultDate }) {
   );
 }
 
-function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefresh, userAccess }) {
+function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeals, onRefresh, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
   const [newDayDate, setNewDayDate] = useState(null);
   const [dcSort, setDcSort] = useState("manual");
+
+  // Auto-sync Daily Cap from CRG Deals
+  // manageAff + cap → agent Affiliates
+  // madeSale + cap → agent Brands
+  const syncFromCRG = () => {
+    if (!crgDeals || crgDeals.length === 0) return;
+
+    // Build a map: { date: { agentName: { affiliates: sum, brands: sum } } }
+    const capMap = {};
+    crgDeals.forEach(deal => {
+      const date = deal.date;
+      if (!date) return;
+      const capVal = parseInt(deal.cap) || 0;
+      if (capVal === 0) return;
+
+      if (!capMap[date]) capMap[date] = {};
+
+      // manageAff → affiliates
+      const mAff = (deal.manageAff || "").trim();
+      if (mAff) {
+        if (!capMap[date][mAff]) capMap[date][mAff] = { affiliates: 0, brands: 0 };
+        capMap[date][mAff].affiliates += capVal;
+      }
+
+      // madeSale → brands
+      const mSale = (deal.madeSale || "").trim();
+      if (mSale) {
+        if (!capMap[date][mSale]) capMap[date][mSale] = { affiliates: 0, brands: 0 };
+        capMap[date][mSale].brands += capVal;
+      }
+    });
+
+    // Now update/create entries
+    setEntries(prev => {
+      const updated = [...prev];
+      const existingMap = {};
+      updated.forEach((e, i) => {
+        const key = `${e.date}__${(e.agent || "").trim()}`;
+        existingMap[key] = i;
+      });
+
+      Object.keys(capMap).forEach(date => {
+        Object.keys(capMap[date]).forEach(agent => {
+          const { affiliates, brands } = capMap[date][agent];
+          const key = `${date}__${agent}`;
+          if (existingMap[key] !== undefined) {
+            // Update existing
+            const idx = existingMap[key];
+            updated[idx] = { ...updated[idx], affiliates: String(affiliates), brands: String(brands) };
+          } else {
+            // Create new
+            updated.push({ id: genId(), agent, affiliates: String(affiliates), brands: String(brands), date });
+            existingMap[key] = updated.length - 1;
+          }
+        });
+      });
+
+      return updated;
+    });
+  };
+
+  // Auto-sync when crgDeals change
+  useEffect(() => {
+    syncFromCRG();
+  }, [crgDeals]);
 
   const allDates = [...new Set(entries.map(d => d.date).filter(Boolean))].sort();
   const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
@@ -2044,6 +2135,11 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, onRefre
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search agent..."
                 style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14, width: 220 }} />
             </div>
+            <button onClick={syncFromCRG} title="Recalculate from CRG Deals"
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "transparent", border: "2px solid #F59E0B", borderRadius: 10, color: "#F59E0B", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#F59E0B"; e.currentTarget.style.color = "#FFF"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#F59E0B"; }}
+            >🔄 Sync CRG</button>
             <button onClick={() => { setEditEntry(null); setNewDayDate(today); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#8B5CF6,#A78BFA)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(139,92,246,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Agent</button>
@@ -2619,7 +2715,7 @@ export default function App() {
   if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} onBack={() => setPage(firstPage)} /></>);
   if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} onDeals={() => setPage("deals")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><SyncBanner /><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><SyncBanner /><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} onDeals={() => setPage("deals")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
 }
