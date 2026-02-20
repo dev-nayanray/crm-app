@@ -79,7 +79,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.044";
+const VERSION = "1.046";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -161,6 +161,13 @@ const MONTHS = [
 ];
 
 const genId = () => Math.random().toString(36).substr(2, 9);
+
+// Convert 2-letter country code to flag emoji
+const countryFlag = code => {
+  if (!code || code.length !== 2) return "";
+  const offset = 127397;
+  return String.fromCodePoint(...[...code.toUpperCase()].map(c => c.charCodeAt(0) + offset));
+};
 
 const INITIAL = [
   { id: genId(), invoice: "117", paidDate: "2026-02-02", status: "Paid", amount: "2300", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
@@ -1616,7 +1623,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
     if (!grouped[key]) grouped[key] = [];
     grouped[key].push(d);
   });
-  const sortedDates = Object.keys(grouped).sort((a, b) => a.localeCompare(b));
+  const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a)); // newest first
 
   const fmtDate = ds => {
     if (!ds || ds === "Unknown") return "Unknown";
@@ -2256,8 +2263,6 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
     ? [...filtered].sort((a, b) => (a.affiliate || "").localeCompare(b.affiliate || "", undefined, { numeric: true }))
     : filtered;
 
-  const totalPrice = filtered.reduce((s, d) => s + (parseFloat(d.price) || 0), 0);
-
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
@@ -2309,18 +2314,12 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
         </div>
 
         {/* Summary */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
-          {[
-            { label: "Total Deals", value: filtered.length, accent: "#10B981", bg: "#ECFDF5" },
-            { label: "Total Price", value: totalPrice.toLocaleString("en-US") + "$", accent: "#0EA5E9", bg: "#EFF6FF" },
-            { label: "Avg Price", value: filtered.length > 0 ? Math.round(totalPrice / filtered.length).toLocaleString("en-US") + "$" : "—", accent: "#8B5CF6", bg: "#F5F3FF" },
-          ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>{c.value}</div>
-            </div>
-          ))}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16, marginBottom: 28, maxWidth: 300 }}>
+          <div style={{ background: "#ECFDF5", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "#10B981" }} />
+            <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Total Deals</div>
+            <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: "#10B981" }}>{filtered.length}</div>
+          </div>
         </div>
 
         {/* Table */}
@@ -2349,7 +2348,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       >{d.affiliate}</span>
                     </td>
                     <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9", letterSpacing: 1 }}>
-                      {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{d.country}</span> : ""}
+                      {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}><span style={{ fontSize: 17 }}>{countryFlag(d.country)}</span>{d.country}</span> : ""}
                     </td>
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
                       {d.price ? `${parseFloat(d.price).toLocaleString("en-US")}$` : ""}
@@ -2382,8 +2381,6 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
           {/* Footer */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 20px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
             <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{filtered.length} deals</span>
-            <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{totalPrice.toLocaleString("en-US")}$</span>
-            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>total price</span>
           </div>
         </div>
       </main>
