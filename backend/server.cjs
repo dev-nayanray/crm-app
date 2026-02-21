@@ -78,74 +78,208 @@ async function checkTRC20Transaction(txHash) {
 // Function to check ERC20 USDT transaction on Etherscan
 async function checkERC20Transaction(txHash) {
   try {
-    // First, get transaction receipt to confirm it exists and is successful
-    let url = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`;
+    // Using Etherscan API - try multiple approaches
+    const CHAIN_ID = "1"; // Ethereum mainnet
+    
+    // Method 1: Try txlist (most reliable for getting tx details)
+    let txListUrl = `${ETHERSCAN_API}?module=account&action=txlist&address=${txHash}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc`;
     if (ETHERSCAN_API_KEY) {
-      url += `&apikey=${ETHERSCAN_API_KEY}`;
+      txListUrl += `&apikey=${ETHERSCAN_API_KEY}`;
     }
     
-    const response = await httpRequest(url);
-    const data = JSON.parse(response);
+// Function to check ERC20 USDT transaction on Etherscan
+    const txListData = JSON.parse(txListResponse);
     
-    // Get transaction details
-    let txUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
-    if (ETHERSCAN_API_KEY) {
-      txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+    let txResult = null;
+    
+    // Check if txlist returned valid data
+    if (txListData.status === "1" && txListData.result && Array.isArray(txListData.result) && txListData.result.length > 0) {
+      // Find the transaction by hash in the list
+      const txEntry = txListData.result.find(tx => tx.hash && tx.hash.toLowerCase() === txHash.toLowerCase());
+      if (txEntry) {
+        txResult = {
+          hash: txEntry.hash,
+          from: txEntry.from,
+          to: txEntry.to,
+          value: txEntry.value,
+          input: txEntry.input,
+          isError: txEntry.isError,
+          txreceipt_status: txEntry.txreceipt_status
+        };
+      }
     }
+    
+    // Method 2: If txlist didn't work, try V2 get_txinfo
+    if (!txResult) {
+      console.log("⚠️ txlist failed, trying V2 get_txinfo...");
+      
+      let txUrl = `${ETHERSCAN_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}`;
+      if (ETHERSCAN_API_KEY) {
+        txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+      }
+      
+      const txResponse = await httpRequest(txUrl);
+      const txData = JSON.parse(txResponse);
+      
+      if (txData.status === "1" && txData.result) {
+        txResult = txData.result;
+      }
+    }
+    
+    // Method 3: Try V1 proxy as last resort
+    if (!txResult) {
+      console.log("⚠️ V2 failed, trying V1 proxy...");
+      
+      let v1TxUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
+      if (ETHERSCAN_API_KEY) {
+        v1TxUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+      }
+      
+      const v1TxResponse = await httpRequest(v1TxUrl);
+      const v1TxData = JSON.parse(v1TxResponse);
+      
+      if (v1TxData.status === "1" && typeof v1TxData.result === "object" && v1TxData.result !== null) {
+        txResult = v1TxData.result;
+      }
+    }
+    
+    // If we still don't have data, return failure
+    if (!txResult) {
+      return { success: false, error: "Could not fetch transaction data from Etherscan (all methods failed)" };
+    }
+    
+    // Extract transaction details
+    const input = txResult.input || "";
+    let amount = "0";
+    let toAddress = "";
+    let fromAddress = "";
+    
+    // Get from and to addresses
+    fromAddress = txResult.from || "";
+    toAddress = txResult.to || "";
+    
+    // Decode input data to find transfer details for USDT
+    // USDT transfer method ID: 0xa9059cbb
+    if (input && input.startsWith("0xa9059cbb") && input.length >= 74) {
+      // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
+      const amountHex = "0x" + input.slice(-64);
+      amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
+      // Extract to address (from 34 to 74 - 40 hex chars = 20 bytes)
+      toAddress = "0x" + input.slice(34, 74);
+    } else if (txResult.value && txResult.value !== "0") {
+      // If no method ID or not a standard transfer, try to get value from tx
+      // Note: This is for ETH transfers, not ERC20
+      amount = (parseInt(txResult.value, 10) / 1000000000000000000).toString(); // ETH has 18 decimals
+    }
+    
+    // Check if transaction is confirmed (receipt status = 1)
+    const confirmed = txResult.txreceipt_status === "1" || txResult.status === "1";
+    
+    return {
+      success: true,
+      amount: amount,
+      toAddress: toAddress,
+      fromAddress: fromAddress,
+      confirmed: confirmed,
+      hash: txHash
+    };
+    
+  } catch (err) {
+    console.log("⚠️ Etherscan API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+async function checkERC20Transaction(txHash) {
+  try {
+    // Using Etherscan V2 API endpoints
+    const ETHERSCAN_V2_API = "https://api.etherscan.io/v2/api";
+    const CHAIN_ID = "1"; // Ethereum mainnet
+    
+    // First, get transaction receipt for confirmation and more details
+    let receiptUrl = `${ETHERSCAN_V2_API}?action=txlist&module=account&address=${txHash}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc&apikey=${ETHERSCAN_API_KEY}`;
+    
+    // Try V2 API first - get transaction receipt
+    let receiptUrl2 = `${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+    
+    const receiptResponse2 = await httpRequest(receiptUrl2);
+    const receiptData2 = JSON.parse(receiptResponse2);
+    
+    // Get transaction details using V2 API
+    let txUrl = `${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
     
     const txResponse = await httpRequest(txUrl);
     const txData = JSON.parse(txResponse);
     
-    if (txData.result) {
-      // Decode input data to find transfer details
-      const input = txData.result.input;
-      let amount = "0";
-      let toAddress = txData.result.to;
-      let fromAddress = txData.result.from;
+    // Check if we got valid responses
+    let txResult = null;
+    
+    // Handle txData.result - could be object or string (error message)
+    if (txData.status === "1" && txData.message === "OK" && txData.result) {
+      txResult = txData.result;
+    } else if (txData.message) {
+      // API returned error message
+      console.log("⚠️ Etherscan V2 API error:", txData.message, txData.result);
+    }
+    
+    // If V2 fails, try V1 as fallback
+    if (!txResult) {
+      console.log("⚠️ V2 API failed, trying V1...");
       
-      // USDT transfer method ID: 0xa9059cbb
-      if (input && input.startsWith("0xa9059cbb")) {
-        // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
-        const amountHex = "0x" + input.slice(-64);
-        amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
-        // Extract to address (from 10 to 74)
-        toAddress = "0x" + input.slice(34, 74);
+      // Try V1 proxy endpoint
+      let v1TxUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
+      if (ETHERSCAN_API_KEY) {
+        v1TxUrl += `&apikey=${ETHERSCAN_API_KEY}`;
       }
       
-      // Check if transaction is confirmed (receipt status = 1)
-      const confirmed = data.result && data.result.status === "1";
+      const v1TxResponse = await httpRequest(v1TxUrl);
+      const v1TxData = JSON.parse(v1TxResponse);
       
-      return {
-        success: true,
-        amount: amount,
-        toAddress: toAddress,
-        fromAddress: fromAddress,
-        confirmed: confirmed,
-        hash: txHash
-      };
+      if (v1TxData.status === "1" && typeof v1TxData.result === "object" && v1TxData.result !== null) {
+        txResult = v1TxData.result;
+      }
     }
     
-    // Try alternative: get transaction receipt directly
-    let receiptUrl = `${ETHERSCAN_API}?module=transaction&action=gettxreceipt&txhash=${txHash}`;
-    if (ETHERSCAN_API_KEY) {
-      receiptUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+    // If we still don't have data, return failure
+    if (!txResult) {
+      return { success: false, error: "Could not fetch transaction data from Etherscan" };
     }
     
-    const receiptResponse = await httpRequest(receiptUrl);
-    const receiptData = JSON.parse(receiptResponse);
+    // Extract transaction details
+    const input = txResult.input || "";
+    let amount = "0";
+    let toAddress = "";
+    let fromAddress = "";
     
-    if (receiptData.result) {
-      return {
-        success: true,
-        amount: "0", // Can't determine amount without input decoding
-        toAddress: receiptData.result.to || "",
-        fromAddress: receiptData.result.from || "",
-        confirmed: receiptData.result.status === "1",
-        hash: txHash
-      };
+    // Get from and to addresses
+    fromAddress = txResult.from || "";
+    toAddress = txResult.to || "";
+    
+    // Decode input data to find transfer details for USDT
+    // USDT transfer method ID: 0xa9059cbb
+    if (input && input.startsWith("0xa9059cbb") && input.length >= 74) {
+      // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
+      const amountHex = "0x" + input.slice(-64);
+      amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
+      // Extract to address (from 34 to 74 - 40 hex chars = 20 bytes)
+      toAddress = "0x" + input.slice(34, 74);
+    } else if (txResult.value && txResult.value !== "0x0") {
+      // If no method ID or not a standard transfer, try to get value from tx
+      // Note: This is for ETH transfers, not ERC20
+      amount = (parseInt(txResult.value, 16) / 1000000000000000000).toString(); // ETH has 18 decimals
     }
     
-    return { success: false, error: "Transaction not found or not a valid transaction" };
+    // Check if transaction is confirmed (receipt status = 1)
+    const confirmed = receiptData2.status === "1" && receiptData2.result && receiptData2.result.status === "1";
+    
+    return {
+      success: true,
+      amount: amount,
+      toAddress: toAddress,
+      fromAddress: fromAddress,
+      confirmed: confirmed,
+      hash: txHash
+    };
+    
   } catch (err) {
     console.log("⚠️ Etherscan API error:", err.message);
     return { success: false, error: err.message };
@@ -168,6 +302,7 @@ function getWallets() {
 // Function to check if address matches any wallet
 function verifyWalletAddress(address, wallets) {
   if (!wallets || wallets.length === 0) return { matched: false, error: "No wallets configured" };
+  if (!address) return { matched: false, error: "No address in transaction" };
   
   const normalizedInput = address.toLowerCase().trim();
   
@@ -191,6 +326,10 @@ let bot;
 let consecutiveErrors = 0;
 const MAX_ERRORS_BEFORE_STOP = 10;
 
+// User state tracking for multi-step commands
+// Format: { chatId: { state: 'waiting_for_country', command: '/deals' } }
+const userStates = {};
+
 if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   try {
     // Use polling with better error handling
@@ -200,22 +339,11 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
     console.log("🤖 Telegram bot initialized - polling for commands...");
     
-    // Handle polling errors gracefully - stop after too many failures
+    // Handle polling errors gracefully - don't stop on errors
     bot.on('polling_error', (error) => {
-      consecutiveErrors++;
-      if (consecutiveErrors >= MAX_ERRORS_BEFORE_STOP) {
-        console.log("🛑 Stopping bot polling - network issues detected. Commands won't work until network is fixed.");
-        bot.stopPolling().catch(() => {});
-        return;
-      }
-      // Only log every few errors to reduce spam
-      if (consecutiveErrors % 5 === 0) {
-        console.log(`⚠️ Polling error (${consecutiveErrors}/${MAX_ERRORS_BEFORE_STOP}):`, error.code || error.message);
-      }
+      // Just log the error and continue - don't stop polling
+      console.log(`⚠️ Polling error:`, error.code || error.message);
     });
-    
-    // Reset error count on successful message
-    bot.on('message', () => { consecutiveErrors = 0; });
     
     // Register bot commands with Telegram (shows in command suggestions)
     bot.setMyCommands([
@@ -284,6 +412,119 @@ Last updated: ${dateStr}
     
     console.log("✅ Bot command handlers ready: /start, /wallets");
     
+    // ── /deals command - Ask for country code ──
+    bot.onText(/\/deals/, (msg) => {
+      const chatId = msg.chat.id;
+      
+      // Clear any previous state for this user
+      delete userStates[chatId];
+      
+      // Set user state to waiting for country code
+      userStates[chatId] = { state: 'waiting_for_country', command: '/deals' };
+      
+      const dealsMessage = `📊 <b>Get Deals by Country</b>
+
+Please enter the country code you want to view deals for.
+
+<b>Available Country Codes:</b>
+• DE - Germany
+• FR - France
+• UK - United Kingdom
+• AU - Australia
+• MY - Malaysia
+• SI - Singapore
+• HR - Croatia
+• GCC - Gulf Countries
+
+<i>Example: DE</i>`;
+      
+      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
+      console.log("📱 /deals command responded to chat:", chatId);
+    });
+    
+    // ── Handle country code input for deals ──
+    bot.on('message', async (msg) => {
+      // Skip commands
+      if (msg.text && msg.text.startsWith('/')) return;
+      
+      const chatId = msg.chat.id;
+      const userText = msg.text ? msg.text.trim().toUpperCase() : '';
+      
+      // Check if user is in a waiting state
+      const userState = userStates[chatId];
+      if (!userState || userState.state !== 'waiting_for_country') return;
+      
+      // Valid country codes
+      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC'];
+      
+      if (!validCountries.includes(userText)) {
+        bot.sendMessage(chatId, `❌ Invalid country code: <b>${userText}</b>\n\nPlease enter a valid country code:\nDE, FR, UK, AU, MY, SI, HR, GCC`, { parse_mode: "HTML" });
+        return;
+      }
+      
+      // Clear user state
+      delete userStates[chatId];
+      
+      // Read deals from crg-deals.json
+      const allDeals = readJSON("crg-deals.json", []);
+      
+      // Filter deals by country code (in affiliate field like "122 DE", "175 FR", etc.)
+      const countryDeals = allDeals.filter(deal => {
+        if (!deal.affiliate) return false;
+        return deal.affiliate.toUpperCase().endsWith(' ' + userText);
+      });
+      
+      // Country name mapping
+      const countryNames = {
+        'DE': 'Germany',
+        'FR': 'France',
+        'UK': 'United Kingdom',
+        'AU': 'Australia',
+        'MY': 'Malaysia',
+        'SI': 'Singapore',
+        'HR': 'Croatia',
+        'GCC': 'Gulf Countries'
+      };
+      
+      const countryName = countryNames[userText] || userText;
+      
+      if (countryDeals.length === 0) {
+        bot.sendMessage(chatId, `📭 No deals found for <b>${countryName}</b> (${userText})`, { parse_mode: "HTML" });
+        console.log("📱 /deals - No deals found for:", userText);
+        return;
+      }
+      
+      // Format deals message
+      let dealsMessage = `📊 <b>Deals for ${countryName}</b> (${countryDeals.length} found)\n\n`;
+      
+      // Show summary
+      const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
+      const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
+      
+      dealsMessage += `📈 <b>Summary:</b>\n`;
+      dealsMessage += `• Total Caps: ${totalCap}\n`;
+      dealsMessage += `• Received: ${totalReceived}\n`;
+      dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
+      
+      // Show each deal (limit to 20 to avoid message too long)
+      const displayDeals = countryDeals.slice(0, 20);
+      
+      displayDeals.forEach((deal, index) => {
+        dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
+        dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
+        dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
+        dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
+        dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
+      });
+      
+      if (countryDeals.length > 20) {
+        dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+      }
+      
+      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
+      console.log("📱 /deals - Sent", countryDeals.length, "deals for", userText);
+    });
+    
     // ── USDT Hash Detection - Auto-create Customer Payment ──
     
     // Helper to generate unique ID for customer payments
@@ -341,6 +582,10 @@ Last updated: ${dateStr}
       // Ignore commands (they have their own handlers)
       if (msg.text && msg.text.startsWith('/')) return;
       
+      // Check if user is in a waiting state for /deals command - if so, skip finance group processing
+      const chatId = msg.chat.id;
+      if (userStates[chatId] && userStates[chatId].state === 'waiting_for_country') return;
+      
       // Only process messages from the finance group
       if (msg.chat.id.toString() !== FINANCE_GROUP_CHAT_ID) return;
       
@@ -360,11 +605,17 @@ Last updated: ${dateStr}
         return;
       }
       
-      // Find all amounts ($pattern)
+      // Find all amounts ($pattern) - handles both $120 and 120$
       const amounts = [];
-      const amountPattern = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
+      // Pattern 1: $120 or $1,200
+      const amountPattern1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
       let amountMatch;
-      while ((amountMatch = amountPattern.exec(messageText)) !== null) {
+      while ((amountMatch = amountPattern1.exec(messageText)) !== null) {
+        amounts.push(amountMatch[1].replace(/,/g, ''));
+      }
+      // Pattern 2: 120$ (amount before $)
+      const amountPattern2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
+      while ((amountMatch = amountPattern2.exec(messageText)) !== null) {
         amounts.push(amountMatch[1].replace(/,/g, ''));
       }
       
