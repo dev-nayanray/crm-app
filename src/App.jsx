@@ -1,5 +1,59 @@
 import React, { useState, useEffect, useRef } from "react";
 
+/* ── Mobile Responsive CSS ── */
+const mobileCSS = `
+@media (max-width: 768px) {
+  .blitz-header { padding: 10px 12px !important; }
+  .blitz-header .nav-links { display: none !important; }
+  .blitz-header .desktop-actions { display: none !important; }
+  .blitz-header .mobile-menu-btn { display: flex !important; }
+  .blitz-main { padding: 16px 12px !important; }
+  .blitz-main h1 { font-size: 20px !important; }
+  .blitz-toolbar { flex-direction: column !important; align-items: stretch !important; }
+  .blitz-toolbar input { width: 100% !important; }
+  .blitz-summary { grid-template-columns: 1fr 1fr !important; }
+  .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
+  .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
+  .blitz-form-grid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 480px) {
+  .blitz-summary { grid-template-columns: 1fr !important; }
+}
+`;
+
+function useMobile() {
+  const [mobile, setMobile] = useState(typeof window !== 'undefined' && window.innerWidth <= 768);
+  useEffect(() => {
+    const check = () => setMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return mobile;
+}
+
+function MobileNav({ pages, current, userAccess, onNav, onClose }) {
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }} onClick={onClose}>
+      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 260, background: "#FFFFFF", boxShadow: "-4px 0 30px rgba(0,0,0,0.15)", zIndex: 9999, padding: "20px 0", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: "0 20px 16px", borderBottom: "1px solid #E2E8F0", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>Menu</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#64748B", padding: 4 }}>✕</button>
+        </div>
+        {pages.map(pg => {
+          if (pg.key !== "admin" && !(userAccess || []).includes(pg.key)) return null;
+          const isActive = current === pg.key;
+          return (
+            <button key={pg.key} onClick={() => { onNav(pg.key); onClose(); }}
+              style={{ display: "block", width: "100%", padding: "14px 24px", border: "none", background: isActive ? `${pg.color}15` : "transparent", color: isActive ? pg.color : "#334155", fontSize: 15, fontWeight: isActive ? 700 : 500, cursor: "pointer", textAlign: "left", borderLeft: isActive ? `4px solid ${pg.color}` : "4px solid transparent" }}>
+              {pg.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ── Password Hashing (SHA-256 pure JS - works on HTTP) ── */
 function hashPassword(password) {
   // Pure JS SHA-256 implementation
@@ -79,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.051";
+const VERSION = "1.052";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -320,8 +374,8 @@ function StatusBadge({ status }) {
 
 function Modal({ title, onClose, children }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 16, border: "1px solid #E2E8F0", padding: 32, width: 540, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.12)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 }} onClick={onClose}>
+      <div className="blitz-modal-content" onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 16, border: "1px solid #E2E8F0", padding: 32, width: 540, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.12)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <h2 style={{ margin: 0, color: "#0F172A", fontSize: 20, fontWeight: 700 }}>{title}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: 4 }}>{I.close}</button>
@@ -370,6 +424,65 @@ function fmtFee(fee, amount) {
   return fee.trim().endsWith('%') ? `${fee.trim()} (${val.toLocaleString("en-US")}$)` : `${val.toLocaleString("en-US")}$`;
 }
 
+/* ── Shared Responsive Header ── */
+function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, onLogout, accentColor }) {
+  const mobile = useMobile();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const allNavPages = [
+    { key: "dashboard", label: "Payments", color: "#0EA5E9" },
+    { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
+    { key: "crg", label: "CRG Deals", color: "#F59E0B" },
+    { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
+    { key: "deals", label: "Deals", color: "#10B981" },
+  ];
+  if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
+
+  return (
+    <>
+      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
+          {I.logo}
+          {!mobile && <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>}
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          {!mobile && <>
+            <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+            <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              {allNavPages.filter(pg => pg.key !== "admin" && (userAccess || []).includes(pg.key)).map(pg => (
+                activePage === pg.key
+                  ? <span key={pg.key} style={{ background: pg.color, color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>{pg.label}</span>
+                  : <button key={pg.key} onClick={() => onNav(pg.key)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
+                      onMouseEnter={e => e.currentTarget.style.color = pg.color} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>{pg.label}</button>
+              ))}
+            </div>
+          </>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: mobile ? 6 : 12 }}>
+          {!mobile && <>
+            <div className="desktop-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
+              <div style={{ padding: "5px 14px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}12`, border: `1px solid ${accentColor || "#0EA5E9"}33`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+              <button onClick={onRefresh} title="Refresh" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8 }}>{I.refresh}<span>Refresh</span></button>
+              <SyncStatus />
+              <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
+                onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
+              >{I.logout}<span>Logout</span></button>
+            </div>
+          </>}
+          {mobile && <>
+            <SyncStatus />
+            <button onClick={onRefresh} title="Refresh" style={{ display: "flex", background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", padding: "6px 8px", borderRadius: 8 }}>{I.refresh}</button>
+            <button className="mobile-menu-btn" onClick={() => setMenuOpen(true)}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #E2E8F0", color: "#334155", cursor: "pointer", padding: "6px 10px", borderRadius: 8, fontSize: 18 }}>☰</button>
+          </>}
+        </div>
+      </header>
+      {mobile && menuOpen && (
+        <MobileNav pages={allNavPages} current={activePage} userAccess={userAccess} onNav={onNav} onClose={() => setMenuOpen(false)} />
+      )}
+    </>
+  );
+}
+
 function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
   const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
@@ -394,7 +507,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Invoice #"><input style={inp} value={f.invoice} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("invoice", v); }} placeholder="e.g. 100" maxLength={3} /></Field>
         <Field label="Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
         <Field label="Fee (number or %)">
@@ -429,7 +542,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
         </Field>
         <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} placeholder="Select name" /></Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
         <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
       </div>
@@ -657,7 +770,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
   const [delConfirm, setDelConfirm] = useState(null);
   const [editingWallet, setEditingWallet] = useState(null); // null or wallet id being edited
-const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "", fee: "" });
+  const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "" });
 
   const handleAddUser = () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
@@ -783,30 +896,14 @@ const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: 
         <div style={{ marginTop: 32 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>💳 Wallets</h2>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={async () => {
-                if (!wallets || wallets.length === 0) {
-                  alert("No wallets to send. Please add a wallet first.");
-                  return;
-                }
-                // Get the most recent wallet (first one)
-                const latestWallet = wallets[0];
-                const dateStr = latestWallet.date ? (() => { const d = new Date(latestWallet.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })() : "N/A";
-                const message = `Wallets (${dateStr}):\nTRC: ${latestWallet.trc || "—"}\nERC USDT/USDC: ${latestWallet.erc || "—"}\nBTC: ${latestWallet.btc || "—"}`;
-                const res = await telegramNotify(message);
-                alert(res.ok ? "✅ Wallet info sent to Telegram group!" : "❌ Failed to send: " + (res.error || "Unknown error"));
-              }}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg, #0088cc, #00aaff)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(0,136,204,0.3)" }}
-              >📤 Send to Telegram</button>
-              <button onClick={() => {
-                const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "", fee: "" };
-                setWallets(prev => [newW, ...prev]);
-                setEditingWallet(newW.id);
-                setWalletForm({ date: newW.date, trc: "", erc: "", btc: "", fee: "" });
-              }}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
-              >{I.plus} Add Wallet</button>
-            </div>
+            <button onClick={() => {
+              const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
+              setWallets(prev => [newW, ...prev]);
+              setEditingWallet(newW.id);
+              setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
+            }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600, boxShadow: "0 2px 10px rgba(14,165,233,0.3)" }}
+            >{I.plus} Add Wallet</button>
           </div>
           <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
             {(!wallets || wallets.length === 0) && (
@@ -837,11 +934,6 @@ const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: 
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>BTC</label>
                         <input value={walletForm.btc} onChange={e => setWalletForm(p => ({ ...p, btc: e.target.value }))}
                           style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="BTC address..." />
-                      </div>
-                      <div style={{ marginBottom: 14 }}>
-                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Fee</label>
-                        <input value={walletForm.fee || ""} onChange={e => setWalletForm(p => ({ ...p, fee: e.target.value }))}
-                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="e.g. 3%" />
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button onClick={() => {
@@ -938,7 +1030,7 @@ const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: 
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, onDeals, payments, setPayments, onRefresh, userAccess }) {
+function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRefresh, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1015,7 +1107,7 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, on
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
       setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
-        telegramNotify(`💰 NEW OPEN PAYMENT\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString("en-US")}\n👤 Opened by: ${user.name}`);
+      telegramNotify(`🆕 New payment #${form.invoice} — ${parseFloat(form.amount).toLocaleString()}$ opened by ${user.name}`);
     }
     setModalOpen(false);
     setEditPay(null);
@@ -1026,51 +1118,9 @@ function Dashboard({ user, onLogout, onAdmin, onCustomers, onCrg, onDailyCap, on
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
 
-      {/* Header */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
-          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Payments</span>
-          {(userAccess || []).includes("customers") && <button onClick={onCustomers} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Customer Payments</button>}
-          {(userAccess || []).includes("crg") && <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >CRG Deals</button>}
-          {(userAccess || []).includes("dailycap") && <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Daily Cap</button>}
-          {(userAccess || []).includes("deals") && <button onClick={onDeals} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#10B981"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Deals</button>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)", letterSpacing: 0.3, transition: "transform 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.05)"; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
-          >⚙️ Admin Panel</button>
-          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
-          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-          >{I.refresh}<span>Refresh</span></button>
-          <SyncStatus />
-          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >{I.logout}<span>Logout</span></button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1261,7 +1311,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Invoice (Name)"><input style={inp} value={f.invoice} onChange={e => s("invoice", e.target.value)} placeholder="e.g. Swin, 12Mark" /></Field>
         <Field label="Invoice Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
         <Field label="Fee (number or %)">
@@ -1289,7 +1339,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
         </Field>
         <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} /></Field>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
         <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
         <Field label="Payment Hash"><input style={inp} value={f.paymentHash || ""} onChange={e => s("paymentHash", e.target.value)} placeholder="Transaction hash..." /></Field>
@@ -1401,7 +1451,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
   );
 }
 
-function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, onDeals, payments, setPayments, onRefresh, userAccess }) {
+function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayments, onRefresh, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1477,47 +1527,9 @@ function CustomerPayments({ user, onLogout, onBack, onAdmin, onCrg, onDailyCap, 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
 
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
-          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          {(userAccess || []).includes("dashboard") && <button onClick={onBack} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Payments</button>}
-          <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Customer Payments</span>
-          {(userAccess || []).includes("crg") && <button onClick={onCrg} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >CRG Deals</button>}
-          {(userAccess || []).includes("dailycap") && <button onClick={onDailyCap} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Daily Cap</button>}
-          {(userAccess || []).includes("deals") && <button onClick={onDeals} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#10B981"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >Deals</button>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
-          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
-          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-          >{I.refresh}<span>Refresh</span></button>
-          <SyncStatus />
-          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F87171"}
-            onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >{I.logout}<span>Logout</span></button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button onClick={prevMonth} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, padding: 8, cursor: "pointer", color: "#64748B", display: "flex" }}>{I.chevL}</button>
@@ -1645,7 +1657,7 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Affiliate"><input style={inp} value={f.affiliate} onChange={e => s("affiliate", e.target.value)} placeholder="e.g. 33 AU, 47 DE" /></Field>
         <Field label="Deal"><input style={inp} value={f.deal || ""} onChange={e => s("deal", e.target.value)} placeholder="Deal info" /></Field>
         <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
@@ -1799,38 +1811,9 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#F59E0B" />
 
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
-          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          {(userAccess || []).includes("dashboard") && <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>}
-          {(userAccess || []).includes("customers") && <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>}
-          <span style={{ background: "#F59E0B", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>CRG Deals</span>
-          {(userAccess || []).includes("dailycap") && <button onClick={() => onNav("dailycap")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>}
-          {(userAccess || []).includes("deals") && <button onClick={() => onNav("deals")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#10B981"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Deals</button>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
-          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
-          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-          >{I.refresh}<span>Refresh</span></button>
-          <SyncStatus />
-          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >{I.logout}<span>Logout</span></button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>CRG Deals</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
@@ -2025,7 +2008,7 @@ function DCForm({ entry, onSave, onClose, defaultDate }) {
           </div>
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Agent"><NameCombo value={f.agent} onChange={v => s("agent", v)} /></Field>
         <div />
         <Field label="Affiliates"><input style={inp} type="number" value={f.affiliates} onChange={e => s("affiliates", e.target.value)} placeholder="0" /></Field>
@@ -2208,38 +2191,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#8B5CF6" />
 
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
-          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          {(userAccess || []).includes("dashboard") && <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>}
-          {(userAccess || []).includes("customers") && <button onClick={() => onNav("customers")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Customer Payments</button>}
-          {(userAccess || []).includes("crg") && <button onClick={() => onNav("crg")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>CRG Deals</button>}
-          <span style={{ background: "#8B5CF6", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Daily Cap</span>
-          {(userAccess || []).includes("deals") && <button onClick={() => onNav("deals")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#10B981"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Deals</button>}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
-          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", fontSize: 13, color: "#38BDF8", fontWeight: 500 }}>{user.name}</div>
-          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8, transition: "all 0.15s" }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#0EA5E9"; e.currentTarget.style.borderColor = "#0EA5E9"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-          >{I.refresh}<span>Refresh</span></button>
-          <SyncStatus />
-          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >{I.logout}<span>Logout</span></button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Daily Cap</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -2393,7 +2347,7 @@ function DealsForm({ deal, onSave, onClose }) {
 
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <Field label="Affiliate">
           <input style={inp} value={f.affiliate} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("affiliate", v); }} placeholder="e.g. 47" maxLength={3} />
         </Field>
@@ -2492,36 +2446,9 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#10B981" />
 
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz Payments</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
-          <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-          {(userAccess || []).includes("dashboard") && <button onClick={() => onNav("dashboard")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#0EA5E9"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Payments</button>}
-          {(userAccess || []).includes("crg") && <button onClick={() => onNav("crg")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>CRG Deals</button>}
-          {(userAccess || []).includes("dailycap") && <button onClick={() => onNav("dailycap")} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-            onMouseEnter={e => e.currentTarget.style.color = "#8B5CF6"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>Daily Cap</button>}
-          <span style={{ background: "#10B981", color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>Deals</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <button onClick={onAdmin} style={{ display: isAdmin(user.email) ? "flex" : "none", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>
-          <div style={{ padding: "5px 14px", borderRadius: 20, background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.2)", fontSize: 13, color: "#10B981", fontWeight: 500 }}>{user.name}</div>
-          <button onClick={onRefresh} title="Refresh data" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8 }}
-            onMouseEnter={e => { e.currentTarget.style.color = "#10B981"; e.currentTarget.style.borderColor = "#10B981"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
-          >{I.refresh}<span>Refresh</span></button>
-          <SyncStatus />
-          <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
-          >{I.logout}<span>Logout</span></button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Deals</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 600, marginLeft: 24 }}>
@@ -2796,6 +2723,8 @@ export default function App() {
 
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif" }}>
+      <style>{mobileCSS}</style>
+      <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", marginBottom: 8 }}>Blitz Payments</div>
         <div style={{ color: "#64748B" }}>Connecting to server...</div>
@@ -2805,19 +2734,25 @@ export default function App() {
 
   // Sync banner component
   const SyncBanner = () => {
-    if (!syncBanner) return null;
-    const msgs = {
-      pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
-      synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
-      offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only. Other users won't see your changes." },
-    };
-    const m = msgs[syncBanner];
-    if (!m) return null;
     return (
-      <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "10px 20px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 13, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-        {m.text}
-        <button onClick={() => setSyncBanner(null)} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
-      </div>
+      <>
+        <style>{mobileCSS}</style>
+        {syncBanner && (() => {
+          const msgs = {
+            pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
+            synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
+            offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only." },
+          };
+          const m = msgs[syncBanner];
+          if (!m) return null;
+          return (
+            <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "8px 16px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 12, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+              {m.text}
+              <button onClick={() => setSyncBanner(null)} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
+            </div>
+          );
+        })()}
+      </>
     );
   };
 
@@ -2834,9 +2769,9 @@ export default function App() {
   }
 
   if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
-  if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onBack={() => setPage("dashboard")} onAdmin={() => setPage("admin")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} onDeals={() => setPage("deals")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><SyncBanner /><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><SyncBanner /><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onAdmin={() => setPage("admin")} onCustomers={() => setPage("customers")} onCrg={() => setPage("crg")} onDailyCap={() => setPage("dailycap")} onDeals={() => setPage("deals")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
 }
