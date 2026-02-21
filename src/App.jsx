@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.052";
+const VERSION = "1.053";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -585,6 +585,56 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
     };
     return styles[status] || { background: "#F1F5F9", color: "#475569" };
   };
+
+  const mobile = useMobile();
+
+  if (mobile) {
+    return (
+      <div>
+        {sorted.map(p => (
+          <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
+                <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...statusStyle(p.status) }}>{p.status}</span>
+              </div>
+              <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: "#64748B", marginBottom: 8 }}>
+              {p.paidDate && <span>📅 {new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+              <span style={{ padding: "2px 8px", borderRadius: 4, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600 }}>{p.type || "Affiliate Payment"}</span>
+              {p.fee && <span>Fee: {fmtFee(p.fee, p.amount)}</span>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ padding: "3px 10px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{p.openBy}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                {p.status !== "Paid" && statusOptions && onStatusChange && (
+                  <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
+                    style={{ padding: "4px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", ...statusStyle(p.status) }}>
+                    {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                )}
+                <button onClick={() => onEdit(p)} style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                <button onClick={() => onDelete(p.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+              </div>
+            </div>
+            {(p.trcAddress || p.ercAddress || p.paymentHash) && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'Space Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
+                {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
+                {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
+                {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "12px", flexWrap: "wrap" }}>
+          {dateRange && <span style={{ padding: "5px 14px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{dateRange}</span>}
+          <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} invoices</span>
+          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -1147,7 +1197,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
         </div>
 
         {/* Summary Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Open Payments", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
             { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "#FFFBEB", isMoney: true },
@@ -1216,7 +1266,7 @@ function LoginScreen({ onLogin, users }) {
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-      <div style={{ width: 420, background: "#FFFFFF", borderRadius: 20, border: "1px solid #E2E8F0", padding: "48px 40px", boxShadow: "0 25px 60px rgba(0,0,0,0.08)" }}>
+      <div style={{ width: 420, maxWidth: "92vw", background: "#FFFFFF", borderRadius: 20, border: "1px solid #E2E8F0", padding: "48px 40px", boxShadow: "0 25px 60px rgba(0,0,0,0.08)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
           {I.logo}
           <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 22, color: "#0F172A" }}>Blitz Payments</span>
@@ -1367,6 +1417,56 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
   const getColor = name => { let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return openByColors[Math.abs(h) % openByColors.length]; };
 
   if (payments.length === 0) return <div style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>{emptyMsg}</div>;
+
+  const mobile = useMobile();
+
+  if (mobile) {
+    return (
+      <div>
+        {sorted.map(p => (
+          <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
+                <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
+              </div>
+              <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: "#64748B", marginBottom: 8 }}>
+              {p.paidDate && <span>📅 {new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+              <span style={{ padding: "2px 8px", borderRadius: 4, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600 }}>{p.type || "Brand Payment"}</span>
+              {p.fee && <span>Fee: {fmtFee(p.fee, p.amount)}</span>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ padding: "3px 10px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 12 }}>{p.openBy}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange && (
+                  <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
+                    style={{ padding: "4px 6px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", ...(CP_STATUS_COLORS[p.status] || {}) }}>
+                    {statusOptions.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select>
+                )}
+                <button onClick={() => onEdit(p)} style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
+                <button onClick={() => onDelete(p.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+              </div>
+            </div>
+            {(p.trcAddress || p.ercAddress || p.paymentHash) && (
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'Space Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
+                {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
+                {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
+                {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
+              </div>
+            )}
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "12px", flexWrap: "wrap" }}>
+          {dateRange && <span style={{ padding: "5px 14px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{dateRange}</span>}
+          <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} invoices</span>
+          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ overflowX: "auto" }}>
@@ -1555,7 +1655,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
         </div>
 
         {/* Summary */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Open Invoices", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
             { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "#FFFBEB", isMoney: true },
@@ -1848,7 +1948,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
         </div>
 
         {/* Summary cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Total Affiliates", value: filtered.length, accent: "#F59E0B", bg: "#FFFBEB" },
             { label: "CAP Sum", value: totalCap, accent: "#6366F1", bg: "#EEF2FF" },
@@ -2233,7 +2333,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
         </div>
 
         {/* Summary cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Affiliates", value: grandAff, accent: "#8B5CF6", bg: "#F5F3FF" },
             { label: "Brands", value: grandBrands, accent: "#0EA5E9", bg: "#EFF6FF" },
