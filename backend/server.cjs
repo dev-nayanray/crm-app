@@ -744,7 +744,7 @@ Please enter the country code you want to view deals for.
         customerPayments.unshift(newPayment);
         writeJSON("customer-payments.json", customerPayments);
         
-        console.log(`✅ Customer payment created: ${invoice} - $${amount} - Status: ${status}`);
+        // console.log(`✅ Customer payment created: ${invoice} - $${amount} - Status: ${status}`);
         
         // Send confirmation to group
         let confirmMessage = `📨 <b>Payment Processed!</b>\n\n`;
