@@ -78,6 +78,7 @@ async function checkTRC20Transaction(txHash) {
 // Function to check ERC20 USDT transaction on Etherscan
 async function checkERC20Transaction(txHash) {
   try {
+    // First, get transaction receipt to confirm it exists and is successful
     let url = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`;
     if (ETHERSCAN_API_KEY) {
       url += `&apikey=${ETHERSCAN_API_KEY}`;
@@ -86,41 +87,65 @@ async function checkERC20Transaction(txHash) {
     const response = await httpRequest(url);
     const data = JSON.parse(response);
     
-    if (data.status === "1" && data.message === "OK") {
-      // Get transaction details
-      let txUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const txResponse = await httpRequest(txUrl);
-      const txData = JSON.parse(txResponse);
-      
-      if (txData.result) {
-        // Decode input data to find transfer details
-        const input = txData.result.input;
-        let amount = "0";
-        let toAddress = txData.result.to;
-        
-        // USDT transfer method ID: 0xa9059cbb
-        if (input && input.startsWith("0xa9059cbb")) {
-          // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
-          const amountHex = "0x" + input.slice(-64);
-          amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
-          // Extract to address (from 10 to 74)
-          toAddress = "0x" + input.slice(34, 74);
-        }
-        
-        return {
-          success: true,
-          amount: amount,
-          toAddress: toAddress,
-          fromAddress: txData.result.from,
-          confirmed: data.result.status === "1"
-        };
-      }
+    // Get transaction details
+    let txUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
+    if (ETHERSCAN_API_KEY) {
+      txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
     }
-    return { success: false, error: "Transaction not found or not confirmed" };
+    
+    const txResponse = await httpRequest(txUrl);
+    const txData = JSON.parse(txResponse);
+    
+    if (txData.result) {
+      // Decode input data to find transfer details
+      const input = txData.result.input;
+      let amount = "0";
+      let toAddress = txData.result.to;
+      let fromAddress = txData.result.from;
+      
+      // USDT transfer method ID: 0xa9059cbb
+      if (input && input.startsWith("0xa9059cbb")) {
+        // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
+        const amountHex = "0x" + input.slice(-64);
+        amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
+        // Extract to address (from 10 to 74)
+        toAddress = "0x" + input.slice(34, 74);
+      }
+      
+      // Check if transaction is confirmed (receipt status = 1)
+      const confirmed = data.result && data.result.status === "1";
+      
+      return {
+        success: true,
+        amount: amount,
+        toAddress: toAddress,
+        fromAddress: fromAddress,
+        confirmed: confirmed,
+        hash: txHash
+      };
+    }
+    
+    // Try alternative: get transaction receipt directly
+    let receiptUrl = `${ETHERSCAN_API}?module=transaction&action=gettxreceipt&txhash=${txHash}`;
+    if (ETHERSCAN_API_KEY) {
+      receiptUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+    }
+    
+    const receiptResponse = await httpRequest(receiptUrl);
+    const receiptData = JSON.parse(receiptResponse);
+    
+    if (receiptData.result) {
+      return {
+        success: true,
+        amount: "0", // Can't determine amount without input decoding
+        toAddress: receiptData.result.to || "",
+        fromAddress: receiptData.result.from || "",
+        confirmed: receiptData.result.status === "1",
+        hash: txHash
+      };
+    }
+    
+    return { success: false, error: "Transaction not found or not a valid transaction" };
   } catch (err) {
     console.log("⚠️ Etherscan API error:", err.message);
     return { success: false, error: err.message };
