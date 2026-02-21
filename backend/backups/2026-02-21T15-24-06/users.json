@@ -1,0 +1,32 @@
+[
+  {
+    "email": "sophia@blitz-affiliates.marketing",
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
+    "name": "Sophia"
+  },
+  {
+    "email": "office1092021@gmail.com",
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
+    "name": "Office"
+  },
+  {
+    "email": "y0505300530@gmail.com",
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
+    "name": "Y Admin"
+  },
+  {
+    "email": "zack@blitz-affiliates.marketing",
+    "passwordHash": "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e",
+    "name": "Zack"
+  },
+  {
+    "email": "cameron@blitz-affiliates.marketing",
+    "passwordHash": "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476",
+    "name": "Cameron"
+  },
+  {
+    "email": "wpnayanray@gmail.com",
+    "passwordHash": "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0",
+    "name": "Nayan"
+  }
+]

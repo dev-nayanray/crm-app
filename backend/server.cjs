@@ -15,6 +15,12 @@ const BACKUP_DIR = path.join(__dirname, "backups");
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = "-4744920512";
 
+// Regex patterns for USDT transaction hashes
+// TRC20 (Tron): 64 character base58 string starting with 'T'
+const TRC20_HASH_REGEX = /^T[a-zA-Z0-9]{33}$/;
+// ERC20 (Ethereum): 0x followed by 64 hex characters
+const ERC20_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+
 // Initialize Telegram Bot (for commands)
 let bot;
 let consecutiveErrors = 0;
@@ -107,11 +113,150 @@ ${latestWallet.btc || "—"}
 Last updated: ${dateStr}
 *3% fee`;
       
-      bot.sendMessage(chatId, walletMessage, { parse_mode: "HTML" });
+      bot.sendMessage(chatId, walletMessage);
       console.log("📱 /wallets command responded to chat:", chatId);
     });
     
     console.log("✅ Bot command handlers ready: /start, /wallets");
+    
+    // ── USDT Hash Detection - Auto-create Customer Payment ──
+    
+    // Helper to generate unique ID for customer payments
+    function genCustomerPaymentId() {
+      return Math.random().toString(36).substr(2, 9);
+    }
+    
+    // Function to extract USDT hash from message text
+    function extractUsdtHash(text) {
+      if (!text) return null;
+      
+      // Find all potential hashes in the text
+      const words = text.split(/\s+/);
+      
+      for (const word of words) {
+        const trimmed = word.trim();
+        // Check for ERC20 hash (0x + 64 hex chars)
+        if (ERC20_HASH_REGEX.test(trimmed)) {
+          return { hash: trimmed, type: 'ERC20' };
+        }
+        // Check for TRC20 hash (T + 33 base58 chars)
+        if (TRC20_HASH_REGEX.test(trimmed)) {
+          return { hash: trimmed, type: 'TRC20' };
+        }
+      }
+      
+      return null;
+    }
+    
+    // Function to extract amount from message (looks for patterns like $500, 500 USD, etc.)
+    function extractAmount(text) {
+      if (!text) return '';
+      
+      // Try various patterns
+      const patterns = [
+        /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/,           // $500 or $1,234.56
+        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|USDT)/i, // 500 USD or 500 USDT
+        /(?:amount|total|sum|received)[:\s]*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/i, // amount: $500
+      ];
+      
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+          return match[1].replace(/,/g, '');
+        }
+      }
+      
+      return '';
+    }
+    
+    // Function to extract invoice/customer name from message
+    function extractInvoice(text) {
+      if (!text) return '';
+      
+      // Try to find common patterns like "Invoice #123", "from ClientName", etc.
+      const patterns = [
+        /(?:invoice|inv|client|customer|from)[:\s]*([a-zA-Z0-9_-]+)/i,
+        /([a-zA-Z][a-zA-Z0-9_-]{2,20})/i,  // Generic name-like text
+      ];
+      
+      for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match && match[1] && match[1].length > 2) {
+          // Filter out common words
+          const exclude = ['usdt', 'usdc', 'eth', 'btc', 'trc20', 'erc20', 'hash', 'tx', 'transaction'];
+          if (!exclude.includes(match[1].toLowerCase())) {
+            return match[1];
+          }
+        }
+      }
+      
+      return 'USDT Payment';
+    }
+    
+    // Handle incoming messages - detect USDT hashes
+    bot.on('message', (msg) => {
+      // Ignore commands (they have their own handlers)
+      if (msg.text && msg.text.startsWith('/')) return;
+      
+      // Only process messages from the finance group
+      if (msg.chat.id.toString() !== FINANCE_GROUP_CHAT_ID) return;
+      
+      const messageText = msg.text || '';
+      const messageId = msg.message_id;
+      
+      // Check for USDT hash
+      const usdtHashInfo = extractUsdtHash(messageText);
+      
+      if (usdtHashInfo) {
+        const { hash, type } = usdtHashInfo;
+        
+        console.log(`🔍 USDT ${type} hash detected: ${hash.substring(0, 10)}...`);
+        
+        // Extract amount and invoice from message
+        const amount = extractAmount(messageText);
+        const invoice = extractInvoice(messageText);
+        
+        // Get current date
+        const now = new Date();
+        const paidDate = now.toISOString().split('T')[0];
+        
+        // Create new customer payment
+        const newPayment = {
+          id: genCustomerPaymentId(),
+          invoice: invoice,
+          paidDate: paidDate,
+          status: "Open", // Set to Open so user can verify and change to Received
+          amount: amount || "0",
+          openBy: "Telegram Bot",
+          instructions: "",
+          paymentHash: hash,
+          month: now.getMonth() + 1,
+          year: now.getFullYear()
+        };
+        
+        // Read existing customer payments
+        const customerPayments = readJSON("customer-payments.json", []);
+        
+        // Add new payment
+        customerPayments.unshift(newPayment); // Add to beginning
+        writeJSON("customer-payments.json", customerPayments);
+        
+        console.log(`✅ Customer payment created: ${invoice} - ${amount || '0'} (Hash: ${hash.substring(0, 10)}...)`);
+        
+        // Send confirmation to group
+        const confirmMessage = `✅ <b>Payment Detected!</b>
+
+📋 Invoice: <b>${invoice}</b>
+💵 Amount: <b>$${amount || '0'}</b>
+🔗 Hash (${type}): <code>${hash}</code>
+
+⚠️ Status set to <b>Open</b> - please verify and update to <b>Received</b> when confirmed.`;
+        
+        bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMessage, { parse_mode: "HTML" });
+      }
+    });
+    
+    console.log("✅ USDT hash detection enabled - will auto-create customer payments");
     
   } catch (err) {
     console.log("⚠️ Failed to initialize Telegram bot:", err.message);
