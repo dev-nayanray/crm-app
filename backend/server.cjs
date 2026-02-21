@@ -13,7 +13,7 @@ const BACKUP_DIR = path.join(__dirname, "backups");
 
 // Telegram Bot Configuration
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = "-4744920512";
+const FINANCE_GROUP_CHAT_ID = "-1002796530029";
 
 // Regex patterns for USDT transaction hashes
 // TRC20 (Tron): 64 character base58 string starting with 'T'
