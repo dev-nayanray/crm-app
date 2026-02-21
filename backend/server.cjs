@@ -8,7 +8,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.052";
+const VERSION = "1.053";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 
@@ -20,13 +20,13 @@ const FINANCE_GROUP_CHAT_ID = "-4744920512";
 // TronScan API - Free tier (no key required for basic queries)
 const TRONSCAN_API = "https://apilist.tronscan.org";
 // Etherscan API - Free tier (you can add your own key if needed)
-const ETHERSCAN_API_KEY = "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET"; // Add your free API key here if needed
+const ETHERSCAN_API_KEY = "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET";
 const ETHERSCAN_API = "https://api.etherscan.io/api";
 const ETHERSCAN_BASE = "https://etherscan.io";
 
 // Regex patterns for USDT transaction hashes and addresses
-// TRC20 (Tron): 64 character base58 string starting with 'T'
-const TRC20_HASH_REGEX = /^T[a-zA-Z0-9]{33}$/;
+// TRC20 Transaction Hash: 64 character base58 string (like 208c664be9271f8e1ac3bf993501b05b90674f93b963966bf81a2da9708cf121)
+const TRC20_HASH_REGEX = /^[a-zA-Z0-9]{64}$/;
 // TRC20 Address: Starts with T, 34 chars
 const TRC20_ADDRESS_REGEX = /^T[a-zA-Z0-9]{33}$/;
 // ERC20 (Ethereum): 0x followed by 64 hex characters
@@ -266,71 +266,49 @@ Last updated: ${dateStr}
       return Math.random().toString(36).substr(2, 9);
     }
     
-    // Function to extract USDT hash from message text
-    function extractUsdtHash(text) {
-      if (!text) return null;
+    // Function to extract ALL USDT hashes from message (including from URLs)
+    function extractAllUsdtHashes(text) {
+      if (!text) return [];
       
-      // Find all potential hashes in the text
+      const hashes = [];
+      
+      // Extract from TronScan URLs - handles both:
+      // https://tronscan.org/#/transaction/208c664be9271f8e1ac3bf993501b05b90674f93b963966bf81a2da9708cf121
+      // https://tronscan.org/#/transaction/T...
+      const tronScanMatches = text.matchAll(/tronscan\.org\/[^\/]*\/transaction\/([a-zA-Z0-9]{33,64})/gi);
+      for (const match of tronScanMatches) {
+        const hash = match[1];
+        // Determine if it's a TRC20 address (34 chars starting with T) or transaction hash (64 chars)
+        if (TRC20_ADDRESS_REGEX.test(hash)) {
+          hashes.push({ hash: hash, type: 'TRC20_ADDRESS' });
+        } else if (hash.length === 64) {
+          hashes.push({ hash: hash, type: 'TRC20' });
+        }
+      }
+      
+      // Extract from Etherscan URLs
+      const ethScanMatches = text.matchAll(/etherscan\.io\/tx\/(0x[a-fA-F0-9]{64})/gi);
+      for (const match of ethScanMatches) {
+        hashes.push({ hash: match[1], type: 'ERC20' });
+      }
+      
+      // Also find plain hashes (not in URLs)
       const words = text.split(/\s+/);
-      
       for (const word of words) {
         const trimmed = word.trim();
-        // Check for ERC20 hash (0x + 64 hex chars)
+        
+        // Skip if already found
+        const alreadyFound = hashes.some(h => h.hash === trimmed);
+        if (alreadyFound) continue;
+        
         if (ERC20_HASH_REGEX.test(trimmed)) {
-          return { hash: trimmed, type: 'ERC20' };
-        }
-        // Check for TRC20 hash (T + 33 base58 chars)
-        if (TRC20_HASH_REGEX.test(trimmed)) {
-          return { hash: trimmed, type: 'TRC20' };
+          hashes.push({ hash: trimmed, type: 'ERC20' });
+        } else if (TRC20_HASH_REGEX.test(trimmed)) {
+          hashes.push({ hash: trimmed, type: 'TRC20' });
         }
       }
       
-      return null;
-    }
-    
-    // Function to extract amount from message (looks for patterns like $500, 500 USD, etc.)
-    function extractAmount(text) {
-      if (!text) return '';
-      
-      // Try various patterns
-      const patterns = [
-        /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/,           // $500 or $1,234.56
-        /(\d+(?:,\d{3})*(?:\.\d{2})?)\s*(?:USD|USDT)/i, // 500 USD or 500 USDT
-        /(?:amount|total|sum|received)[:\s]*\$?(\d+(?:,\d{3})*(?:\.\d{2})?)/i, // amount: $500
-      ];
-      
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match) {
-          return match[1].replace(/,/g, '');
-        }
-      }
-      
-      return '';
-    }
-    
-    // Function to extract invoice/customer name from message
-    function extractInvoice(text) {
-      if (!text) return '';
-      
-      // Try to find common patterns like "Invoice #123", "from ClientName", etc.
-      const patterns = [
-        /(?:invoice|inv|client|customer|from)[:\s]*([a-zA-Z0-9_-]+)/i,
-        /([a-zA-Z][a-zA-Z0-9_-]{2,20})/i,  // Generic name-like text
-      ];
-      
-      for (const pattern of patterns) {
-        const match = text.match(pattern);
-        if (match && match[1] && match[1].length > 2) {
-          // Filter out common words
-          const exclude = ['usdt', 'usdc', 'eth', 'btc', 'trc20', 'erc20', 'hash', 'tx', 'transaction'];
-          if (!exclude.includes(match[1].toLowerCase())) {
-            return match[1];
-          }
-        }
-      }
-      
-      return 'USDT Payment';
+      return hashes;
     }
     
     // Handle incoming messages - detect USDT hashes with blockchain verification
@@ -344,33 +322,47 @@ Last updated: ${dateStr}
       const messageText = msg.text || '';
       const messageId = msg.message_id;
       
-      // Check for USDT hash (can be multiple - handle 1 name + 2 links OR 1 link + 2 names)
-      const words = messageText.split(/\s+/);
-      const hashes = [];
-      const amounts = [];
-      const names = [];
+      console.log(`📩 New message in finance group: ${messageText.substring(0, 60)}...`);
       
-      // Find all hashes in message
-      for (const word of words) {
-        const trimmed = word.trim();
-        if (ERC20_HASH_REGEX.test(trimmed)) {
-          hashes.push({ hash: trimmed, type: 'ERC20' });
-        } else if (TRC20_HASH_REGEX.test(trimmed)) {
-          hashes.push({ hash: trimmed, type: 'TRC20' });
-        }
+      // Use the improved hash extraction function (handles URLs and plain hashes)
+      const hashes = extractAllUsdtHashes(messageText);
+      
+      // Filter to only transaction hashes (not wallet addresses)
+      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
+      
+      if (txHashes.length === 0) {
+        console.log("🔍 No USDT transaction hashes found in message");
+        return;
       }
       
       // Find all amounts ($pattern)
+      const amounts = [];
       const amountPattern = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
       let amountMatch;
       while ((amountMatch = amountPattern.exec(messageText)) !== null) {
         amounts.push(amountMatch[1].replace(/,/g, ''));
       }
       
-      // Extract customer names (look for capitalized words that aren't common words)
+      // Extract customer names - improved extraction for patterns like "EMP Forge"
+      const names = [];
+      
+      // Pattern 1: "EMP Forge" or "EMP: Forge" - the name after EMP
+      const empNameMatch = messageText.match(/(?:EMP|emp)\s*[:\-]?\s*([A-Z][a-zA-Z0-9_-]{2,20})/i);
+      if (empNameMatch && empNameMatch[1]) {
+        names.push(empNameMatch[1]);
+      }
+      
+      // Pattern 2: "Forge" as standalone customer name
+      const forgeMatch = messageText.match(/\b(Forge|Brand|Partner|Affiliate|Client)\b/gi);
+      if (forgeMatch) {
+        for (const m of forgeMatch) {
+          if (!names.includes(m)) names.push(m);
+        }
+      }
+      
+      // Pattern 3: Look for capitalized words after common prefixes
       const namePatterns = [
         /(?:from|client|customer|invoice|inv)[:\s]*([A-Z][a-zA-Z0-9_-]{2,20})/gi,
-        /(?:emp|forge|brand|partner|affiliate)[s]?[:\s]*([A-Z][a-zA-Z0-9_-]{2,20})/gi,
       ];
       
       for (const pattern of namePatterns) {
@@ -379,36 +371,39 @@ Last updated: ${dateStr}
         while ((match = regex.exec(messageText)) !== null) {
           if (match[1] && match[1].length > 2) {
             const exclude = ['usdt', 'usdc', 'eth', 'btc', 'trc20', 'erc20', 'hash', 'tx', 'transaction', 'http', 'https', 'www', 'com', 'org', 'io'];
-            if (!exclude.includes(match[1].toLowerCase())) {
+            if (!exclude.includes(match[1].toLowerCase()) && !names.includes(match[1])) {
               names.push(match[1]);
             }
           }
         }
       }
       
-      // Also try to get names from text that look like names (capitalized words)
+      // Pattern 4: Also try to get names from text that look like names (capitalized words not in URLs)
       const capitalWords = messageText.match(/\b[A-Z][a-zA-Z0-9_-]{2,20}\b/g) || [];
       for (const word of capitalWords) {
-        const exclude = ['USD', 'USDT', 'USDC', 'ETH', 'BTC', 'TRC', 'ERC', 'FROM', 'HTTP', 'HTTPS', 'COM', 'ORG', 'NET', 'IO'];
+        const exclude = ['USD', 'USDT', 'USDC', 'ETH', 'BTC', 'TRC', 'ERC', 'FROM', 'HTTP', 'HTTPS', 'COM', 'ORG', 'NET', 'IO', 'TX', 'TRANSACTION'];
         if (!exclude.includes(word.toUpperCase()) && word.length > 2 && !names.includes(word)) {
-          names.push(word);
+          // Filter out words that are likely part of URLs
+          if (!messageText.includes('http') && !word.includes('.')) {
+            names.push(word);
+          }
         }
       }
       
-      if (hashes.length === 0) return; // No hash found
-      
-      console.log(`🔍 Found ${hashes.length} hash(es), ${amounts.length} amount(s), ${names.length} name(s)`);
+      console.log(`🔍 Found ${txHashes.length} hash(es), ${amounts.length} amount(s), ${names.length} name(s):`, names);
       
       // Get wallets for verification
       const wallets = getWallets();
       
       // Process each hash found
-      for (let i = 0; i < hashes.length; i++) {
-        const { hash, type } = hashes[i];
-        const amount = amounts[i] || amounts[0] || '0'; // Use corresponding amount or first
+      for (let i = 0; i < txHashes.length; i++) {
+        const { hash, type } = txHashes[i];
+        
+        // Match amounts and names by index, fallback to first available
+        const amount = amounts[i] || amounts[0] || '0';
         const invoice = names[i] || names[0] || 'Payment';
         
-        console.log(`🔍 Processing ${type} hash: ${hash.substring(0, 10)}... for ${invoice} - $${amount}`);
+        console.log(`🔍 Processing ${type} hash: ${hash.substring(0, 10)}... for "${invoice}" - $${amount}`);
         
         // Verify transaction on blockchain
         let txResult = { success: false, error: "Could not verify" };
@@ -433,8 +428,8 @@ Last updated: ${dateStr}
           const txAmount = parseFloat(txResult.amount);
           const declaredAmount = parseFloat(amount);
           
-          // Allow 5% tolerance for amount difference
-          if (isNaN(txAmount) || isNaN(declaredAmount) || Math.abs(txAmount - declaredAmount) / txAmount < 0.05) {
+          // Allow 10% tolerance for amount difference
+          if (isNaN(txAmount) || isNaN(declaredAmount) || declaredAmount === 0 || Math.abs(txAmount - declaredAmount) / declaredAmount < 0.10) {
             status = "Received";
             statusNote = "✅ Verified on blockchain - wallet matches!";
           } else {
@@ -443,7 +438,7 @@ Last updated: ${dateStr}
           }
         } else if (txResult.success && !walletVerify.matched) {
           status = "Open";
-          statusNote = `❌ Address mismatch! Sent to: ${txResult.toAddress.substring(0, 8)}... Not in our wallets!`;
+          statusNote = `❌ Address mismatch! Sent to: ${(txResult.toAddress || '').substring(0, 8)}... Not in our wallets!`;
         } else {
           status = "Open";
           statusNote = `⚠️ Could not verify: ${txResult.error || "Unknown error"}`;
@@ -778,3 +773,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
 });
+
