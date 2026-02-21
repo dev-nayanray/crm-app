@@ -14,7 +14,7 @@ const BACKUP_DIR = path.join(__dirname, "backups");
 
 // Telegram Bot Configuration
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = "-1002796530029";
+const FINANCE_GROUP_CHAT_ID = "-4744920512";
 
 // Free API keys (limited requests)
 // TronScan API - Free tier (no key required for basic queries)
