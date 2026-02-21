@@ -15,9 +15,26 @@ const mobileCSS = `
   .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
   .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
   .blitz-form-grid { grid-template-columns: 1fr !important; }
+  /* Enhanced mobile styles */
+  body { -webkit-tap-highlight-color: transparent; }
+  input, select, button { font-size: 16px !important; }
+  table { font-size: 11px !important; }
+  .payment-card { padding: 12px !important; }
 }
 @media (max-width: 480px) {
   .blitz-summary { grid-template-columns: 1fr !important; }
+  .blitz-header { padding: 8px 10px !important; }
+  .blitz-main { padding: 12px 8px !important; }
+  .blitz-modal-content { padding: 16px 12px !important; }
+}
+@media (hover: none) and (pointer: coarse) {
+  button, select, input[type="checkbox"], input[type="radio"] { min-height: 44px !important; }
+  .touch-target { min-width: 44px; min-height: 44px; }
+}
+/* PWA standalone mode */
+@media (display-mode: standalone) {
+  .blitz-header { padding-top: env(safe-area-inset-top, 0) !important; }
+  body { padding-bottom: env(safe-area-inset-bottom, 0) !important; }
 }
 `;
 

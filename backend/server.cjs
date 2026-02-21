@@ -3,11 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
 const https = require("https");
+const http = require("http");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.051";
+const VERSION = "1.052";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 
@@ -15,11 +16,150 @@ const BACKUP_DIR = path.join(__dirname, "backups");
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = "-1002796530029";
 
-// Regex patterns for USDT transaction hashes
+// Free API keys (limited requests)
+// TronScan API - Free tier (no key required for basic queries)
+const TRONSCAN_API = "https://apilist.tronscan.org";
+// Etherscan API - Free tier (you can add your own key if needed)
+const ETHERSCAN_API_KEY = "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET"; // Add your free API key here if needed
+const ETHERSCAN_API = "https://api.etherscan.io/api";
+const ETHERSCAN_BASE = "https://etherscan.io";
+
+// Regex patterns for USDT transaction hashes and addresses
 // TRC20 (Tron): 64 character base58 string starting with 'T'
 const TRC20_HASH_REGEX = /^T[a-zA-Z0-9]{33}$/;
+// TRC20 Address: Starts with T, 34 chars
+const TRC20_ADDRESS_REGEX = /^T[a-zA-Z0-9]{33}$/;
 // ERC20 (Ethereum): 0x followed by 64 hex characters
 const ERC20_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
+// ERC20 Address: 0x followed by 40 hex characters
+const ERC20_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+// BTC Address: Starts with 1, 3, or bc1
+const BTC_ADDRESS_REGEX = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}$/;
+
+// USDT Contract Addresses
+const TRC20_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const ERC20_USDT_CONTRACT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+
+// Helper function to make HTTP requests
+function httpRequest(url, isHttps = true) {
+  return new Promise((resolve, reject) => {
+    const protocol = isHttps ? https : http;
+    protocol.get(url, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => resolve(data));
+    }).on("error", reject);
+  });
+}
+
+// Function to check TRC20 USDT transaction on TronScan
+async function checkTRC20Transaction(txHash) {
+  try {
+    const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
+    const response = await httpRequest(url);
+    const data = JSON.parse(response);
+    
+    if (data && data.contract_type === "TRC20" && data.token_info && data.token_info.symbol === "USDT") {
+      return {
+        success: true,
+        amount: data.amount || data.token_info.amount,
+        toAddress: data.to_address,
+        fromAddress: data.from_address,
+        confirmed: data.confirmed
+      };
+    }
+    return { success: false, error: "Not a USDT TRC20 transaction" };
+  } catch (err) {
+    console.log("⚠️ TronScan API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Function to check ERC20 USDT transaction on Etherscan
+async function checkERC20Transaction(txHash) {
+  try {
+    let url = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}`;
+    if (ETHERSCAN_API_KEY) {
+      url += `&apikey=${ETHERSCAN_API_KEY}`;
+    }
+    
+    const response = await httpRequest(url);
+    const data = JSON.parse(response);
+    
+    if (data.status === "1" && data.message === "OK") {
+      // Get transaction details
+      let txUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
+      if (ETHERSCAN_API_KEY) {
+        txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
+      }
+      
+      const txResponse = await httpRequest(txUrl);
+      const txData = JSON.parse(txResponse);
+      
+      if (txData.result) {
+        // Decode input data to find transfer details
+        const input = txData.result.input;
+        let amount = "0";
+        let toAddress = txData.result.to;
+        
+        // USDT transfer method ID: 0xa9059cbb
+        if (input && input.startsWith("0xa9059cbb")) {
+          // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
+          const amountHex = "0x" + input.slice(-64);
+          amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
+          // Extract to address (from 10 to 74)
+          toAddress = "0x" + input.slice(34, 74);
+        }
+        
+        return {
+          success: true,
+          amount: amount,
+          toAddress: toAddress,
+          fromAddress: txData.result.from,
+          confirmed: data.result.status === "1"
+        };
+      }
+    }
+    return { success: false, error: "Transaction not found or not confirmed" };
+  } catch (err) {
+    console.log("⚠️ Etherscan API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Function to get wallet addresses from admin data
+function getWallets() {
+  const walletsPath = path.join(DATA_DIR, "wallets.json");
+  try {
+    if (fs.existsSync(walletsPath)) {
+      return JSON.parse(fs.readFileSync(walletsPath, "utf8"));
+    }
+  } catch (err) {
+    console.log("⚠️ Error reading wallets:", err.message);
+  }
+  return [];
+}
+
+// Function to check if address matches any wallet
+function verifyWalletAddress(address, wallets) {
+  if (!wallets || wallets.length === 0) return { matched: false, error: "No wallets configured" };
+  
+  const normalizedInput = address.toLowerCase().trim();
+  
+  for (const wallet of wallets) {
+    if (wallet.trc && wallet.trc.toLowerCase().trim() === normalizedInput) {
+      return { matched: true, wallet: wallet.trc, type: "TRC20" };
+    }
+    if (wallet.erc && wallet.erc.toLowerCase().trim() === normalizedInput) {
+      return { matched: true, wallet: wallet.erc, type: "ERC20" };
+    }
+    if (wallet.btc && wallet.btc.toLowerCase().trim() === normalizedInput) {
+      return { matched: true, wallet: wallet.btc, type: "BTC" };
+    }
+  }
+  
+  return { matched: false, error: "Address not in our wallets" };
+}
 
 // Initialize Telegram Bot (for commands)
 let bot;
@@ -193,8 +333,8 @@ Last updated: ${dateStr}
       return 'USDT Payment';
     }
     
-    // Handle incoming messages - detect USDT hashes
-    bot.on('message', (msg) => {
+    // Handle incoming messages - detect USDT hashes with blockchain verification
+    bot.on('message', async (msg) => {
       // Ignore commands (they have their own handlers)
       if (msg.text && msg.text.startsWith('/')) return;
       
@@ -204,32 +344,124 @@ Last updated: ${dateStr}
       const messageText = msg.text || '';
       const messageId = msg.message_id;
       
-      // Check for USDT hash
-      const usdtHashInfo = extractUsdtHash(messageText);
+      // Check for USDT hash (can be multiple - handle 1 name + 2 links OR 1 link + 2 names)
+      const words = messageText.split(/\s+/);
+      const hashes = [];
+      const amounts = [];
+      const names = [];
       
-      if (usdtHashInfo) {
-        const { hash, type } = usdtHashInfo;
+      // Find all hashes in message
+      for (const word of words) {
+        const trimmed = word.trim();
+        if (ERC20_HASH_REGEX.test(trimmed)) {
+          hashes.push({ hash: trimmed, type: 'ERC20' });
+        } else if (TRC20_HASH_REGEX.test(trimmed)) {
+          hashes.push({ hash: trimmed, type: 'TRC20' });
+        }
+      }
+      
+      // Find all amounts ($pattern)
+      const amountPattern = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
+      let amountMatch;
+      while ((amountMatch = amountPattern.exec(messageText)) !== null) {
+        amounts.push(amountMatch[1].replace(/,/g, ''));
+      }
+      
+      // Extract customer names (look for capitalized words that aren't common words)
+      const namePatterns = [
+        /(?:from|client|customer|invoice|inv)[:\s]*([A-Z][a-zA-Z0-9_-]{2,20})/gi,
+        /(?:emp|forge|brand|partner|affiliate)[s]?[:\s]*([A-Z][a-zA-Z0-9_-]{2,20})/gi,
+      ];
+      
+      for (const pattern of namePatterns) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(messageText)) !== null) {
+          if (match[1] && match[1].length > 2) {
+            const exclude = ['usdt', 'usdc', 'eth', 'btc', 'trc20', 'erc20', 'hash', 'tx', 'transaction', 'http', 'https', 'www', 'com', 'org', 'io'];
+            if (!exclude.includes(match[1].toLowerCase())) {
+              names.push(match[1]);
+            }
+          }
+        }
+      }
+      
+      // Also try to get names from text that look like names (capitalized words)
+      const capitalWords = messageText.match(/\b[A-Z][a-zA-Z0-9_-]{2,20}\b/g) || [];
+      for (const word of capitalWords) {
+        const exclude = ['USD', 'USDT', 'USDC', 'ETH', 'BTC', 'TRC', 'ERC', 'FROM', 'HTTP', 'HTTPS', 'COM', 'ORG', 'NET', 'IO'];
+        if (!exclude.includes(word.toUpperCase()) && word.length > 2 && !names.includes(word)) {
+          names.push(word);
+        }
+      }
+      
+      if (hashes.length === 0) return; // No hash found
+      
+      console.log(`🔍 Found ${hashes.length} hash(es), ${amounts.length} amount(s), ${names.length} name(s)`);
+      
+      // Get wallets for verification
+      const wallets = getWallets();
+      
+      // Process each hash found
+      for (let i = 0; i < hashes.length; i++) {
+        const { hash, type } = hashes[i];
+        const amount = amounts[i] || amounts[0] || '0'; // Use corresponding amount or first
+        const invoice = names[i] || names[0] || 'Payment';
         
-        console.log(`🔍 USDT ${type} hash detected: ${hash.substring(0, 10)}...`);
+        console.log(`🔍 Processing ${type} hash: ${hash.substring(0, 10)}... for ${invoice} - $${amount}`);
         
-        // Extract amount and invoice from message
-        const amount = extractAmount(messageText);
-        const invoice = extractInvoice(messageText);
+        // Verify transaction on blockchain
+        let txResult = { success: false, error: "Could not verify" };
+        if (type === 'TRC20') {
+          txResult = await checkTRC20Transaction(hash);
+        } else if (type === 'ERC20') {
+          txResult = await checkERC20Transaction(hash);
+        }
         
-        // Get current date
+        // Verify wallet address
+        const walletVerify = txResult.success ? verifyWalletAddress(txResult.toAddress, wallets) : { matched: false, error: "Transaction not verified" };
+        
         const now = new Date();
         const paidDate = now.toISOString().split('T')[0];
+        
+        // Determine status based on verification
+        let status = "Open";
+        let statusNote = "";
+        
+        if (txResult.success && walletVerify.matched) {
+          // Transaction verified - check amount
+          const txAmount = parseFloat(txResult.amount);
+          const declaredAmount = parseFloat(amount);
+          
+          // Allow 5% tolerance for amount difference
+          if (isNaN(txAmount) || isNaN(declaredAmount) || Math.abs(txAmount - declaredAmount) / txAmount < 0.05) {
+            status = "Received";
+            statusNote = "✅ Verified on blockchain - wallet matches!";
+          } else {
+            status = "Open";
+            statusNote = `⚠️ Amount mismatch: blockchain $${txAmount} vs declared $${declaredAmount}`;
+          }
+        } else if (txResult.success && !walletVerify.matched) {
+          status = "Open";
+          statusNote = `❌ Address mismatch! Sent to: ${txResult.toAddress.substring(0, 8)}... Not in our wallets!`;
+        } else {
+          status = "Open";
+          statusNote = `⚠️ Could not verify: ${txResult.error || "Unknown error"}`;
+        }
         
         // Create new customer payment
         const newPayment = {
           id: genCustomerPaymentId(),
           invoice: invoice,
           paidDate: paidDate,
-          status: "Open", // Set to Open so user can verify and change to Received
-          amount: amount || "0",
+          status: status,
+          amount: amount,
           openBy: "Telegram Bot",
-          instructions: "",
+          instructions: statusNote,
           paymentHash: hash,
+          blockchainType: type,
+          blockchainVerified: txResult.success,
+          toAddress: txResult.toAddress || "",
           month: now.getMonth() + 1,
           year: now.getFullYear()
         };
@@ -238,19 +470,32 @@ Last updated: ${dateStr}
         const customerPayments = readJSON("customer-payments.json", []);
         
         // Add new payment
-        customerPayments.unshift(newPayment); // Add to beginning
+        customerPayments.unshift(newPayment);
         writeJSON("customer-payments.json", customerPayments);
         
-        console.log(`✅ Customer payment created: ${invoice} - ${amount || '0'} (Hash: ${hash.substring(0, 10)}...)`);
+        console.log(`✅ Customer payment created: ${invoice} - $${amount} - Status: ${status}`);
         
         // Send confirmation to group
-        const confirmMessage = `✅ <b>Payment Detected!</b>
-
-📋 Invoice: <b>${invoice}</b>
-💵 Amount: <b>$${amount || '0'}</b>
-🔗 Hash (${type}): <code>${hash}</code>
-
-⚠️ Status set to <b>Open</b> - please verify and update to <b>Received</b> when confirmed.`;
+        let confirmMessage = `📨 <b>Payment Processed!</b>\n\n`;
+        confirmMessage += `📋 Invoice: <b>${invoice}</b>\n`;
+        confirmMessage += `💵 Amount: <b>$${amount}</b>\n`;
+        confirmMessage += `🔗 Hash (${type}): <code>${hash}</code>\n`;
+        
+        if (txResult.success) {
+          confirmMessage += `✅ Blockchain: <b>Verified</b>\n`;
+          confirmMessage += `📍 To: <code>${(txResult.toAddress || '').substring(0, 12)}...</code>\n`;
+          confirmMessage += `💰 Tx Amount: $${txResult.amount || 'N/A'}\n`;
+        } else {
+          confirmMessage += `⚠️ Blockchain: <b>Could not verify</b>\n`;
+        }
+        
+        if (walletVerify.matched) {
+          confirmMessage += `✅ Wallet: <b>MATCHED</b> (${walletVerify.type})\n`;
+        } else {
+          confirmMessage += `❌ Wallet: <b>${walletVerify.error}</b>\n`;
+        }
+        
+        confirmMessage += `\n📊 Status: <b>${status}</b>`;
         
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMessage, { parse_mode: "HTML" });
       }

@@ -8,7 +8,7 @@
     "dev:all": "concurrently \"npm run server\" \"npm run dev\"",
     "build": "vite build",
     "preview": "vite preview",
-"server": "node backend/server.cjs",
+    "server": "node backend/server.cjs",
     "start": "node backend/server.cjs"
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
+    "pngjs": "^7.0.0",
     "vite": "^5.2.0"
   }
 }
