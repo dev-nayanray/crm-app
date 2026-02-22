@@ -481,17 +481,30 @@ Select a country to view today's deals:
       // Format deals message based on isAllTime
       let dealsMessage;
       if (isAllTime) {
-        // NEW compact format (no summary, bullet points)
-        dealsMessage = `<b>${countryName} - Deals</b> (${countryDeals.length} found)\n\n`;
+        // Format for deals data (affiliate, country, price, crg, funnels, source, deduction)
+        dealsMessage = `📊 <b>${countryName} - Deals</b> (${countryDeals.length} found)\n📋 Source: Deals Data\n\n`;
+        
+        // Show summary
+        const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
+        const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
+        
+        dealsMessage += `📈 <b>Summary:</b>\n`;
+        dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
+        dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
+        dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
         
         // Show each deal (limit to 20 to avoid message too long)
         const displayDeals = countryDeals.slice(0, 20);
         
-        displayDeals.forEach((deal) => {
-          dealsMessage += `• Affiliate #${deal.affiliate}\n`;
-          dealsMessage += `• 💰 Total Price: €${parseInt(deal.price || 0).toLocaleString()} | CRG: ${deal.crg || '-'}%\n`;
-          dealsMessage += `• Funnels: ${deal.funnels || '-'} | Source: ${deal.source || '-'}\n`;
-          dealsMessage += `• Deduction: ${deal.deduction || '-'}%\n\n`;
+        displayDeals.forEach((deal, index) => {
+          dealsMessage += `<b>${index + 1}. Affiliate #${deal.affiliate}</b>\n`;
+          dealsMessage += `   💰 Price: €${deal.price || '-'}\n`;
+          dealsMessage += `   📊 CRG: ${deal.crg || '-'}% | Funnels: ${deal.funnels || '-'}\n`;
+          dealsMessage += `   📢 Source: ${deal.source || '-'} | Deduction: ${deal.deduction || '-'}%\n`;
+          if (deal.id) {
+            dealsMessage += `   🆔 ID: ${deal.id}\n`;
+          }
+          dealsMessage += `\n`;
         });
         
         if (countryDeals.length > 20) {
@@ -1140,3 +1153,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
 });
+
