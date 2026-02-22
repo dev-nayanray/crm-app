@@ -613,50 +613,5 @@
     "deal": "",
     "funnel": "",
     "date": "2026-02-19"
-  },
-  {
-    "id": "today016",
-    "affiliate": "302 DE",
-    "brokerCap": "Capitan 25",
-    "manageAff": "Katie",
-    "cap": "25",
-    "madeSale": "John",
-    "started": true,
-    "capReceived": "12",
-    "ftd": "2",
-    "hours": "10-18 gmt+2",
-    "deal": "",
-    "funnel": "",
-    "date": "2026-02-22"
-  },
-  {
-    "id": "today017",
-    "affiliate": "402 FR",
-    "brokerCap": "GLB 18",
-    "manageAff": "Alex",
-    "cap": "18",
-    "madeSale": "Oksana",
-    "started": true,
-    "capReceived": "8",
-    "ftd": "1",
-    "hours": "11-19 gmt+2",
-    "deal": "",
-    "funnel": "",
-    "date": "2026-02-22"
-  },
-  {
-    "id": "today018",
-    "affiliate": "502 UK",
-    "brokerCap": "Swin 22",
-    "manageAff": "Katie",
-    "cap": "22",
-    "madeSale": "Alex",
-    "started": true,
-    "capReceived": "15",
-    "ftd": "3",
-    "hours": "10-17 gmt+2",
-    "deal": "",
-    "funnel": "",
-    "date": "2026-02-22"
   }
 ]

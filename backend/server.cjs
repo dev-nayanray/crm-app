@@ -348,7 +348,9 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     // Register bot commands with Telegram (shows in command suggestions)
     bot.setMyCommands([
       { command: "/start", description: "Show welcome message and help" },
-      { command: "/wallets", description: "Get current wallet addresses" }
+      { command: "/wallets", description: "Get current wallet addresses" },
+      { command: "/crgdeals", description: "View today's CRG deals by country" },
+      { command: "/deals", description: "View all time CRG deals by country (historical)" }
     ]).then(() => {
       console.log("✅ Bot commands registered with Telegram");
     }).catch((err) => {
@@ -410,9 +412,9 @@ Last updated: ${dateStr}
       console.log("📱 /wallets command responded to chat:", chatId);
     });
     
-    console.log("✅ Bot command handlers ready: /start, /wallets");
+    console.log("✅ Bot command handlers ready: /start, /wallets, /crgdeals, /deals");
     
-    // ── /deals command - Ask for country code with buttons ──
+    // ── /deals command - Ask for country code with buttons (ALL TIME deals) ──
     bot.onText(/\/deals/, (msg) => {
       const chatId = msg.chat.id;
       
@@ -420,7 +422,50 @@ Last updated: ${dateStr}
       delete userStates[chatId];
       
       // Set user state to waiting for country code
-      userStates[chatId] = { state: 'waiting_for_country', command: '/deals' };
+      userStates[chatId] = { state: 'waiting_for_country_deals', command: '/deals' };
+      
+      // Create inline keyboard with country buttons (using 'all_' prefix for callback)
+      const countryKeyboard = [
+        [
+          { text: '🇩🇪 DE', callback_data: 'all_DE' },
+          { text: '🇫🇷 FR', callback_data: 'all_FR' },
+          { text: '🇬🇧 UK', callback_data: 'all_UK' }
+        ],
+        [
+          { text: '🇦🇺 AU', callback_data: 'all_AU' },
+          { text: '🇲🇾 MY', callback_data: 'all_MY' },
+          { text: '🇸🇬 SI', callback_data: 'all_SI' }
+        ],
+        [
+          { text: '🇭🇷 HR', callback_data: 'all_HR' },
+          { text: '🇸🇦 GCC', callback_data: 'all_GCC' }
+        ]
+      ];
+      
+      const dealsMessage = `📊 <b>CRG Deals - All Time Deals</b>
+
+Select a country to view ALL deals (no date filter):
+
+<i>Or type the country code (e.g., DE, FR, UK)</i>`;
+      
+      bot.sendMessage(chatId, dealsMessage, { 
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: countryKeyboard
+        }
+      });
+      console.log("📱 /deals command responded to chat:", chatId);
+    });
+    
+    // ── /crgdeals command - Ask for country code with buttons ──
+    bot.onText(/\/crgdeals/, (msg) => {
+      const chatId = msg.chat.id;
+      
+      // Clear any previous state for this user
+      delete userStates[chatId];
+      
+      // Set user state to waiting for country code
+      userStates[chatId] = { state: 'waiting_for_country', command: '/crgdeals' };
       
       // Create inline keyboard with country buttons
       const countryKeyboard = [
@@ -452,14 +497,17 @@ Select a country to view today's deals:
           inline_keyboard: countryKeyboard
         }
       });
-      console.log("📱 /deals command responded to chat:", chatId);
+      console.log("📱 /crgdeals command responded to chat:", chatId);
     });
     
     // ── Handle callback queries from inline keyboard ──
     bot.on('callback_query', async (callbackQuery) => {
       const msg = callbackQuery.message;
       const chatId = msg.chat.id;
-      const countryCode = callbackQuery.data;
+      const callbackData = callbackQuery.data;
+      // Check if this is an "all time" request (prefixed with "all_")
+      const isAllTime = callbackData.startsWith('all_');
+      const countryCode = isAllTime ? callbackData.substring(4) : callbackData;
       
       // Answer the callback to remove loading state
       bot.answerCallbackQuery(callbackQuery.id);
@@ -478,14 +526,14 @@ Select a country to view today's deals:
       // Read deals from crg-deals.json
       const allDeals = readJSON("crg-deals.json", []);
       
-      // Filter deals by country code AND today's date
+      // Filter deals by country code (and today's date only for /crgdeals)
       const countryDeals = allDeals.filter(deal => {
         if (!deal.affiliate) return false;
         // Check country code match
         const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
-        // Check date is today
+        // Check date is today only for /crgdeals (not all time)
         const isToday = deal.date === today;
-        return hasCountry && isToday;
+        return hasCountry && (isAllTime || isToday);
       });
       
       // Country name mapping
@@ -503,8 +551,9 @@ Select a country to view today's deals:
       const countryName = countryNames[countryCode] || countryCode;
       
       if (countryDeals.length === 0) {
-        bot.sendMessage(chatId, `📭 No <b>today's</b> deals found for <b>${countryName}</b> (${countryCode})\n\n<i>Note: Only showing deals with date: ${today}</i>`, { parse_mode: "HTML" });
-        console.log("📱 /deals (button) - No today's deals found for:", countryCode);
+        const noteText = isAllTime ? 'Showing ALL historical deals (no date filter)' : 'Note: Only showing deals with date: ' + today;
+        bot.sendMessage(chatId, `📭 No deals found for <b>${countryName}</b> (${countryCode})\n\n<i>${noteText}</i>`, { parse_mode: "HTML" });
+        console.log("📱 /deals (button) - No deals found for:", countryCode, isAllTime ? "(all time)" : "(today)");
         return;
       }
       
