@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.058";
+const VERSION = "1.059";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2459,27 +2459,24 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 
 /* ── Deals Page ── */
 const DEALS_INITIAL = [
-  { id: genId(), affiliate: "17", country: "DE", price: "1800", crg: "15", dealType: "CRG", deduction: "Upto 5%", funnels: "Immediate mix // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "17", country: "JP", price: "1450", crg: "112", dealType: "CRG", deduction: "Upto 10%", funnels: "Quantum // Twitter", date: "2026-02-22" },
-  { id: genId(), affiliate: "14", country: "BR", price: "750", crg: "4", dealType: "CRG", deduction: "Upto 5%", funnels: "Trade Pro Air // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "71", country: "FR", price: "1250", crg: "10", dealType: "CRG", deduction: "Upto 10%", funnels: "Bitradeproai // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "71", country: "KR", price: "1300", crg: "8", dealType: "CRG", deduction: "", funnels: "Immediaterise // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "86", country: "PL", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Google Finance AI", date: "2026-02-22" },
-  { id: genId(), affiliate: "86", country: "DK", price: "1450", crg: "13", dealType: "CRG", deduction: "", funnels: "Google Finance AI", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "IT", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "AU", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "SE", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "NL", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "FI", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "17", country: "DE", price: "1800", crg: "15", dealType: "CRG", deduction: "Upto 5%", funnels: "Immediate mix", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "17", country: "JP", price: "1450", crg: "112", dealType: "CRG", deduction: "Upto 10%", funnels: "Quantum", source: "Twitter", date: "2026-02-22" },
+  { id: genId(), affiliate: "14", country: "BR", price: "750", crg: "4", dealType: "CRG", deduction: "Upto 5%", funnels: "Trade Pro Air", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "71", country: "FR", price: "1250", crg: "10", dealType: "CRG", deduction: "Upto 10%", funnels: "Bitradeproai", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "71", country: "KR", price: "1300", crg: "8", dealType: "CRG", deduction: "", funnels: "Immediaterise", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "86", country: "PL", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Google Finance AI", source: "", date: "2026-02-22" },
+  { id: genId(), affiliate: "86", country: "DK", price: "1450", crg: "13", dealType: "CRG", deduction: "", funnels: "Google Finance AI", source: "", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "IT", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "AU", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "SE", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "NL", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "FI", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
 ];
 
 function DealsForm({ deal, onSave, onClose }) {
-  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", deduction: "", date: new Date().toISOString().split("T")[0] });
+  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", source: "", deduction: "", date: new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
-
-  // Auto-build client display from affiliate + country
-  const clientDisplay = [f.affiliate, f.country].filter(Boolean).join(" ");
 
   const handleSave = () => {
     if (!f.affiliate.trim()) { setError("Affiliate is required"); return; }
@@ -2512,8 +2509,11 @@ function DealsForm({ deal, onSave, onClose }) {
         <Field label="Deduction">
           <input style={inp} value={f.deduction || ""} onChange={e => s("deduction", e.target.value)} placeholder="e.g. Upto 5% or leave empty" />
         </Field>
-        <Field label="Traffic type / Funnels">
-          <input style={{ ...inp, gridColumn: "1 / -1" }} value={f.funnels || ""} onChange={e => s("funnels", e.target.value)} placeholder="e.g. Immediate mix // Google" />
+        <Field label="Funnels">
+          <input style={inp} value={f.funnels || ""} onChange={e => s("funnels", e.target.value)} placeholder="e.g. Immediate mix, Quantum" />
+        </Field>
+        <Field label="Source">
+          <input style={inp} value={f.source || ""} onChange={e => s("source", e.target.value)} placeholder="e.g. Google, Twitter" />
         </Field>
         <Field label="Date">
           <input style={inp} type="date" value={f.date || ""} onChange={e => s("date", e.target.value)} />
@@ -2572,7 +2572,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   const matchSearch = d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [d.affiliate, d.country, d.funnels, d.dealType, d.deduction].some(v => (v || "").toLowerCase().includes(q));
+    return [d.affiliate, d.country, d.funnels, d.source, d.dealType, d.deduction].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const filtered = deals.filter(matchSearch);
@@ -2637,7 +2637,8 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                     { key: "crg", label: "CRG" },
                     { key: "dealType", label: "Deal Type" },
                     { key: "deduction", label: "Deductions" },
-                    { key: "funnels", label: "Traffic type / Funnels" },
+                    { key: "funnels", label: "Funnels" },
+                    { key: "source", label: "Source" },
                     { key: "date", label: "Date" },
                     { key: null, label: "Actions" },
                   ].map(h =>
@@ -2657,7 +2658,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={9} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No deals yet. Click "New Deal" to add one.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No deals yet. Click "New Deal" to add one.</td></tr>
                 )}
                 {sorted.map((d, i) => (
                   <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
@@ -2690,8 +2691,10 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                     <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 13, fontWeight: 600, borderRight: "1px solid #F1F5F9" }}>
                       {d.deduction ? <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: 4 }}>{d.deduction}</span> : <span style={{ color: "#CBD5E1" }}>Not specified</span>}
                     </td>
-                    {/* Traffic type / Funnels */}
-                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
+                    {/* Funnels */}
+                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
+                    {/* Source */}
+                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.source || ""}</td>
                     {/* Date */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 12, color: "#64748B", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>
                       {d.date ? (() => { const dt = new Date(d.date + "T00:00:00"); return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`; })() : ""}
@@ -2820,7 +2823,7 @@ export default function App() {
         const localHasData = [lu, lp, lcp, lcrg, ldc, ldl, lwl].some(d => d !== null && d.length > 0);
 
         if (serverHasData) {
-          // Server has data — use it as truth
+          // Server has data — use it as truth for tables that have data
           if (u !== null && u.length > 0) setUsers(u);
           if (p !== null && p.length > 0) setPayments(p);
           if (cp !== null && cp.length > 0) setCpPayments(cp);
@@ -2828,6 +2831,21 @@ export default function App() {
           if (dc !== null && dc.length > 0) setDcEntries(dc);
           if (dl !== null && dl.length > 0) setDealsData(dl);
           if (wl !== null && wl.length > 0) setWalletsData(wl);
+
+          // For any tables empty on server but we have local/initial data — push them up
+          const pushTasks = [];
+          if ((!u || u.length === 0) && lu && lu.length > 0) { setUsers(lu); pushTasks.push(apiSave('users', lu)); }
+          if ((!p || p.length === 0) && lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
+          if ((!cp || cp.length === 0) && lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
+          if ((!crg || crg.length === 0) && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
+          if ((!dc || dc.length === 0) && ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
+          if ((!dl || dl.length === 0)) {
+            const localDeals = ldl && ldl.length > 0 ? ldl : DEALS_INITIAL;
+            setDealsData(localDeals);
+            pushTasks.push(apiSave('deals', localDeals));
+          }
+          if ((!wl || wl.length === 0) && lwl && lwl.length > 0) { setWalletsData(lwl); pushTasks.push(apiSave('wallets', lwl)); }
+          if (pushTasks.length > 0) await Promise.all(pushTasks);
           setSyncBanner("synced");
         } else if (localHasData) {
           // Server is empty but localStorage has data — push local up
