@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "2.01";
+const VERSION = "2.02";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2840,31 +2840,34 @@ export default function App() {
     const session = getSession();
     return session ? { email: session.email, name: session.name } : null;
   });
-  const [users, setUsers] = useState(() => lsGet('users', INITIAL_USERS));
-  const [payments, setPayments] = useState(() => lsGet('payments', INITIAL));
-  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', CP_INITIAL));
-  const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', CRG_INITIAL));
-  const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', DC_INITIAL));
-  const [dealsData, setDealsData] = useState(() => lsGet('deals', DEALS_INITIAL));
-  const [walletsData, setWalletsData] = useState(() => lsGet('wallets', [{ id: genId(), date: "2026-02-19", trc: "TAXupFc6A9Svhy22bJn7QQzPaLtZ6tGQ15", erc: "0xbF7178Bd7526C25387df412cbe12927b593E31E5", btc: "bc1qqhtk4fhlnkf7sv768jdss5da7ce0wnpue6ltwd" }]));
+  const [users, setUsers] = useState(() => lsGet('users', null) || INITIAL_USERS);
+  const [payments, setPayments] = useState(() => lsGet('payments', null) || INITIAL);
+  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', null) || CP_INITIAL);
+  const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', null) || CRG_INITIAL);
+  const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || DC_INITIAL);
+  const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || DEALS_INITIAL);
+  const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || [{ id: genId(), date: "2026-02-19", trc: "TAXupFc6A9Svhy22bJn7QQzPaLtZ6tGQ15", erc: "0xbF7178Bd7526C25387df412cbe12927b593E31E5", btc: "bc1qqhtk4fhlnkf7sv768jdss5da7ce0wnpue6ltwd" }]);
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const [syncBanner, setSyncBanner] = useState(null); // null | "pushing" | "synced" | "offline"
   const skipSave = useRef(true);
 
-  // On startup: connect to server and sync
-  // PRIORITY: Server data > localStorage > hardcoded defaults
-  // NEVER overwrite real data with hardcoded defaults
+  // ── SYNC ENGINE: Server-Active methodology ──
+  // RULE 1: If server has data for a table → USE IT (never overwrite with local/defaults)
+  // RULE 2: If server is empty for a table → check localStorage → push localStorage up
+  // RULE 3: If BOTH server AND localStorage are empty → push hardcoded defaults (first-time only)
+  // RULE 4: Hardcoded INITIAL data is ONLY used on truly fresh installs (no server, no localStorage)
+  // RULE 5: On every state change → save to BOTH localStorage AND server simultaneously
   useEffect(() => {
     (async () => {
       skipSave.current = true;
 
-      // Step 1: Try to reach the server
+      // Step 1: Fetch ALL data from server
       const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
       ]);
 
-      // Step 2: Get localStorage data
+      // Step 2: Get localStorage data (backup/offline cache)
       const lu = lsGet('users', null);
       const lp = lsGet('payments', null);
       const lcp = lsGet('customer-payments', null);
@@ -2874,61 +2877,51 @@ export default function App() {
       const lwl = lsGet('wallets', null);
 
       if (serverOnline) {
-        const serverHasData = [u, p, cp, crg, dc, dl, wl].some(d => d !== null && d.length > 0);
-        const localHasData = [lu, lp, lcp, lcrg, ldc, ldl, lwl].some(d => d !== null && d.length > 0);
+        // ── SERVER IS ONLINE: it is the source of truth ──
+        const pushTasks = [];
 
-        if (serverHasData) {
-          // Server has data — use it as truth for tables that have data
-          if (u !== null && u.length > 0) setUsers(u);
-          if (p !== null && p.length > 0) setPayments(p);
-          if (cp !== null && cp.length > 0) setCpPayments(cp);
-          if (crg !== null && crg.length > 0) setCrgDeals(crg);
-          if (dc !== null && dc.length > 0) setDcEntries(dc);
-          if (dl !== null && dl.length > 0) setDealsData(dl);
-          if (wl !== null && wl.length > 0) setWalletsData(wl);
+        // For EACH table independently: server > localStorage > defaults
+        // USERS
+        if (u !== null && u.length > 0) { setUsers(u); }
+        else if (lu && lu.length > 0) { setUsers(lu); pushTasks.push(apiSave('users', lu)); }
+        else { pushTasks.push(apiSave('users', INITIAL_USERS)); }
 
-          // For any tables empty on server but we have local/initial data — push them up
-          const pushTasks = [];
-          if ((!u || u.length === 0) && lu && lu.length > 0) { setUsers(lu); pushTasks.push(apiSave('users', lu)); }
-          if ((!p || p.length === 0) && lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
-          if ((!cp || cp.length === 0) && lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
-          if ((!crg || crg.length === 0) && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
-          if ((!dc || dc.length === 0) && ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
-          if ((!dl || dl.length === 0)) {
-            const localDeals = ldl && ldl.length > 0 ? ldl : DEALS_INITIAL;
-            setDealsData(localDeals);
-            pushTasks.push(apiSave('deals', localDeals));
-          }
-          if ((!wl || wl.length === 0) && lwl && lwl.length > 0) { setWalletsData(lwl); pushTasks.push(apiSave('wallets', lwl)); }
-          if (pushTasks.length > 0) await Promise.all(pushTasks);
-          setSyncBanner("synced");
-        } else if (localHasData) {
-          // Server is empty but localStorage has data — push local up
+        // PAYMENTS
+        if (p !== null && p.length > 0) { setPayments(p); }
+        else if (lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
+        else { pushTasks.push(apiSave('payments', INITIAL)); }
+
+        // CUSTOMER PAYMENTS
+        if (cp !== null && cp.length > 0) { setCpPayments(cp); }
+        else if (lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
+        else { pushTasks.push(apiSave('customer-payments', CP_INITIAL)); }
+
+        // CRG DEALS
+        if (crg !== null && crg.length > 0) { setCrgDeals(crg); }
+        else if (lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
+        else { pushTasks.push(apiSave('crg-deals', CRG_INITIAL)); }
+
+        // DAILY CAP
+        if (dc !== null && dc.length > 0) { setDcEntries(dc); }
+        else if (ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
+        else { pushTasks.push(apiSave('daily-cap', DC_INITIAL)); }
+
+        // DEALS
+        if (dl !== null && dl.length > 0) { setDealsData(dl); }
+        else if (ldl && ldl.length > 0) { setDealsData(ldl); pushTasks.push(apiSave('deals', ldl)); }
+        else { setDealsData(DEALS_INITIAL); pushTasks.push(apiSave('deals', DEALS_INITIAL)); }
+
+        // WALLETS
+        if (wl !== null && wl.length > 0) { setWalletsData(wl); }
+        else if (lwl && lwl.length > 0) { setWalletsData(lwl); pushTasks.push(apiSave('wallets', lwl)); }
+        // no default push for wallets — already has initial state
+
+        if (pushTasks.length > 0) {
           setSyncBanner("pushing");
-          const pushU = lu || INITIAL_USERS;
-          const pushP = lp || INITIAL;
-          const pushCp = lcp || CP_INITIAL;
-          const pushCrg = lcrg || CRG_INITIAL;
-          const pushDc = ldc || DC_INITIAL;
-          const pushDl = ldl || DEALS_INITIAL;
-          const pushWl = lwl || walletsData;
-          setUsers(pushU); setPayments(pushP); setCpPayments(pushCp); setCrgDeals(pushCrg); setDcEntries(pushDc); setDealsData(pushDl); setWalletsData(pushWl);
-          await Promise.all([
-            apiSave('users', pushU), apiSave('payments', pushP), apiSave('customer-payments', pushCp),
-            apiSave('crg-deals', pushCrg), apiSave('daily-cap', pushDc), apiSave('deals', pushDl), apiSave('wallets', pushWl),
-          ]);
-          setSyncBanner("synced");
-        } else {
-          // Both empty — first time setup, push defaults
-          await Promise.all([
-            apiSave('users', INITIAL_USERS), apiSave('payments', INITIAL),
-            apiSave('customer-payments', CP_INITIAL), apiSave('crg-deals', CRG_INITIAL),
-            apiSave('daily-cap', DC_INITIAL), apiSave('deals', DEALS_INITIAL), apiSave('wallets', walletsData),
-          ]);
-          setSyncBanner("synced");
+          await Promise.all(pushTasks);
         }
       } else {
-        // Server offline — use localStorage if available (already loaded as defaults)
+        // ── SERVER OFFLINE: use localStorage as fallback ──
         if (lu && lu.length > 0) setUsers(lu);
         if (lp && lp.length > 0) setPayments(lp);
         if (lcp && lcp.length > 0) setCpPayments(lcp);
