@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.059";
+const VERSION = "2.0";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -390,6 +390,25 @@ function Field({ label, children }) {
   return <div style={{ marginBottom: 18 }}><label style={{ display: "block", color: "#64748B", fontSize: 11, fontWeight: 600, marginBottom: 5, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</label>{children}</div>;
 }
 
+function CopyInput({ label, value, onChange, placeholder, style: extraStyle }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!value) return;
+    navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
+  };
+  return (
+    <Field label={label}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input style={{ ...inp, flex: 1, fontSize: 13, fontFamily: "'Space Mono',monospace", wordBreak: "break-all", ...extraStyle }} value={value || ""} onChange={onChange} placeholder={placeholder} />
+        <button type="button" onClick={copy} title="Copy" style={{ flexShrink: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: copied ? "#ECFDF5" : "#F8FAFC", color: copied ? "#10B981" : "#64748B", cursor: value ? "pointer" : "default", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap", opacity: value ? 1 : 0.4 }}
+          onMouseEnter={e => { if (value) e.currentTarget.style.borderColor = "#0EA5E9"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; }}
+        >{copied ? "✓" : "📋"}</button>
+      </div>
+    </Field>
+  );
+}
+
 function getAvailableStatuses(userEmail) {
   // Everyone can set: Open, On the way
   // y0505300530@gmail.com can also set: Approved to pay, Paid
@@ -543,12 +562,11 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
         <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} placeholder="Select name" /></Field>
       </div>
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
-        <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
+        <CopyInput label="TRC Address" value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." />
+        <CopyInput label="ERC Address" value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
       </div>
-      <Field label="Payment Hash (Crypto Wallet)">
-        <input style={{ ...inp, borderColor: error && f.status === "Paid" && !f.paymentHash.trim() ? "#EF4444" : "rgba(148,163,184,0.2)" }} value={f.paymentHash} onChange={e => s("paymentHash", e.target.value)} placeholder="e.g. 0xabc123..." />
-      </Field>
+      <CopyInput label="Payment Hash (Crypto Wallet)" value={f.paymentHash} onChange={e => s("paymentHash", e.target.value)} placeholder="e.g. 0xabc123..."
+        style={{ borderColor: error && f.status === "Paid" && !f.paymentHash.trim() ? "#EF4444" : undefined }} />
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -1416,10 +1434,10 @@ function CPForm({ payment, onSave, onClose, userName }) {
         <Field label="Open By"><NameCombo value={f.openBy} onChange={v => s("openBy", v)} /></Field>
       </div>
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="TRC Address"><input style={inp} value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." /></Field>
-        <Field label="ERC Address"><input style={inp} value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." /></Field>
-        <Field label="Payment Hash"><input style={inp} value={f.paymentHash || ""} onChange={e => s("paymentHash", e.target.value)} placeholder="Transaction hash..." /></Field>
+        <CopyInput label="TRC Address" value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." />
+        <CopyInput label="ERC Address" value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
       </div>
+      <CopyInput label="Payment Hash" value={f.paymentHash || ""} onChange={e => s("paymentHash", e.target.value)} placeholder="Transaction hash..." />
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
