@@ -368,6 +368,8 @@ I can help you manage payments and get wallet information.
 
 <b>Available Commands:</b>
 /wallets - Get current wallet addresses
+/deals - Get current wallet addresses
+/crgdeals - Get current wallet addresses
 /start - Show this help message
 
 <i>More commands coming soon!</i>`;
