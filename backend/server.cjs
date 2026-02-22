@@ -525,20 +525,22 @@ Select a country to view today's deals:
     bot.onText(/\/todaycrgcap/, async (msg) => {
       const chatId = msg.chat.id;
       
-      // Get today's date
-      const today = new Date().toISOString().split('T')[0];
-      
       // Read CRG deals data
       const allDeals = readJSON("crg-deals.json", []);
       
-      // Filter for today's deals
-      const todayDeals = allDeals.filter(deal => deal.date === today);
+      // Find the most recent date in the data
+      const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
+      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
+      
+      // Filter for the latest date's deals
+      const todayDeals = allDeals.filter(deal => deal.date === latestDate);
       
       if (todayDeals.length === 0) {
-        bot.sendMessage(chatId, `📭 No CRG cap data found for today (${today})\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
-        console.log("📱 /todaycrgcap - No data for today");
+        bot.sendMessage(chatId, `📭 No CRG cap data found\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
+        console.log("📱 /todaycrgcap - No data found");
         return;
       }
+
       
       // Calculate totals
       const totalCap = todayDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
@@ -547,8 +549,9 @@ Select a country to view today's deals:
       
       // Format message
       let capMessage = `📊 <b>Today CRG Cap</b>\n`;
-      capMessage += `📅 Date: ${today}\n`;
+      capMessage += `📅 Date: ${latestDate}\n`;
       capMessage += `📋 Total Deals: ${todayDeals.length}\n\n`;
+
       
       // Table header
       capMessage += `<code>Affiliate    | Cap | Rec | FTD</code>\n`;
@@ -580,8 +583,9 @@ Select a country to view today's deals:
       capMessage += `<i>Last sync: ${new Date().toLocaleTimeString()}</i>`;
       
       bot.sendMessage(chatId, capMessage, { parse_mode: "HTML" });
-      console.log("📱 /todaycrgcap - Sent CRG cap data for", todayDeals.length, "deals");
+      console.log("📱 /todaycrgcap - Sent CRG cap data for", todayDeals.length, "deals on", latestDate);
     });
+
 
     // ── /todayagentscap command - Show today's agents cap summary ──
     bot.onText(/\/todayagentscap/, async (msg) => {
@@ -677,17 +681,22 @@ Select a country to view today's deals:
         });
         console.log("📱 /deals - Using local data:", countryDeals.length, "deals for", countryCode);
       } else {
-        // For /crgdeals: read from crg-deals.json, filtered by today's date
+        // For /crgdeals: read from crg-deals.json, filtered by latest date
         const allDeals = readJSON("crg-deals.json", []);
+        // Find the most recent date in the data
+        const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
+        const latestDate = dates[0] || today;
+        
         countryDeals = allDeals.filter(deal => {
           if (!deal.affiliate) return false;
           // Check country code match (affiliate ends with country code)
           const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
-          // Check date is today
-          const isToday = deal.date === today;
-          return hasCountry && isToday;
+          // Check date is the latest available
+          const isLatest = deal.date === latestDate;
+          return hasCountry && isLatest;
         });
       }
+
       
       // Country name mapping (extended for external API countries)
       const countryNames = {
@@ -707,11 +716,12 @@ Select a country to view today's deals:
       const countryName = countryNames[countryCode] || countryCode;
       
       if (countryDeals.length === 0) {
-        const noteText = isAllTime ? 'Showing ALL historical deals (no date filter)' : 'Note: Only showing deals with date: ' + today;
+        const noteText = isAllTime ? 'Showing ALL historical deals (no date filter)' : 'Note: Only showing deals with latest available date';
         bot.sendMessage(chatId, `📭 No deals found for <b>${countryName}</b> (${countryCode})\n\n<i>${noteText}</i>`, { parse_mode: "HTML" });
-        console.log("📱 /deals (button) - No deals found for:", countryCode, isAllTime ? "(all time)" : "(today)");
+        console.log("📱 /deals (button) - No deals found for:", countryCode, isAllTime ? "(all time)" : "(latest date)");
         return;
       }
+
       
       // Format deals message based on isAllTime
       let dealsMessage;
@@ -747,7 +757,11 @@ Select a country to view today's deals:
         }
       } else {
         // Format for CRG deals (original format)
-        dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
+        const allDeals = readJSON("crg-deals.json", []);
+        const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
+        const latestDate = dates[0] || today;
+        dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${latestDate}\n\n`;
+
         
         // Show summary
         const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
@@ -804,14 +818,18 @@ Select a country to view today's deals:
       // Read deals from crg-deals.json
       const allDeals = readJSON("crg-deals.json", []);
       
-      // Filter deals by country code AND today's date
+      // Find the most recent date in the data
+      const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
+      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
+      
+      // Filter deals by country code AND latest date
       const countryDeals = allDeals.filter(deal => {
         if (!deal.affiliate) return false;
         const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + userText);
-        const today = new Date().toISOString().split('T')[0];
-        const isToday = deal.date === today;
-        return hasCountry && isToday;
+        const isLatest = deal.date === latestDate;
+        return hasCountry && isLatest;
       });
+
       
       // Country name mapping
       const countryNames = {
