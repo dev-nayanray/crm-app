@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.054";
+const VERSION = "1.056";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1250,17 +1250,43 @@ function LoginScreen({ onLogin, users }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [blocked, setBlocked] = useState(0); // minutes remaining
 
-  const submit = (e) => {
-    e.preventDefault(); setLoading(true); setError("");
-    setTimeout(() => {
-      try {
-        const hashed = hashPassword(password);
-        const u = users.find(u => u.email === email && u.passwordHash === hashed);
-        if (u) onLogin(u); else setError("Invalid email or password");
-      } catch { setError("Login error"); }
-      setLoading(false);
-    }, 300);
+  const submit = async (e) => {
+    e.preventDefault();
+    if (blocked > 0) { setError(`IP blocked. Try again in ${blocked} minute${blocked > 1 ? 's' : ''}.`); return; }
+    setLoading(true); setError("");
+
+    const hashed = hashPassword(password);
+
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase().trim(), passwordHash: hashed }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.ok) {
+        onLogin(data.user);
+      } else if (res.status === 429 && data.error === "blocked") {
+        setBlocked(data.minutes || 15);
+        setError(`Too many failed attempts. Your IP is blocked for ${data.minutes || 15} minutes.`);
+        // Countdown timer
+        const iv = setInterval(() => {
+          setBlocked(prev => { if (prev <= 1) { clearInterval(iv); return 0; } return prev - 1; });
+        }, 60000);
+      } else if (data.remaining !== undefined) {
+        setError(`Invalid email or password. ${data.remaining} attempt${data.remaining > 1 ? 's' : ''} remaining before IP block.`);
+      } else {
+        setError("Invalid email or password.");
+      }
+    } catch {
+      // Server offline — fallback to local validation
+      const u = users.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === hashed);
+      if (u) onLogin(u); else setError("Invalid email or password.");
+    }
+    setLoading(false);
   };
 
   return (
@@ -2195,13 +2221,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     });
   };
 
-  // Auto-sync when crgDeals change - use ref to track initial sync
-  const syncRef = useRef(false);
+  // Auto-sync when crgDeals change
   useEffect(() => {
-    if (!syncRef.current) {
-      syncRef.current = true;
-      return; // Skip on first render
-    }
     syncFromCRG();
   }, [crgDeals]);
 
@@ -2680,29 +2701,49 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   );
 }
 
-/* ── Sync Banner Component (defined outside App to avoid hooks order issues) ── */
-function SyncBanner({ syncBanner, onDismiss }) {
-  if (!syncBanner) return null;
-  
-  const msgs = {
-    pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
-    synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
-    offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only." },
-  };
-  const m = msgs[syncBanner];
-  if (!m) return null;
-  
-  return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "8px 16px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 12, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-      {m.text}
-      <button onClick={onDismiss} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
-    </div>
-  );
+/* ── App ── */
+
+// Session management with token
+function generateSessionToken() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
 }
 
-/* ── App ── */
+function getSession() {
+  try {
+    const s = localStorage.getItem('blitz_session');
+    if (!s) return null;
+    const session = JSON.parse(s);
+    // Session expires after 7 days
+    if (Date.now() - session.loginTime > 7 * 24 * 60 * 60 * 1000) {
+      localStorage.removeItem('blitz_session');
+      return null;
+    }
+    return session;
+  } catch { return null; }
+}
+
+function saveSession(user) {
+  const session = {
+    email: user.email,
+    name: user.name,
+    token: generateSessionToken(),
+    loginTime: Date.now(),
+  };
+  localStorage.setItem('blitz_session', JSON.stringify(session));
+  return session;
+}
+
+function clearSession() {
+  localStorage.removeItem('blitz_session');
+}
+
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    const session = getSession();
+    return session ? { email: session.email, name: session.name } : null;
+  });
   const [users, setUsers] = useState(() => lsGet('users', INITIAL_USERS));
   const [payments, setPayments] = useState(() => lsGet('payments', INITIAL));
   const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', CP_INITIAL));
@@ -2828,7 +2869,7 @@ export default function App() {
   useEffect(() => { if (!skipSave.current && loaded) apiSave('deals', dealsData); }, [dealsData]);
   useEffect(() => { if (!skipSave.current && loaded) apiSave('wallets', walletsData); }, [walletsData]);
 
-  const handleLogout = () => { setUser(null); setPage("dashboard"); };
+  const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
 
   const handleRefresh = async () => {
     skipSave.current = true;
@@ -2865,7 +2906,6 @@ export default function App() {
         {syncBanner && (() => {
           const msgs = {
             pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
-            synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
             offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only." },
           };
           const m = msgs[syncBanner];
@@ -2881,7 +2921,7 @@ export default function App() {
     );
   };
 
-  if (!user) return (<><SyncBanner /><LoginScreen onLogin={setUser} users={users} /></>);
+  if (!user) return (<><SyncBanner /><LoginScreen onLogin={u => { saveSession(u); setUser(u); }} users={users} /></>);
 
   const userAccess = getPageAccess(user);
   const canAccess = pg => userAccess.includes(pg);

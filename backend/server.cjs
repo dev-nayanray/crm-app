@@ -52,6 +52,18 @@ function httpRequest(url, isHttps = true) {
   });
 }
 
+// Function to fetch deals from external Leeds CRM API
+async function fetchExternalDeals() {
+  try {
+    const response = await httpRequest("https://leeds-crm.com/api/deals", true);
+    const data = JSON.parse(response);
+    return { success: true, data: data };
+  } catch (err) {
+    console.log("⚠️ External Deals API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // Function to check TRC20 USDT transaction on TronScan
 async function checkTRC20Transaction(txHash) {
   try {
@@ -514,8 +526,8 @@ Select a country to view today's deals:
       // Answer the callback to remove loading state
       bot.answerCallbackQuery(callbackQuery.id);
       
-      // Valid country codes
-      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC'];
+      // Valid country codes (including ones from external API)
+      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC', 'ES', 'BE', 'IT'];
       
       if (!validCountries.includes(countryCode)) {
         bot.sendMessage(chatId, `❌ Invalid country code: <b>${countryCode}</b>`, { parse_mode: "HTML" });
@@ -525,23 +537,34 @@ Select a country to view today's deals:
       // Get today's date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
       
-      // Read deals from the appropriate file based on command type
-      // /deals (isAllTime=true) reads from crg-deals.json (all historical deals)
-      // /crgdeals (isAllTime=false) reads from crg-deals.json, filtered by today's date
-      const dataFile = "crg-deals.json";
-      const allDeals = readJSON(dataFile, []);
+      // For /deals command (isAllTime=true), try to fetch from external API first
+      let countryDeals = [];
+      let useExternalAPI = false;
       
-      // Filter deals by country code (and today's date only for /crgdeals)
-      let countryDeals;
       if (isAllTime) {
-        // For /deals: read from crg-deals.json, filter by affiliate suffix (all historical, no date filter)
-        countryDeals = allDeals.filter(deal => {
-          if (!deal.affiliate) return false;
-          // Check country code match (affiliate ends with country code)
-          return deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
-        });
+        // Try to fetch from external Leeds CRM API
+        const externalResult = await fetchExternalDeals();
+        
+        if (externalResult.success && Array.isArray(externalResult.data)) {
+          // Filter external API data by country code
+          countryDeals = externalResult.data.filter(deal => {
+            if (!deal.country) return false;
+            return deal.country.toUpperCase() === countryCode;
+          });
+          useExternalAPI = true;
+          console.log("📱 /deals - Fetched from external API:", countryDeals.length, "deals for", countryCode);
+        } else {
+          // Fallback to local data if external API fails
+          console.log("📱 /deals - External API failed, falling back to local data");
+          const allDeals = readJSON("deals.json", []);
+          countryDeals = allDeals.filter(deal => {
+            if (!deal.country) return false;
+            return deal.country.toUpperCase() === countryCode;
+          });
+        }
       } else {
-        // For /crgdeals: read from crg-deals.json, filter by affiliate suffix and date
+        // For /crgdeals: read from crg-deals.json, filtered by today's date
+        const allDeals = readJSON("crg-deals.json", []);
         countryDeals = allDeals.filter(deal => {
           if (!deal.affiliate) return false;
           // Check country code match (affiliate ends with country code)
@@ -552,7 +575,7 @@ Select a country to view today's deals:
         });
       }
       
-      // Country name mapping
+      // Country name mapping (extended for external API countries)
       const countryNames = {
         'DE': 'Germany',
         'FR': 'France',
@@ -561,7 +584,10 @@ Select a country to view today's deals:
         'MY': 'Malaysia',
         'SI': 'Singapore',
         'HR': 'Croatia',
-        'GCC': 'Gulf Countries'
+        'GCC': 'Gulf Countries',
+        'ES': 'Spain',
+        'BE': 'Belgium',
+        'IT': 'Italy'
       };
       
       const countryName = countryNames[countryCode] || countryCode;
