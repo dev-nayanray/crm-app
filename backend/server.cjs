@@ -8,7 +8,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.057";
+const VERSION = "1.055";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 
@@ -52,6 +52,18 @@ function httpRequest(url, isHttps = true) {
   });
 }
 
+// Function to fetch deals from external Leeds CRM API
+async function fetchExternalDeals() {
+  try {
+    const response = await httpRequest("https://leeds-crm.com/api/deals", true);
+    const data = JSON.parse(response);
+    return { success: true, data: data };
+  } catch (err) {
+    console.log("⚠️ External Deals API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 // Function to check TRC20 USDT transaction on TronScan
 async function checkTRC20Transaction(txHash) {
   try {
@@ -76,119 +88,6 @@ async function checkTRC20Transaction(txHash) {
 }
 
 // Function to check ERC20 USDT transaction on Etherscan
-async function checkERC20Transaction(txHash) {
-  try {
-    // Using Etherscan API - try multiple approaches
-    const CHAIN_ID = "1"; // Ethereum mainnet
-    
-    // Method 1: Try txlist (most reliable for getting tx details)
-    let txListUrl = `${ETHERSCAN_API}?module=account&action=txlist&address=${txHash}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc`;
-    if (ETHERSCAN_API_KEY) {
-      txListUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-    }
-    
-// Function to check ERC20 USDT transaction on Etherscan
-    const txListData = JSON.parse(txListResponse);
-    
-    let txResult = null;
-    
-    // Check if txlist returned valid data
-    if (txListData.status === "1" && txListData.result && Array.isArray(txListData.result) && txListData.result.length > 0) {
-      // Find the transaction by hash in the list
-      const txEntry = txListData.result.find(tx => tx.hash && tx.hash.toLowerCase() === txHash.toLowerCase());
-      if (txEntry) {
-        txResult = {
-          hash: txEntry.hash,
-          from: txEntry.from,
-          to: txEntry.to,
-          value: txEntry.value,
-          input: txEntry.input,
-          isError: txEntry.isError,
-          txreceipt_status: txEntry.txreceipt_status
-        };
-      }
-    }
-    
-    // Method 2: If txlist didn't work, try V2 get_txinfo
-    if (!txResult) {
-      console.log("⚠️ txlist failed, trying V2 get_txinfo...");
-      
-      let txUrl = `${ETHERSCAN_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const txResponse = await httpRequest(txUrl);
-      const txData = JSON.parse(txResponse);
-      
-      if (txData.status === "1" && txData.result) {
-        txResult = txData.result;
-      }
-    }
-    
-    // Method 3: Try V1 proxy as last resort
-    if (!txResult) {
-      console.log("⚠️ V2 failed, trying V1 proxy...");
-      
-      let v1TxUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        v1TxUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const v1TxResponse = await httpRequest(v1TxUrl);
-      const v1TxData = JSON.parse(v1TxResponse);
-      
-      if (v1TxData.status === "1" && typeof v1TxData.result === "object" && v1TxData.result !== null) {
-        txResult = v1TxData.result;
-      }
-    }
-    
-    // If we still don't have data, return failure
-    if (!txResult) {
-      return { success: false, error: "Could not fetch transaction data from Etherscan (all methods failed)" };
-    }
-    
-    // Extract transaction details
-    const input = txResult.input || "";
-    let amount = "0";
-    let toAddress = "";
-    let fromAddress = "";
-    
-    // Get from and to addresses
-    fromAddress = txResult.from || "";
-    toAddress = txResult.to || "";
-    
-    // Decode input data to find transfer details for USDT
-    // USDT transfer method ID: 0xa9059cbb
-    if (input && input.startsWith("0xa9059cbb") && input.length >= 74) {
-      // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
-      const amountHex = "0x" + input.slice(-64);
-      amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
-      // Extract to address (from 34 to 74 - 40 hex chars = 20 bytes)
-      toAddress = "0x" + input.slice(34, 74);
-    } else if (txResult.value && txResult.value !== "0") {
-      // If no method ID or not a standard transfer, try to get value from tx
-      // Note: This is for ETH transfers, not ERC20
-      amount = (parseInt(txResult.value, 10) / 1000000000000000000).toString(); // ETH has 18 decimals
-    }
-    
-    // Check if transaction is confirmed (receipt status = 1)
-    const confirmed = txResult.txreceipt_status === "1" || txResult.status === "1";
-    
-    return {
-      success: true,
-      amount: amount,
-      toAddress: toAddress,
-      fromAddress: fromAddress,
-      confirmed: confirmed,
-      hash: txHash
-    };
-    
-  } catch (err) {
-    console.log("⚠️ Etherscan API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
 async function checkERC20Transaction(txHash) {
   try {
     // Using Etherscan V2 API endpoints
@@ -396,7 +295,7 @@ I can help you manage payments and get wallet information.
         return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; 
       })() : "N/A";
       
-const walletMessage = `💳 Current Wallets (${dateStr})
+      const walletMessage = `💳 Current Wallets (${dateStr})
 
 TRC-20:
 ${latestWallet.trc || "—"}
@@ -434,6 +333,11 @@ Last updated: ${dateStr}
           { text: '🇬🇧 UK', callback_data: 'all_UK' }
         ],
         [
+          { text: '🇪🇸 ES', callback_data: 'all_ES' },
+          { text: '🇧🇪 BE', callback_data: 'all_BE' },
+          { text: '🇮🇹 IT', callback_data: 'all_IT' }
+        ],
+        [
           { text: '🇦🇺 AU', callback_data: 'all_AU' },
           { text: '🇲🇾 MY', callback_data: 'all_MY' },
           { text: '🇸🇬 SI', callback_data: 'all_SI' }
@@ -444,11 +348,11 @@ Last updated: ${dateStr}
         ]
       ];
       
-      const dealsMessage = `📊 <b>Deals - All Time Deals</b>
+      const dealsMessage = `📊 <b>Deals - Leeds CRM</b>
 
-Select a country to view ALL deals (no date filter):
+Select a country to view deals from Leeds CRM API:
 
-<i>Or type the country code (e.g., DE, FR, UK)</i>`;
+<i>Or type the country code (e.g., DE, FR, UK, ES, BE, IT)</i>`;
       
       bot.sendMessage(chatId, dealsMessage, { 
         parse_mode: "HTML",
@@ -514,8 +418,8 @@ Select a country to view today's deals:
       // Answer the callback to remove loading state
       bot.answerCallbackQuery(callbackQuery.id);
       
-      // Valid country codes
-      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC'];
+      // Valid country codes (including ones from external API)
+      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC', 'ES', 'BE', 'IT'];
       
       if (!validCountries.includes(countryCode)) {
         bot.sendMessage(chatId, `❌ Invalid country code: <b>${countryCode}</b>`, { parse_mode: "HTML" });
@@ -525,23 +429,21 @@ Select a country to view today's deals:
       // Get today's date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
       
-      // Read deals from the appropriate file based on command type
-      // /deals (isAllTime=true) reads from deals.json (all historical deals - new format)
-      // /crgdeals (isAllTime=false) reads from crg-deals.json, filtered by today's date
-      let dataFile = isAllTime ? "deals.json" : "crg-deals.json";
-      const allDeals = readJSON(dataFile, []);
+      // For /deals command (isAllTime=true), use local data directly
+      // (External API at leeds-crm.com is returning old/cached data)
+      let countryDeals = [];
       
-      // Filter deals by country code (and today's date only for /crgdeals)
-      let countryDeals;
       if (isAllTime) {
-        // For /deals: read from deals.json, filter by country field directly
+        // Use local data file directly (fresh data from manual sync)
+        const allDeals = readJSON("deals.json", []);
         countryDeals = allDeals.filter(deal => {
           if (!deal.country) return false;
-          // Check country code match (country field equals country code)
           return deal.country.toUpperCase() === countryCode;
         });
+        console.log("📱 /deals - Using local data:", countryDeals.length, "deals for", countryCode);
       } else {
-        // For /crgdeals: read from crg-deals.json, filter by affiliate suffix and date
+        // For /crgdeals: read from crg-deals.json, filtered by today's date
+        const allDeals = readJSON("crg-deals.json", []);
         countryDeals = allDeals.filter(deal => {
           if (!deal.affiliate) return false;
           // Check country code match (affiliate ends with country code)
@@ -552,7 +454,7 @@ Select a country to view today's deals:
         });
       }
       
-      // Country name mapping
+      // Country name mapping (extended for external API countries)
       const countryNames = {
         'DE': 'Germany',
         'FR': 'France',
@@ -561,7 +463,10 @@ Select a country to view today's deals:
         'MY': 'Malaysia',
         'SI': 'Singapore',
         'HR': 'Croatia',
-        'GCC': 'Gulf Countries'
+        'GCC': 'Gulf Countries',
+        'ES': 'Spain',
+        'BE': 'Belgium',
+        'IT': 'Italy'
       };
       
       const countryName = countryNames[countryCode] || countryCode;
@@ -573,35 +478,69 @@ Select a country to view today's deals:
         return;
       }
       
-      // Format deals message
-      let dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
-      
-      // Show summary
-      const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
-      const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
-      
-      dealsMessage += `📈 <b>Summary:</b>\n`;
-      dealsMessage += `• Total Caps: ${totalCap}\n`;
-      dealsMessage += `• Received: ${totalReceived}\n`;
-      dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
-      
-      // Show each deal (limit to 20 to avoid message too long)
-      const displayDeals = countryDeals.slice(0, 20);
-      
-      displayDeals.forEach((deal, index) => {
-        dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
-        dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
-        dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
-        dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
-        dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
-      });
-      
-      if (countryDeals.length > 20) {
-        dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+      // Format deals message based on isAllTime
+      let dealsMessage;
+      if (isAllTime) {
+        // Format for deals data (affiliate, country, price, crg, funnels, source, deduction)
+        dealsMessage = `📊 <b>${countryName} - Deals</b> (${countryDeals.length} found)\n📋 Source: Deals Data\n\n`;
+        
+        // Show summary
+        const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
+        const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
+        
+        dealsMessage += `📈 <b>Summary:</b>\n`;
+        dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
+        dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
+        dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
+        
+        // Show each deal (limit to 20 to avoid message too long)
+        const displayDeals = countryDeals.slice(0, 20);
+        
+        displayDeals.forEach((deal, index) => {
+          dealsMessage += `<b>${index + 1}. Affiliate #${deal.affiliate}</b>\n`;
+          dealsMessage += `   💰 Price: €${deal.price || '-'}\n`;
+          dealsMessage += `   📊 CRG: ${deal.crg || '-'}% | Funnels: ${deal.funnels || '-'}\n`;
+          dealsMessage += `   📢 Source: ${deal.source || '-'} | Deduction: ${deal.deduction || '-'}%\n`;
+          if (deal.id) {
+            dealsMessage += `   🆔 ID: ${deal.id}\n`;
+          }
+          dealsMessage += `\n`;
+        });
+        
+        if (countryDeals.length > 20) {
+          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+        }
+      } else {
+        // Format for CRG deals (original format)
+        dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
+        
+        // Show summary
+        const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
+        const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
+        
+        dealsMessage += `📈 <b>Summary:</b>\n`;
+        dealsMessage += `• Total Caps: ${totalCap}\n`;
+        dealsMessage += `• Received: ${totalReceived}\n`;
+        dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
+        
+        // Show each deal (limit to 20 to avoid message too long)
+        const displayDeals = countryDeals.slice(0, 20);
+        
+        displayDeals.forEach((deal, index) => {
+          dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
+          dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
+          dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
+          dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
+          dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
+        });
+        
+        if (countryDeals.length > 20) {
+          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+        }
       }
       
       bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
-      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "all time" : "today's", "deals for", countryCode);
+      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "deals data" : "today's", "deals for", countryCode);
     });
     
     // ── Handle country code input for deals (text input) ──
@@ -1016,81 +955,6 @@ if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// ── Security: Rate Limiting ──
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW = 60 * 1000;
-const RATE_LIMIT_MAX = 120;
-
-function rateLimit(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  const now = Date.now();
-  if (!rateLimitMap.has(ip)) { rateLimitMap.set(ip, { count: 1, windowStart: now }); return next(); }
-  const entry = rateLimitMap.get(ip);
-  if (now - entry.windowStart > RATE_LIMIT_WINDOW) { entry.count = 1; entry.windowStart = now; return next(); }
-  entry.count++;
-  if (entry.count > RATE_LIMIT_MAX) return res.status(429).json({ error: "Too many requests" });
-  next();
-}
-setInterval(() => { const now = Date.now(); for (const [ip, e] of rateLimitMap) { if (now - e.windowStart > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(ip); } }, 5 * 60 * 1000);
-
-// Security headers
-app.use((req, res, next) => {
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  if (req.path.startsWith('/api/')) { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); res.setHeader('Pragma', 'no-cache'); }
-  next();
-});
-app.use('/api/', rateLimit);
-
-// Block suspicious requests
-app.use((req, res, next) => {
-  const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config'];
-  if (blocked.some(b => req.path.toLowerCase().includes(b))) return res.status(403).json({ error: "Forbidden" });
-  next();
-});
-
-// ── Login IP Blocking (3 attempts → 15 min block) ──
-const loginAttempts = new Map();
-const LOGIN_MAX_ATTEMPTS = 3;
-const LOGIN_BLOCK_DURATION = 15 * 60 * 1000;
-setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
-
-app.post("/api/login", (req, res) => {
-  const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-  if (entry && entry.count >= LOGIN_MAX_ATTEMPTS) {
-    const unblockTime = entry.firstAttempt + LOGIN_BLOCK_DURATION;
-    if (now < unblockTime) {
-      const minsLeft = Math.ceil((unblockTime - now) / 60000);
-      console.log(`🚫 Blocked login from IP: ${ip} (${minsLeft} min left)`);
-      return res.status(429).json({ error: "blocked", minutes: minsLeft });
-    }
-    loginAttempts.delete(ip);
-  }
-  const { email, passwordHash } = req.body;
-  if (!email || !passwordHash) return res.status(400).json({ error: "Missing credentials" });
-  const users = readJSON("users.json", []);
-  const user = users.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === passwordHash);
-  if (user) {
-    loginAttempts.delete(ip);
-    console.log(`✅ Login success: ${email} from ${ip}`);
-    res.json({ ok: true, user: { email: user.email, name: user.name, pageAccess: user.pageAccess } });
-  } else {
-    const current = loginAttempts.get(ip) || { count: 0, firstAttempt: now };
-    current.count++;
-    if (current.count === 1) current.firstAttempt = now;
-    loginAttempts.set(ip, current);
-    const remaining = LOGIN_MAX_ATTEMPTS - current.count;
-    console.log(`❌ Login failed: ${email} from ${ip} (${current.count}/${LOGIN_MAX_ATTEMPTS})`);
-    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15 });
-    else res.status(401).json({ error: "invalid", remaining });
-  }
-});
-
 // Helper: read/write JSON files
 function readJSON(filename, fallback) {
   const filepath = path.join(DATA_DIR, filename);
@@ -1166,28 +1030,11 @@ app.post("/api/payments", (req, res) => {
   res.json({ ok: true, count: newPayments.length });
 });
 
-// Other data endpoints (generic GET/POST with validation)
-["customer-payments", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
+// Other data endpoints (generic GET/POST)
+["customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
   const file = ep + ".json";
   app.get(`/api/${ep}`, (req, res) => res.json(readJSON(file, [])));
-  app.post(`/api/${ep}`, (req, res) => {
-    if (!Array.isArray(req.body)) return res.status(400).json({ error: "Invalid data format" });
-    if (req.body.length > 10000) return res.status(400).json({ error: "Too many records" });
-    writeJSON(file, req.body);
-    res.json({ ok: true, count: req.body.length });
-  });
-});
-
-// Users — full data (passwords are SHA-256 hashed, safe to transfer)
-app.get("/api/users", (req, res) => {
-  const users = readJSON("users.json", []);
-  res.json(users);
-});
-app.post("/api/users", (req, res) => {
-  if (!Array.isArray(req.body)) return res.status(400).json({ error: "Invalid data" });
-  writeJSON("users.json", req.body);
-  console.log(`👥 Users updated: ${req.body.length} users saved`);
-  res.json({ ok: true, count: req.body.length });
+  app.post(`/api/${ep}`, (req, res) => { writeJSON(file, req.body); res.json({ ok: true, count: req.body.length }); });
 });
 
 // ── Health check ──
@@ -1301,8 +1148,9 @@ app.post("/api/restore/:backup", (req, res) => {
 
 // ── Start Server ──
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Blitz CRM API v${VERSION} running on port ${PORT}`);
+  console.log(`✅ Blitz API v${VERSION} running on port ${PORT}`);
   console.log(`   Data: ${DATA_DIR}`);
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
 });
+
