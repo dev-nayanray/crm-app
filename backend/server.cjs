@@ -8,7 +8,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.053";
+const VERSION = "1.055";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 
@@ -88,119 +88,6 @@ async function checkTRC20Transaction(txHash) {
 }
 
 // Function to check ERC20 USDT transaction on Etherscan
-async function checkERC20Transaction(txHash) {
-  try {
-    // Using Etherscan API - try multiple approaches
-    const CHAIN_ID = "1"; // Ethereum mainnet
-    
-    // Method 1: Try txlist (most reliable for getting tx details)
-    let txListUrl = `${ETHERSCAN_API}?module=account&action=txlist&address=${txHash}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc`;
-    if (ETHERSCAN_API_KEY) {
-      txListUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-    }
-    
-// Function to check ERC20 USDT transaction on Etherscan
-    const txListData = JSON.parse(txListResponse);
-    
-    let txResult = null;
-    
-    // Check if txlist returned valid data
-    if (txListData.status === "1" && txListData.result && Array.isArray(txListData.result) && txListData.result.length > 0) {
-      // Find the transaction by hash in the list
-      const txEntry = txListData.result.find(tx => tx.hash && tx.hash.toLowerCase() === txHash.toLowerCase());
-      if (txEntry) {
-        txResult = {
-          hash: txEntry.hash,
-          from: txEntry.from,
-          to: txEntry.to,
-          value: txEntry.value,
-          input: txEntry.input,
-          isError: txEntry.isError,
-          txreceipt_status: txEntry.txreceipt_status
-        };
-      }
-    }
-    
-    // Method 2: If txlist didn't work, try V2 get_txinfo
-    if (!txResult) {
-      console.log("⚠️ txlist failed, trying V2 get_txinfo...");
-      
-      let txUrl = `${ETHERSCAN_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        txUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const txResponse = await httpRequest(txUrl);
-      const txData = JSON.parse(txResponse);
-      
-      if (txData.status === "1" && txData.result) {
-        txResult = txData.result;
-      }
-    }
-    
-    // Method 3: Try V1 proxy as last resort
-    if (!txResult) {
-      console.log("⚠️ V2 failed, trying V1 proxy...");
-      
-      let v1TxUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        v1TxUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const v1TxResponse = await httpRequest(v1TxUrl);
-      const v1TxData = JSON.parse(v1TxResponse);
-      
-      if (v1TxData.status === "1" && typeof v1TxData.result === "object" && v1TxData.result !== null) {
-        txResult = v1TxData.result;
-      }
-    }
-    
-    // If we still don't have data, return failure
-    if (!txResult) {
-      return { success: false, error: "Could not fetch transaction data from Etherscan (all methods failed)" };
-    }
-    
-    // Extract transaction details
-    const input = txResult.input || "";
-    let amount = "0";
-    let toAddress = "";
-    let fromAddress = "";
-    
-    // Get from and to addresses
-    fromAddress = txResult.from || "";
-    toAddress = txResult.to || "";
-    
-    // Decode input data to find transfer details for USDT
-    // USDT transfer method ID: 0xa9059cbb
-    if (input && input.startsWith("0xa9059cbb") && input.length >= 74) {
-      // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
-      const amountHex = "0x" + input.slice(-64);
-      amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
-      // Extract to address (from 34 to 74 - 40 hex chars = 20 bytes)
-      toAddress = "0x" + input.slice(34, 74);
-    } else if (txResult.value && txResult.value !== "0") {
-      // If no method ID or not a standard transfer, try to get value from tx
-      // Note: This is for ETH transfers, not ERC20
-      amount = (parseInt(txResult.value, 10) / 1000000000000000000).toString(); // ETH has 18 decimals
-    }
-    
-    // Check if transaction is confirmed (receipt status = 1)
-    const confirmed = txResult.txreceipt_status === "1" || txResult.status === "1";
-    
-    return {
-      success: true,
-      amount: amount,
-      toAddress: toAddress,
-      fromAddress: fromAddress,
-      confirmed: confirmed,
-      hash: txHash
-    };
-    
-  } catch (err) {
-    console.log("⚠️ Etherscan API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
 async function checkERC20Transaction(txHash) {
   try {
     // Using Etherscan V2 API endpoints
@@ -408,7 +295,7 @@ I can help you manage payments and get wallet information.
         return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; 
       })() : "N/A";
       
-const walletMessage = `💳 Current Wallets (${dateStr})
+      const walletMessage = `💳 Current Wallets (${dateStr})
 
 TRC-20:
 ${latestWallet.trc || "—"}
@@ -446,6 +333,11 @@ Last updated: ${dateStr}
           { text: '🇬🇧 UK', callback_data: 'all_UK' }
         ],
         [
+          { text: '🇪🇸 ES', callback_data: 'all_ES' },
+          { text: '🇧🇪 BE', callback_data: 'all_BE' },
+          { text: '🇮🇹 IT', callback_data: 'all_IT' }
+        ],
+        [
           { text: '🇦🇺 AU', callback_data: 'all_AU' },
           { text: '🇲🇾 MY', callback_data: 'all_MY' },
           { text: '🇸🇬 SI', callback_data: 'all_SI' }
@@ -456,11 +348,11 @@ Last updated: ${dateStr}
         ]
       ];
       
-      const dealsMessage = `📊 <b>Deals - All Time Deals</b>
+      const dealsMessage = `📊 <b>Deals - Leeds CRM</b>
 
-Select a country to view ALL deals (no date filter):
+Select a country to view deals from Leeds CRM API:
 
-<i>Or type the country code (e.g., DE, FR, UK)</i>`;
+<i>Or type the country code (e.g., DE, FR, UK, ES, BE, IT)</i>`;
       
       bot.sendMessage(chatId, dealsMessage, { 
         parse_mode: "HTML",
@@ -537,31 +429,18 @@ Select a country to view today's deals:
       // Get today's date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
       
-      // For /deals command (isAllTime=true), try to fetch from external API first
+      // For /deals command (isAllTime=true), use local data directly
+      // (External API at leeds-crm.com is returning old/cached data)
       let countryDeals = [];
-      let useExternalAPI = false;
       
       if (isAllTime) {
-        // Try to fetch from external Leeds CRM API
-        const externalResult = await fetchExternalDeals();
-        
-        if (externalResult.success && Array.isArray(externalResult.data)) {
-          // Filter external API data by country code
-          countryDeals = externalResult.data.filter(deal => {
-            if (!deal.country) return false;
-            return deal.country.toUpperCase() === countryCode;
-          });
-          useExternalAPI = true;
-          console.log("📱 /deals - Fetched from external API:", countryDeals.length, "deals for", countryCode);
-        } else {
-          // Fallback to local data if external API fails
-          console.log("📱 /deals - External API failed, falling back to local data");
-          const allDeals = readJSON("deals.json", []);
-          countryDeals = allDeals.filter(deal => {
-            if (!deal.country) return false;
-            return deal.country.toUpperCase() === countryCode;
-          });
-        }
+        // Use local data file directly (fresh data from manual sync)
+        const allDeals = readJSON("deals.json", []);
+        countryDeals = allDeals.filter(deal => {
+          if (!deal.country) return false;
+          return deal.country.toUpperCase() === countryCode;
+        });
+        console.log("📱 /deals - Using local data:", countryDeals.length, "deals for", countryCode);
       } else {
         // For /crgdeals: read from crg-deals.json, filtered by today's date
         const allDeals = readJSON("crg-deals.json", []);
@@ -599,35 +478,69 @@ Select a country to view today's deals:
         return;
       }
       
-      // Format deals message
-      let dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
-      
-      // Show summary
-      const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
-      const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
-      
-      dealsMessage += `📈 <b>Summary:</b>\n`;
-      dealsMessage += `• Total Caps: ${totalCap}\n`;
-      dealsMessage += `• Received: ${totalReceived}\n`;
-      dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
-      
-      // Show each deal (limit to 20 to avoid message too long)
-      const displayDeals = countryDeals.slice(0, 20);
-      
-      displayDeals.forEach((deal, index) => {
-        dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
-        dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
-        dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
-        dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
-        dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
-      });
-      
-      if (countryDeals.length > 20) {
-        dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+      // Format deals message based on isAllTime
+      let dealsMessage;
+      if (isAllTime) {
+        // Format for deals data (affiliate, country, price, crg, funnels, source, deduction)
+        dealsMessage = `📊 <b>${countryName} - Deals</b> (${countryDeals.length} found)\n📋 Source: Deals Data\n\n`;
+        
+        // Show summary
+        const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
+        const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
+        
+        dealsMessage += `📈 <b>Summary:</b>\n`;
+        dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
+        dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
+        dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
+        
+        // Show each deal (limit to 20 to avoid message too long)
+        const displayDeals = countryDeals.slice(0, 20);
+        
+        displayDeals.forEach((deal, index) => {
+          dealsMessage += `<b>${index + 1}. Affiliate #${deal.affiliate}</b>\n`;
+          dealsMessage += `   💰 Price: €${deal.price || '-'}\n`;
+          dealsMessage += `   📊 CRG: ${deal.crg || '-'}% | Funnels: ${deal.funnels || '-'}\n`;
+          dealsMessage += `   📢 Source: ${deal.source || '-'} | Deduction: ${deal.deduction || '-'}%\n`;
+          if (deal.id) {
+            dealsMessage += `   🆔 ID: ${deal.id}\n`;
+          }
+          dealsMessage += `\n`;
+        });
+        
+        if (countryDeals.length > 20) {
+          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+        }
+      } else {
+        // Format for CRG deals (original format)
+        dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
+        
+        // Show summary
+        const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
+        const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
+        
+        dealsMessage += `📈 <b>Summary:</b>\n`;
+        dealsMessage += `• Total Caps: ${totalCap}\n`;
+        dealsMessage += `• Received: ${totalReceived}\n`;
+        dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
+        
+        // Show each deal (limit to 20 to avoid message too long)
+        const displayDeals = countryDeals.slice(0, 20);
+        
+        displayDeals.forEach((deal, index) => {
+          dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
+          dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
+          dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
+          dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
+          dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
+        });
+        
+        if (countryDeals.length > 20) {
+          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+        }
       }
       
       bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
-      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "all time" : "today's", "deals for", countryCode);
+      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "deals data" : "today's", "deals for", countryCode);
     });
     
     // ── Handle country code input for deals (text input) ──
@@ -1240,3 +1153,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
 });
+
