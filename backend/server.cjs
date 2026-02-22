@@ -64,28 +64,137 @@ async function fetchExternalDeals() {
   }
 }
 
+// Function to fetch CRG deals from external API
+async function fetchExternalCrgDeals() {
+  try {
+    const response = await httpRequest("https://leeds-crm.com/api/crg-deals", true);
+    const data = JSON.parse(response);
+    return { success: true, data: data };
+  } catch (err) {
+    console.log("⚠️ External CRG Deals API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Function to fetch daily cap from external API
+async function fetchExternalDailyCap() {
+  try {
+    const response = await httpRequest("https://leeds-crm.com/api/daily-cap", true);
+    const data = JSON.parse(response);
+    return { success: true, data: data };
+  } catch (err) {
+    console.log("⚠️ External Daily Cap API error:", err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// Function to sync external data to local files
+async function syncExternalData() {
+  console.log("🔄 Starting external data sync...");
+  
+  // Sync CRG deals
+  const crgResult = await fetchExternalCrgDeals();
+  if (crgResult.success && crgResult.data && Array.isArray(crgResult.data)) {
+    writeJSON("crg-deals.json", crgResult.data);
+    console.log(`✅ CRG deals synced: ${crgResult.data.length} records`);
+  } else {
+    console.log("⚠️ Failed to sync CRG deals");
+  }
+  
+  // Sync daily cap
+  const capResult = await fetchExternalDailyCap();
+  if (capResult.success && capResult.data && Array.isArray(capResult.data)) {
+    writeJSON("daily-cap.json", capResult.data);
+    console.log(`✅ Daily cap synced: ${capResult.data.length} records`);
+  } else {
+    console.log("⚠️ Failed to sync daily cap");
+  }
+  
+  console.log("🔄 External data sync completed");
+  return { crgDeals: crgResult.success, dailyCap: capResult.success };
+}
+
+
 // Function to check TRC20 USDT transaction on TronScan
 async function checkTRC20Transaction(txHash) {
   try {
     const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
-    const response = await httpRequest(url);
-    const data = JSON.parse(response);
+    console.log(`🔍 TronScan API URL: ${url}`);
     
-    if (data && data.contract_type === "TRC20" && data.token_info && data.token_info.symbol === "USDT") {
+    const response = await httpRequest(url);
+    console.log(`📄 TronScan raw response length: ${response.length}`);
+    
+    const data = JSON.parse(response);
+    console.log(`📊 TronScan parsed data keys: ${Object.keys(data).join(', ')}`);
+    
+    // Debug: Log the full data structure
+    console.log(`🔍 Full TronScan response: ${JSON.stringify(data, null, 2).substring(0, 2000)}`);
+    
+    // Check if we have token transfer info (TRC20 transfers)
+    if (data && data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
+      console.log(`✅ Found tokenTransferInfo with ${data.tokenTransferInfo.length} transfers`);
+      
+      // Find USDT transfer (contract address matches TRC20_USDT_CONTRACT)
+      const usdtTransfer = data.tokenTransferInfo.find(
+        transfer => {
+          const isMatch = transfer.contract_address === TRC20_USDT_CONTRACT || 
+                         (transfer.tokenInfo && transfer.tokenInfo.symbol === "USDT");
+          console.log(`🔍 Checking transfer: contract=${transfer.contract_address}, symbol=${transfer.tokenInfo?.symbol}, match=${isMatch}`);
+          return isMatch;
+        }
+      );
+      
+      if (usdtTransfer) {
+        console.log(`✅ Found USDT transfer:`, JSON.stringify(usdtTransfer, null, 2));
+        
+        // Convert amount from raw to readable (USDT has 6 decimals)
+        const rawAmount = usdtTransfer.amount_str || usdtTransfer.amount || "0";
+        const decimals = usdtTransfer.tokenInfo && usdtTransfer.tokenInfo.decimals ? 
+                        parseInt(usdtTransfer.tokenInfo.decimals) : 6;
+        const amount = (parseInt(rawAmount) / Math.pow(10, decimals)).toString();
+        
+        console.log(`💰 Amount calculation: raw=${rawAmount}, decimals=${decimals}, final=${amount}`);
+        
+        return {
+          success: true,
+          amount: amount,
+          toAddress: usdtTransfer.to_address || data.to_address,
+          fromAddress: usdtTransfer.from_address || data.from_address,
+          confirmed: data.confirmed || (data.revert === 0)
+        };
+      } else {
+        console.log(`⚠️ No USDT transfer found in tokenTransferInfo`);
+      }
+    } else {
+      console.log(`⚠️ No tokenTransferInfo found. Available keys: ${Object.keys(data).join(', ')}`);
+    }
+    
+    // Fallback: check if it's a TRC20 transaction with token_info
+    if (data && data.token_info && data.token_info.symbol === "USDT") {
+      console.log(`✅ Found token_info fallback`);
+      const rawAmount = data.amount || data.token_info.amount || "0";
+      const decimals = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
+      const amount = (parseInt(rawAmount) / Math.pow(10, decimals)).toString();
+      
       return {
         success: true,
-        amount: data.amount || data.token_info.amount,
+        amount: amount,
         toAddress: data.to_address,
         fromAddress: data.from_address,
-        confirmed: data.confirmed
+        confirmed: data.confirmed || (data.revert === 0)
       };
     }
+    
+    console.log(`❌ Not a USDT TRC20 transaction`);
     return { success: false, error: "Not a USDT TRC20 transaction" };
   } catch (err) {
     console.log("⚠️ TronScan API error:", err.message);
+    console.log("⚠️ Error stack:", err.stack);
     return { success: false, error: err.message };
   }
 }
+
+
 
 // Function to check ERC20 USDT transaction on Etherscan
 async function checkERC20Transaction(txHash) {
@@ -249,12 +358,16 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       { command: "/start", description: "Show welcome message and help" },
       { command: "/wallets", description: "Get current wallet addresses" },
       { command: "/crgdeals", description: "View today's CRG deals by country" },
-      { command: "/deals", description: "View all time CRG deals by country (historical)" }
+      { command: "/deals", description: "View all time CRG deals by country (historical)" },
+      { command: "/todaycrgcap", description: "View today's CRG cap data" },
+      { command: "/todayagentscap", description: "View today's agents cap data" }
+
     ]).then(() => {
       console.log("✅ Bot commands registered with Telegram");
     }).catch((err) => {
       console.log("⚠️ Failed to register commands:", err.message);
     });
+
     
     // ── Bot Commands ──
     
@@ -313,7 +426,9 @@ Last updated: ${dateStr}
       console.log("📱 /wallets command responded to chat:", chatId);
     });
     
-    console.log("✅ Bot command handlers ready: /start, /wallets, /crgdeals, /deals");
+    console.log("✅ Bot command handlers ready: /start, /wallets, /crgdeals, /deals, /todaycrgcap, /todayagentscap");
+
+
     
     // ── /deals command - Ask for country code with buttons (ALL TIME deals) ──
     bot.onText(/\/deals/, (msg) => {
@@ -405,6 +520,126 @@ Select a country to view today's deals:
       });
       console.log("📱 /crgdeals command responded to chat:", chatId);
     });
+
+    // ── /todaycrgcap command - Show today's CRG cap data ──
+    bot.onText(/\/todaycrgcap/, async (msg) => {
+      const chatId = msg.chat.id;
+      
+      // Get today's date
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Read CRG deals data
+      const allDeals = readJSON("crg-deals.json", []);
+      
+      // Filter for today's deals
+      const todayDeals = allDeals.filter(deal => deal.date === today);
+      
+      if (todayDeals.length === 0) {
+        bot.sendMessage(chatId, `📭 No CRG cap data found for today (${today})\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
+        console.log("📱 /todaycrgcap - No data for today");
+        return;
+      }
+      
+      // Calculate totals
+      const totalCap = todayDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
+      const totalReceived = todayDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
+      const totalFTD = todayDeals.reduce((sum, d) => sum + (parseInt(d.ftd) || 0), 0);
+      
+      // Format message
+      let capMessage = `📊 <b>Today CRG Cap</b>\n`;
+      capMessage += `📅 Date: ${today}\n`;
+      capMessage += `📋 Total Deals: ${todayDeals.length}\n\n`;
+      
+      // Table header
+      capMessage += `<code>Affiliate    | Cap | Rec | FTD</code>\n`;
+      capMessage += `<code>-------------|-----|-----|-----</code>\n`;
+      
+      // Table rows - show first 15 deals
+      const displayDeals = todayDeals.slice(0, 15);
+      displayDeals.forEach(deal => {
+        const affiliate = (deal.affiliate || '').padEnd(12).substring(0, 12);
+        const cap = (deal.cap || '0').padStart(3);
+        const rec = (deal.capReceived || '0').padStart(3);
+        const ftd = (deal.ftd || '0').padStart(3);
+        capMessage += `<code>${affiliate}| ${cap} | ${rec} | ${ftd}</code>\n`;
+      });
+      
+      if (todayDeals.length > 15) {
+        capMessage += `<code>... ${todayDeals.length - 15} more deals</code>\n`;
+      }
+      
+      // Totals
+      capMessage += `<code>-------------|-----|-----|-----</code>\n`;
+      capMessage += `<code>TOTAL        | ${String(totalCap).padStart(3)} | ${String(totalReceived).padStart(3)} | ${String(totalFTD).padStart(3)}</code>\n\n`;
+      
+      capMessage += `📈 <b>Summary:</b>\n`;
+      capMessage += `• Total Cap: ${totalCap}\n`;
+      capMessage += `• Total Received: ${totalReceived}\n`;
+      capMessage += `• Total FTD: ${totalFTD}\n`;
+      capMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
+      capMessage += `<i>Last sync: ${new Date().toLocaleTimeString()}</i>`;
+      
+      bot.sendMessage(chatId, capMessage, { parse_mode: "HTML" });
+      console.log("📱 /todaycrgcap - Sent CRG cap data for", todayDeals.length, "deals");
+    });
+
+    // ── /todayagentscap command - Show today's agents cap summary ──
+    bot.onText(/\/todayagentscap/, async (msg) => {
+      const chatId = msg.chat.id;
+      
+      // Read daily cap data
+      const allCaps = readJSON("daily-cap.json", []);
+      
+      // Find the most recent date in the data
+      const dates = [...new Set(allCaps.map(cap => cap.date))].sort().reverse();
+      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
+      
+      // Filter for the latest date's data
+      const todayCaps = allCaps.filter(cap => cap.date === latestDate);
+      
+      if (todayCaps.length === 0) {
+        bot.sendMessage(chatId, `📭 No agents cap data found\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
+        console.log("📱 /todayagentscap - No data found");
+        return;
+      }
+
+      
+      // Calculate totals
+      const totalAffiliates = todayCaps.reduce((sum, c) => sum + (parseInt(c.affiliates) || 0), 0);
+      const totalBrands = todayCaps.reduce((sum, c) => sum + (parseInt(c.brands) || 0), 0);
+      
+      // Format message
+      let capMessage = `📊 <b>Today Agents Cap</b>\n`;
+      capMessage += `📅 Date: ${latestDate}\n\n`;
+
+      
+      // Table header
+      capMessage += `<code>Agent      | Aff | Brands</code>\n`;
+      capMessage += `<code>-----------|-----|-------</code>\n`;
+      
+      // Table rows
+      todayCaps.forEach(cap => {
+        const agent = (cap.agent || '').padEnd(10).substring(0, 10);
+        const aff = (cap.affiliates || '0').padStart(3);
+        const brands = (cap.brands || '0').padStart(6);
+        capMessage += `<code>${agent}| ${aff} | ${brands}</code>\n`;
+      });
+      
+      // Totals
+      capMessage += `<code>-----------|-----|-------</code>\n`;
+      capMessage += `<code>TOTAL      | ${String(totalAffiliates).padStart(3)} | ${String(totalBrands).padStart(6)}</code>\n\n`;
+      
+      capMessage += `📈 <b>Summary:</b>\n`;
+      capMessage += `• Total Agents: ${todayCaps.length}\n`;
+      capMessage += `• Total Affiliates: ${totalAffiliates}\n`;
+      capMessage += `• Total Brands: ${totalBrands}\n\n`;
+      capMessage += `<i>Last sync: ${new Date().toLocaleTimeString()}</i>`;
+      
+      bot.sendMessage(chatId, capMessage, { parse_mode: "HTML" });
+      console.log("📱 /todayagentscap - Sent agents cap data for", todayCaps.length, "agents");
+    });
+
+
     
     // ── Handle callback queries from inline keyboard ──
     bot.on('callback_query', async (callbackQuery) => {
@@ -1054,6 +1289,40 @@ app.post("/api/telegram/notify", (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/sync - Manual sync of external data
+app.post("/api/sync", async (req, res) => {
+  console.log("🔄 Manual sync triggered via API");
+  const result = await syncExternalData();
+  res.json({ 
+    ok: true, 
+    message: "Sync completed",
+    results: result
+  });
+});
+
+// GET /api/sync/status - Check last sync status
+app.get("/api/sync/status", (req, res) => {
+  const crgDeals = readJSON("crg-deals.json", []);
+  const dailyCap = readJSON("daily-cap.json", []);
+  
+  // Get latest dates from data
+  const crgDates = [...new Set(crgDeals.map(d => d.date))].sort().reverse();
+  const capDates = [...new Set(dailyCap.map(d => d.date))].sort().reverse();
+  
+  res.json({
+    crgDeals: {
+      count: crgDeals.length,
+      latestDates: crgDates.slice(0, 5)
+    },
+    dailyCap: {
+      count: dailyCap.length,
+      latestDates: capDates.slice(0, 5)
+    },
+    lastCheck: new Date().toISOString()
+  });
+});
+
+
 // GET /api/telegram/test - Test bot connection
 app.get("/api/telegram/test", (req, res) => {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
@@ -1152,5 +1421,15 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Data: ${DATA_DIR}`);
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
+  console.log(`   External sync: every 15 minutes`);
+  
+  // Initial sync on startup
+  setTimeout(() => {
+    syncExternalData();
+  }, 3000);
+  
+  // Schedule sync every 15 minutes
+  setInterval(() => {
+    syncExternalData();
+  }, 15 * 60 * 1000);
 });
-

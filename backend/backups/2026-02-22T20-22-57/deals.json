@@ -1,0 +1,62 @@
+[
+  {
+    "id": "u9a81bmr5",
+    "affiliate": "12",
+    "country": "DE",
+    "price": "1400",
+    "crg": "5",
+    "funnels": "Ai",
+    "source": "Msn",
+    "deduction": "5"
+  },
+  {
+    "id": "r8vz4jy8q",
+    "affiliate": "12",
+    "country": "UK",
+    "price": "1450",
+    "crg": "5",
+    "funnels": "Ai",
+    "source": "Fb",
+    "deduction": "5"
+  },
+  {
+    "id": "u2wg1xmmv",
+    "affiliate": "22",
+    "country": "ES",
+    "price": "1100",
+    "crg": "10",
+    "funnels": "Btc",
+    "source": "Sms",
+    "deduction": "10"
+  },
+  {
+    "id": "7jshc6znh",
+    "affiliate": "30",
+    "country": "BE",
+    "price": "1250",
+    "crg": "10",
+    "funnels": "",
+    "source": "Tabola",
+    "deduction": "5"
+  },
+  {
+    "id": "q9bwq2813",
+    "affiliate": "15",
+    "country": "IT",
+    "price": "1100",
+    "crg": "15",
+    "funnels": "Btc",
+    "source": "Sms",
+    "deduction": "10"
+  },
+  {
+    "id": "zgy5kbkhv",
+    "affiliate": "13",
+    "country": "FR",
+    "price": "1100",
+    "crg": "12",
+    "funnels": "Btc ai",
+    "source": "Fb",
+    "deduction": "15"
+  }
+]
