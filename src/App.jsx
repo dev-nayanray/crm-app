@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.057";
+const VERSION = "1.058";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2458,12 +2458,28 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 }
 
 /* ── Deals Page ── */
-const DEALS_INITIAL = [];
+const DEALS_INITIAL = [
+  { id: genId(), affiliate: "17", country: "DE", price: "1800", crg: "15", dealType: "CRG", deduction: "Upto 5%", funnels: "Immediate mix // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "17", country: "JP", price: "1450", crg: "112", dealType: "CRG", deduction: "Upto 10%", funnels: "Quantum // Twitter", date: "2026-02-22" },
+  { id: genId(), affiliate: "14", country: "BR", price: "750", crg: "4", dealType: "CRG", deduction: "Upto 5%", funnels: "Trade Pro Air // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "71", country: "FR", price: "1250", crg: "10", dealType: "CRG", deduction: "Upto 10%", funnels: "Bitradeproai // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "71", country: "KR", price: "1300", crg: "8", dealType: "CRG", deduction: "", funnels: "Immediaterise // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "86", country: "PL", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Google Finance AI", date: "2026-02-22" },
+  { id: genId(), affiliate: "86", country: "DK", price: "1450", crg: "13", dealType: "CRG", deduction: "", funnels: "Google Finance AI", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "IT", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "AU", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "SE", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "NL", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+  { id: genId(), affiliate: "28", country: "FI", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income // Google", date: "2026-02-22" },
+];
 
 function DealsForm({ deal, onSave, onClose }) {
-  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", funnels: "", source: "", deduction: "" });
+  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", deduction: "", date: new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  // Auto-build client display from affiliate + country
+  const clientDisplay = [f.affiliate, f.country].filter(Boolean).join(" ");
 
   const handleSave = () => {
     if (!f.affiliate.trim()) { setError("Affiliate is required"); return; }
@@ -2474,26 +2490,33 @@ function DealsForm({ deal, onSave, onClose }) {
   return (
     <>
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Affiliate">
-          <input style={inp} value={f.affiliate} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("affiliate", v); }} placeholder="e.g. 47" maxLength={3} />
+        <Field label="Affiliate (number)">
+          <input style={inp} value={f.affiliate} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("affiliate", v); }} placeholder="e.g. 17" maxLength={3} />
         </Field>
         <Field label="Country">
           <input style={inp} value={f.country} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); s("country", v); }} placeholder="e.g. DE" maxLength={2} />
         </Field>
         <Field label="Price ($)">
-          <input style={inp} type="number" value={f.price} onChange={e => s("price", e.target.value)} placeholder="e.g. 1650" />
+          <input style={inp} type="number" value={f.price} onChange={e => s("price", e.target.value)} placeholder="e.g. 1800" />
         </Field>
-        <Field label="CRG (%)">
-          <input style={inp} type="number" value={f.crg} onChange={e => s("crg", e.target.value)} placeholder="e.g. 17" />
+        <Field label="CRG">
+          <input style={inp} type="number" value={f.crg} onChange={e => s("crg", e.target.value)} placeholder="e.g. 15" />
         </Field>
-        <Field label="Funnels">
-          <input style={inp} value={f.funnels || ""} onChange={e => s("funnels", e.target.value)} placeholder="e.g. Trezik Forge GPT, Rendiva GPT" />
+        <Field label="Deal Type">
+          <select style={{ ...inp, cursor: "pointer" }} value={f.dealType || "CRG"} onChange={e => s("dealType", e.target.value)}>
+            <option value="CRG">CRG</option>
+            <option value="CPA">CPA</option>
+            <option value="Hybrid">Hybrid</option>
+          </select>
         </Field>
-        <Field label="Source">
-          <input style={inp} value={f.source || ""} onChange={e => s("source", e.target.value)} placeholder="e.g. MSN + Taboola" />
+        <Field label="Deduction">
+          <input style={inp} value={f.deduction || ""} onChange={e => s("deduction", e.target.value)} placeholder="e.g. Upto 5% or leave empty" />
         </Field>
-        <Field label="Deduction (%)">
-          <input style={inp} type="number" value={f.deduction || ""} onChange={e => s("deduction", e.target.value)} placeholder="e.g. 5" />
+        <Field label="Traffic type / Funnels">
+          <input style={{ ...inp, gridColumn: "1 / -1" }} value={f.funnels || ""} onChange={e => s("funnels", e.target.value)} placeholder="e.g. Immediate mix // Google" />
+        </Field>
+        <Field label="Date">
+          <input style={inp} type="date" value={f.date || ""} onChange={e => s("date", e.target.value)} />
         </Field>
       </div>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
@@ -2549,14 +2572,14 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   const matchSearch = d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [d.affiliate, d.country, d.funnels, d.source].some(v => (v || "").toLowerCase().includes(q));
+    return [d.affiliate, d.country, d.funnels, d.dealType, d.deduction].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const filtered = deals.filter(matchSearch);
   const sorted = (() => {
     if (!sortCol) return filtered;
     const arr = [...filtered];
-    const numCols = ["price", "crg", "deduction", "affiliate"];
+    const numCols = ["price", "crg", "affiliate"];
     const isNum = numCols.includes(sortCol);
     arr.sort((a, b) => {
       const va = a[sortCol] || "";
@@ -2608,13 +2631,14 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
               <thead>
                 <tr style={{ background: "#F8FAFC" }}>
                   {[
-                    { key: "affiliate", label: "Affiliate" },
+                    { key: "affiliate", label: "Client" },
                     { key: "country", label: "Country" },
                     { key: "price", label: "Price" },
                     { key: "crg", label: "CRG" },
-                    { key: "funnels", label: "Funnels" },
-                    { key: "source", label: "Source" },
-                    { key: "deduction", label: "Deduction" },
+                    { key: "dealType", label: "Deal Type" },
+                    { key: "deduction", label: "Deductions" },
+                    { key: "funnels", label: "Traffic type / Funnels" },
+                    { key: "date", label: "Date" },
                     { key: null, label: "Actions" },
                   ].map(h =>
                     <th key={h.label} onClick={h.key ? () => handleColumnSort(h.key) : undefined}
@@ -2633,32 +2657,46 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No deals yet. Click "New Deal" to add one.</td></tr>
+                  <tr><td colSpan={9} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No deals yet. Click "New Deal" to add one.</td></tr>
                 )}
                 {sorted.map((d, i) => (
                   <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 16, borderRight: "1px solid #F1F5F9" }}>
+                    {/* Client: affiliate + country */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
                       <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                         onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                         onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                       >{d.affiliate}</span>
                     </td>
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9", letterSpacing: 1 }}>
+                    {/* Country badge */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
                       {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{d.country}</span> : ""}
                     </td>
+                    {/* Price */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
-                      {d.price ? `${parseFloat(d.price).toLocaleString("en-US")}$` : ""}
+                      {d.price ? `${parseFloat(d.price).toLocaleString("en-US")}` : ""}
                     </td>
+                    {/* CRG */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
-                      {d.crg ? <span style={{ background: "#ECFDF5", color: "#10B981", padding: "3px 10px", borderRadius: 4 }}>{d.crg}%</span> : ""}
+                      {d.crg || ""}
                     </td>
-                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
-                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.source || ""}</td>
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
-                      {d.deduction ? <span style={{ background: "#FEF2F2", color: "#DC2626", padding: "3px 10px", borderRadius: 4 }}>{d.deduction}%</span> : ""}
+                    {/* Deal Type */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
+                      <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 14px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.5 }}>{d.dealType || "CRG"}</span>
                     </td>
+                    {/* Deductions */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 13, fontWeight: 600, borderRight: "1px solid #F1F5F9" }}>
+                      {d.deduction ? <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: 4 }}>{d.deduction}</span> : <span style={{ color: "#CBD5E1" }}>Not specified</span>}
+                    </td>
+                    {/* Traffic type / Funnels */}
+                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
+                    {/* Date */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 12, color: "#64748B", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>
+                      {d.date ? (() => { const dt = new Date(d.date + "T00:00:00"); return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`; })() : ""}
+                    </td>
+                    {/* Actions */}
                     <td style={{ padding: "8px 8px" }}>
                       <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center" }}>
                         {!sortCol && <>
