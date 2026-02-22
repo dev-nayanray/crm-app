@@ -412,7 +412,7 @@ Last updated: ${dateStr}
     
     console.log("✅ Bot command handlers ready: /start, /wallets");
     
-    // ── /deals command - Ask for country code ──
+    // ── /deals command - Ask for country code with buttons ──
     bot.onText(/\/deals/, (msg) => {
       const chatId = msg.chat.id;
       
@@ -422,27 +422,124 @@ Last updated: ${dateStr}
       // Set user state to waiting for country code
       userStates[chatId] = { state: 'waiting_for_country', command: '/deals' };
       
-      const dealsMessage = `📊 <b>Get Deals by Country</b>
-
-Please enter the country code you want to view deals for.
-
-<b>Available Country Codes:</b>
-• DE - Germany
-• FR - France
-• UK - United Kingdom
-• AU - Australia
-• MY - Malaysia
-• SI - Singapore
-• HR - Croatia
-• GCC - Gulf Countries
-
-<i>Example: DE</i>`;
+      // Create inline keyboard with country buttons
+      const countryKeyboard = [
+        [
+          { text: '🇩🇪 DE', callback_data: 'DE' },
+          { text: '🇫🇷 FR', callback_data: 'FR' },
+          { text: '🇬🇧 UK', callback_data: 'UK' }
+        ],
+        [
+          { text: '🇦🇺 AU', callback_data: 'AU' },
+          { text: '🇲🇾 MY', callback_data: 'MY' },
+          { text: '🇸🇬 SI', callback_data: 'SI' }
+        ],
+        [
+          { text: '🇭🇷 HR', callback_data: 'HR' },
+          { text: '🇸🇦 GCC', callback_data: 'GCC' }
+        ]
+      ];
       
-      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
+      const dealsMessage = `📊 <b>CRG Deals - Today's Deals</b>
+
+Select a country to view today's deals:
+
+<i>Or type the country code (e.g., DE, FR, UK)</i>`;
+      
+      bot.sendMessage(chatId, dealsMessage, { 
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: countryKeyboard
+        }
+      });
       console.log("📱 /deals command responded to chat:", chatId);
     });
     
-    // ── Handle country code input for deals ──
+    // ── Handle callback queries from inline keyboard ──
+    bot.on('callback_query', async (callbackQuery) => {
+      const msg = callbackQuery.message;
+      const chatId = msg.chat.id;
+      const countryCode = callbackQuery.data;
+      
+      // Answer the callback to remove loading state
+      bot.answerCallbackQuery(callbackQuery.id);
+      
+      // Valid country codes
+      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC'];
+      
+      if (!validCountries.includes(countryCode)) {
+        bot.sendMessage(chatId, `❌ Invalid country code: <b>${countryCode}</b>`, { parse_mode: "HTML" });
+        return;
+      }
+      
+      // Get today's date in YYYY-MM-DD format
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Read deals from crg-deals.json
+      const allDeals = readJSON("crg-deals.json", []);
+      
+      // Filter deals by country code AND today's date
+      const countryDeals = allDeals.filter(deal => {
+        if (!deal.affiliate) return false;
+        // Check country code match
+        const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
+        // Check date is today
+        const isToday = deal.date === today;
+        return hasCountry && isToday;
+      });
+      
+      // Country name mapping
+      const countryNames = {
+        'DE': 'Germany',
+        'FR': 'France',
+        'UK': 'United Kingdom',
+        'AU': 'Australia',
+        'MY': 'Malaysia',
+        'SI': 'Singapore',
+        'HR': 'Croatia',
+        'GCC': 'Gulf Countries'
+      };
+      
+      const countryName = countryNames[countryCode] || countryCode;
+      
+      if (countryDeals.length === 0) {
+        bot.sendMessage(chatId, `📭 No <b>today's</b> deals found for <b>${countryName}</b> (${countryCode})\n\n<i>Note: Only showing deals with date: ${today}</i>`, { parse_mode: "HTML" });
+        console.log("📱 /deals (button) - No today's deals found for:", countryCode);
+        return;
+      }
+      
+      // Format deals message
+      let dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${today}\n\n`;
+      
+      // Show summary
+      const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
+      const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
+      
+      dealsMessage += `📈 <b>Summary:</b>\n`;
+      dealsMessage += `• Total Caps: ${totalCap}\n`;
+      dealsMessage += `• Received: ${totalReceived}\n`;
+      dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
+      
+      // Show each deal (limit to 20 to avoid message too long)
+      const displayDeals = countryDeals.slice(0, 20);
+      
+      displayDeals.forEach((deal, index) => {
+        dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
+        dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
+        dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
+        dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
+        dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
+      });
+      
+      if (countryDeals.length > 20) {
+        dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
+      }
+      
+      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
+      console.log("📱 /deals (button) - Sent", countryDeals.length, "today's deals for", countryCode);
+    });
+    
+    // ── Handle country code input for deals (text input) ──
     bot.on('message', async (msg) => {
       // Skip commands
       if (msg.text && msg.text.startsWith('/')) return;
@@ -468,10 +565,13 @@ Please enter the country code you want to view deals for.
       // Read deals from crg-deals.json
       const allDeals = readJSON("crg-deals.json", []);
       
-      // Filter deals by country code (in affiliate field like "122 DE", "175 FR", etc.)
+      // Filter deals by country code AND today's date
       const countryDeals = allDeals.filter(deal => {
         if (!deal.affiliate) return false;
-        return deal.affiliate.toUpperCase().endsWith(' ' + userText);
+        const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + userText);
+        const today = new Date().toISOString().split('T')[0];
+        const isToday = deal.date === today;
+        return hasCountry && isToday;
       });
       
       // Country name mapping
