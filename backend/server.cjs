@@ -485,13 +485,13 @@ Select a country to view today's deals:
         dealsMessage = `📊 <b>${countryName} - Deals</b> (${countryDeals.length} found)\n📋 Source: Deals Data\n\n`;
         
         // Show summary
-        const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
-        const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
+        // const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
+        // const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
         
-        dealsMessage += `📈 <b>Summary:</b>\n`;
-        dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
-        dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
-        dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
+        // dealsMessage += `📈 <b>Summary:</b>\n`;
+        // dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
+        // dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
+        // dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
         
         // Show each deal (limit to 20 to avoid message too long)
         const displayDeals = countryDeals.slice(0, 20);
