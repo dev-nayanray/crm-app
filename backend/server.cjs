@@ -444,7 +444,7 @@ Last updated: ${dateStr}
         ]
       ];
       
-      const dealsMessage = `📊 <b>CRG Deals - All Time Deals</b>
+      const dealsMessage = `📊 <b>Deals - All Time Deals</b>
 
 Select a country to view ALL deals (no date filter):
 
@@ -525,18 +525,32 @@ Select a country to view today's deals:
       // Get today's date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
       
-      // Read deals from crg-deals.json
-      const allDeals = readJSON("crg-deals.json", []);
+      // Read deals from the appropriate file based on command type
+      // /deals (isAllTime=true) reads from crg-deals.json (all historical deals)
+      // /crgdeals (isAllTime=false) reads from crg-deals.json, filtered by today's date
+      const dataFile = "crg-deals.json";
+      const allDeals = readJSON(dataFile, []);
       
       // Filter deals by country code (and today's date only for /crgdeals)
-      const countryDeals = allDeals.filter(deal => {
-        if (!deal.affiliate) return false;
-        // Check country code match
-        const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
-        // Check date is today only for /crgdeals (not all time)
-        const isToday = deal.date === today;
-        return hasCountry && (isAllTime || isToday);
-      });
+      let countryDeals;
+      if (isAllTime) {
+        // For /deals: read from crg-deals.json, filter by affiliate suffix (all historical, no date filter)
+        countryDeals = allDeals.filter(deal => {
+          if (!deal.affiliate) return false;
+          // Check country code match (affiliate ends with country code)
+          return deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
+        });
+      } else {
+        // For /crgdeals: read from crg-deals.json, filter by affiliate suffix and date
+        countryDeals = allDeals.filter(deal => {
+          if (!deal.affiliate) return false;
+          // Check country code match (affiliate ends with country code)
+          const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
+          // Check date is today
+          const isToday = deal.date === today;
+          return hasCountry && isToday;
+        });
+      }
       
       // Country name mapping
       const countryNames = {
@@ -587,7 +601,7 @@ Select a country to view today's deals:
       }
       
       bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
-      console.log("📱 /deals (button) - Sent", countryDeals.length, "today's deals for", countryCode);
+      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "all time" : "today's", "deals for", countryCode);
     });
     
     // ── Handle country code input for deals (text input) ──
