@@ -15,26 +15,9 @@ const mobileCSS = `
   .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
   .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
   .blitz-form-grid { grid-template-columns: 1fr !important; }
-  /* Enhanced mobile styles */
-  body { -webkit-tap-highlight-color: transparent; }
-  input, select, button { font-size: 16px !important; }
-  table { font-size: 11px !important; }
-  .payment-card { padding: 12px !important; }
 }
 @media (max-width: 480px) {
   .blitz-summary { grid-template-columns: 1fr !important; }
-  .blitz-header { padding: 8px 10px !important; }
-  .blitz-main { padding: 12px 8px !important; }
-  .blitz-modal-content { padding: 16px 12px !important; }
-}
-@media (hover: none) and (pointer: coarse) {
-  button, select, input[type="checkbox"], input[type="radio"] { min-height: 44px !important; }
-  .touch-target { min-width: 44px; min-height: 44px; }
-}
-/* PWA standalone mode */
-@media (display-mode: standalone) {
-  .blitz-header { padding-top: env(safe-area-inset-top, 0) !important; }
-  body { padding-bottom: env(safe-area-inset-bottom, 0) !important; }
 }
 `;
 
@@ -150,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "1.053";
+const VERSION = "1.054";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2212,8 +2195,13 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     });
   };
 
-  // Auto-sync when crgDeals change
+  // Auto-sync when crgDeals change - use ref to track initial sync
+  const syncRef = useRef(false);
   useEffect(() => {
+    if (!syncRef.current) {
+      syncRef.current = true;
+      return; // Skip on first render
+    }
     syncFromCRG();
   }, [crgDeals]);
 
@@ -2692,6 +2680,26 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   );
 }
 
+/* ── Sync Banner Component (defined outside App to avoid hooks order issues) ── */
+function SyncBanner({ syncBanner, onDismiss }) {
+  if (!syncBanner) return null;
+  
+  const msgs = {
+    pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
+    synced: { bg: "#ECFDF5", border: "#10B981", color: "#065F46", text: "✅ Connected to server — all data synced between users!" },
+    offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only." },
+  };
+  const m = msgs[syncBanner];
+  if (!m) return null;
+  
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "8px 16px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 12, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+      {m.text}
+      <button onClick={onDismiss} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
+    </div>
+  );
+}
+
 /* ── App ── */
 export default function App() {
   const [user, setUser] = useState(null);
@@ -2799,12 +2807,12 @@ export default function App() {
       ]);
       skipSave.current = true;
       if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
-      if (p !== null) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
-      if (cp !== null) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
-      if (crg !== null) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
-      if (dc !== null) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
-      if (dl !== null) setDealsData(prev => JSON.stringify(prev) !== JSON.stringify(dl) ? dl : prev);
-      if (wl !== null) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
+      if (p !== null && p.length > 0) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
+      if (cp !== null && cp.length > 0) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
+      if (crg !== null && crg.length > 0) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
+      if (dc !== null && dc.length > 0) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
+      if (dl !== null && dl.length > 0) setDealsData(prev => JSON.stringify(prev) !== JSON.stringify(dl) ? dl : prev);
+      if (wl !== null && wl.length > 0) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
       setTimeout(() => { skipSave.current = false; }, 500);
     };
     const interval = setInterval(poll, 8000);
@@ -2829,12 +2837,12 @@ export default function App() {
       apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
     ]);
     if (u !== null && u.length > 0) setUsers(u);
-    if (p !== null) setPayments(p);
-    if (cp !== null) setCpPayments(cp);
-    if (crg !== null) setCrgDeals(crg);
-    if (dc !== null) setDcEntries(dc);
-    if (dl !== null) setDealsData(dl);
-    if (wl !== null) setWalletsData(wl);
+    if (p !== null && p.length > 0) setPayments(p);
+    if (cp !== null && cp.length > 0) setCpPayments(cp);
+    if (crg !== null && crg.length > 0) setCrgDeals(crg);
+    if (dc !== null && dc.length > 0) setDcEntries(dc);
+    if (dl !== null && dl.length > 0) setDealsData(dl);
+    if (wl !== null && wl.length > 0) setWalletsData(wl);
     setTimeout(() => { skipSave.current = false; }, 500);
   };
 

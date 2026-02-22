@@ -1200,4 +1200,3 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
   console.log(`   Telegram bot: @blitzfinance_bot`);
 });
-
