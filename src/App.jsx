@@ -133,7 +133,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "2.0";
+const VERSION = "2.01";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2551,8 +2551,9 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [delConfirm, setDelConfirm] = useState(null);
-  const [sortCol, setSortCol] = useState(null); // null | "affiliate" | "country" | "price" | "crg" | "funnels" | "source" | "deduction"
-  const [sortDir, setSortDir] = useState("asc"); // "asc" | "desc"
+  const [sortCol, setSortCol] = useState(null);
+  const [sortDir, setSortDir] = useState("asc");
+  const [inlineEdit, setInlineEdit] = useState(null); // { id, field } for inline editing
 
   const handleColumnSort = col => {
     if (sortCol === col) {
@@ -2586,6 +2587,20 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   };
 
   const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+
+  const handleDuplicate = deal => {
+    const dup = { ...deal, id: genId() };
+    setDeals(prev => {
+      const idx = prev.findIndex(d => d.id === deal.id);
+      const arr = [...prev];
+      arr.splice(idx + 1, 0, dup);
+      return arr;
+    });
+  };
+
+  const handleInlineChange = (id, field, value) => {
+    setDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+  };
 
   const matchSearch = d => {
     if (!search) return true;
@@ -2689,17 +2704,38 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                         onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                       >{d.affiliate}</span>
                     </td>
-                    {/* Country badge */}
+                    {/* Country badge — click to edit */}
                     <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
-                      {d.country ? <span style={{ background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{d.country}</span> : ""}
+                      {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "country" ? (
+                        <input autoFocus value={d.country || ""} onChange={e => handleInlineChange(d.id, "country", e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
+                          onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
+                          style={{ ...inp, width: 50, textAlign: "center", fontSize: 13, fontWeight: 700, padding: "4px 6px" }} maxLength={2} />
+                      ) : (
+                        <span onClick={() => setInlineEdit({ id: d.id, field: "country" })} style={{ cursor: "pointer", background: "#EFF6FF", color: "#2563EB", padding: "3px 10px", borderRadius: 4, fontSize: 13, fontWeight: 700, display: "inline-block" }}
+                          title="Click to edit">{d.country || "—"}</span>
+                      )}
                     </td>
-                    {/* Price */}
+                    {/* Price — click to edit */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
-                      {d.price ? `${parseFloat(d.price).toLocaleString("en-US")}` : ""}
+                      {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "price" ? (
+                        <input autoFocus type="number" value={d.price || ""} onChange={e => handleInlineChange(d.id, "price", e.target.value)}
+                          onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
+                          style={{ ...inp, width: 80, textAlign: "center", fontSize: 14, fontWeight: 800, fontFamily: "'Space Mono',monospace", padding: "4px 6px" }} />
+                      ) : (
+                        <span onClick={() => setInlineEdit({ id: d.id, field: "price" })} style={{ cursor: "pointer" }}
+                          title="Click to edit">{d.price ? `${parseFloat(d.price).toLocaleString("en-US")}` : "—"}</span>
+                      )}
                     </td>
-                    {/* CRG */}
+                    {/* CRG — click to edit */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
-                      {d.crg || ""}
+                      {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "crg" ? (
+                        <input autoFocus type="number" value={d.crg || ""} onChange={e => handleInlineChange(d.id, "crg", e.target.value)}
+                          onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
+                          style={{ ...inp, width: 60, textAlign: "center", fontSize: 14, fontWeight: 700, fontFamily: "'Space Mono',monospace", padding: "4px 6px" }} />
+                      ) : (
+                        <span onClick={() => setInlineEdit({ id: d.id, field: "crg" })} style={{ cursor: "pointer" }}
+                          title="Click to edit">{d.crg || "—"}</span>
+                      )}
                     </td>
                     {/* Deal Type */}
                     <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
@@ -2726,6 +2762,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                           <button onClick={() => handleMove(d.id, "down")} title="Move down" disabled={i === sorted.length - 1}
                             style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: i === sorted.length - 1 ? "default" : "pointer", color: i === sorted.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
                         </>}
+                        <button onClick={() => handleDuplicate(d)} title="Duplicate" style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6, padding: 5, cursor: "pointer", color: "#16A34A", display: "flex", fontSize: 12 }}>⧉</button>
                         <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                         <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                       </div>
