@@ -4,13 +4,24 @@ const path = require("path");
 const cors = require("cors");
 const https = require("https");
 const http = require("http");
-const { WebSocketServer, WebSocket } = require("ws");
+// WebSocket — optional dependency (graceful fallback to HTTP polling)
+// Install: npm install ws
+let WebSocketServer, WebSocket, WS_AVAILABLE = false;
+try {
+  const wsModule = require("ws");
+  WebSocketServer = wsModule.WebSocketServer || wsModule.Server;
+  WebSocket = wsModule.WebSocket || wsModule;
+  WS_AVAILABLE = true;
+} catch (e) {
+  console.log("⚠️  'ws' not installed — WebSocket disabled, HTTP polling only");
+  console.log("   Install: npm install ws");
+}
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "3.02";
+const VERSION = "3.03";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -614,48 +625,61 @@ app.get("/api/versions", requireAuth, (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/ws" });
 const wsClients = new Set();
+let wss = null;
 
-wss.on('connection', (ws, req) => {
-  // FIX H1: Require auth token for WebSocket connections
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const token = url.searchParams.get("token");
-  if (!token || !activeSessions.has(token)) {
-    ws.close(4001, "Authentication required");
-    return;
-  }
-  wsClients.add(ws);
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-  console.log(`🔌 WebSocket connected: ${ip} (${wsClients.size} total)`);
+if (WS_AVAILABLE) {
+  wss = new WebSocketServer({ server, path: "/ws" });
 
-  // Send current versions on connect
-  const versions = {};
-  endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
-  ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() }));
+  wss.on('connection', (ws, req) => {
+    // FIX H1: Require auth token for WebSocket connections
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    const token = url.searchParams.get("token");
+    if (!token || !activeSessions.has(token)) {
+      ws.close(4001, "Authentication required");
+      return;
+    }
+    wsClients.add(ws);
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    console.log(`🔌 WebSocket connected: ${ip} (${wsClients.size} total)`);
 
-  // Handle messages from client
-  ws.on('message', (msg) => {
-    try {
-      const data = JSON.parse(msg);
-      if (data.type === "ping") {
-        ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
-      }
-    } catch {}
+    // Send current versions on connect
+    const versions = {};
+    endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
+    ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() }));
+
+    // Handle messages from client
+    ws.on('message', (msg) => {
+      try {
+        const data = JSON.parse(msg);
+        if (data.type === "ping") {
+          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+        }
+      } catch {}
+    });
+
+    ws.on('close', () => {
+      wsClients.delete(ws);
+      console.log(`🔌 WebSocket disconnected (${wsClients.size} remaining)`);
+    });
+
+    ws.on('error', () => {
+      wsClients.delete(ws);
+    });
   });
 
-  ws.on('close', () => {
-    wsClients.delete(ws);
-    console.log(`🔌 WebSocket disconnected (${wsClients.size} remaining)`);
-  });
-
-  ws.on('error', () => {
-    wsClients.delete(ws);
-  });
-});
+  // Heartbeat — keep connections alive + detect dead clients
+  setInterval(() => {
+    wsClients.forEach(ws => {
+      if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
+      ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
+    });
+  }, 30000);
+}
 
 // Broadcast data update to all connected WebSocket clients
 function broadcastUpdate(table, data) {
+  if (!WS_AVAILABLE || wsClients.size === 0) return;
   const message = JSON.stringify({
     type: "update",
     table,
@@ -673,14 +697,6 @@ function broadcastUpdate(table, data) {
   });
   if (sent > 0) console.log(`📡 Broadcast ${table} update to ${sent} clients`);
 }
-
-// Heartbeat — keep connections alive + detect dead clients
-setInterval(() => {
-  wsClients.forEach(ws => {
-    if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
-    ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
-  });
-}, 30000);
 
 // ═══════════════════════════════════════════════════════════════
 // 10. AUDIT LOG ENDPOINTS
