@@ -1496,27 +1496,48 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
 
-  const handleSave = form => {
-    if (editPay) {
-      const updated = { ...editPay, ...form };
-      if (form.status === "Paid" && editPay.status !== "Paid") {
-        updated.month = month;
-        updated.year = year;
-        if (!updated.paidDate) {
-          updated.paidDate = new Date().toISOString().split("T")[0];
-        }
-        telegramNotify(`💰 Payment #${updated.invoice} marked as PAID — ${parseFloat(updated.amount).toLocaleString()}$ by ${user.name}`);
-      } else if (!editPay) {
-        telegramNotify(`📝 Payment #${form.invoice} updated by ${user.name}`);
+ const handleSave = form => {
+  if (editPay) {
+    const updated = { ...editPay, ...form };
+
+    if (form.status === "Paid" && editPay.status !== "Paid") {
+      updated.month = month;
+      updated.year = year;
+
+      if (!updated.paidDate) {
+        updated.paidDate = new Date().toISOString().split("T")[0];
       }
-      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
-    } else {
-      setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
-      telegramNotify(``);
+
+      telegramNotify(formatPaidPaymentMessage({
+        invoice: updated.invoice,
+        amount: updated.amount,
+        openBy: user.name,
+        paymentHash: updated.paymentHash
+      }));
+
+    } else if (!editPay) {
+      telegramNotify(`📝 Payment #${form.invoice} updated by ${user.name}`);
     }
-    setModalOpen(false);
-    setEditPay(null);
-  };
+
+    setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
+
+  } else {
+    const newPayment = { ...form, id: genId(), month, year };
+
+    setPayments(prev => [...prev, newPayment]);
+
+    // ✅ SEND ONLY TEMPLATE MESSAGE
+    telegramNotify(formatOpenPaymentMessage({
+      invoice: newPayment.invoice,
+      amount: newPayment.amount,
+      openBy: user.name,
+      paymentHash: newPayment.paymentHash
+    }));
+  }
+
+  setModalOpen(false);
+  setEditPay(null);
+};
 
   const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
