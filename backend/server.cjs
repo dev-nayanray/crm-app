@@ -643,11 +643,13 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   payments.forEach(p => {
     const oldP = oldMap.get(p.id);
     if (!oldP) {
-      if (["Open", "On the way", "Approved to pay"].includes(p.status)) sendTelegramNotification(formatOpenPaymentMessage(p));
-      else if (p.status === "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
+      // New payment - no notification (only notify when paid)
+      // Removed: if (["Open", "On the way", "Approved to pay"].includes(p.status)) sendTelegramNotification(formatOpenPaymentMessage(p));
+      if (p.status === "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
     } else if (oldP.status !== p.status) {
       if (p.status === "Paid" && oldP.status !== "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
-      else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendTelegramNotification(formatOpenPaymentMessage(p));
+      // Removed: Re-opening a previously paid payment notification
+      // else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendTelegramNotification(formatOpenPaymentMessage(p));
     }
   });
 
