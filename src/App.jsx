@@ -336,7 +336,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.05";
+const VERSION = "3.06";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1594,6 +1594,18 @@ function LoginScreen({ onLogin, users }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [blocked, setBlocked] = useState(0); // minutes remaining
+  const [serverStatus, setServerStatus] = useState("checking"); // "online" | "offline" | "checking"
+
+  // Check server health on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+        if (res.ok) { setServerStatus("online"); serverOnline = true; }
+        else setServerStatus("offline");
+      } catch { setServerStatus("offline"); }
+    })();
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1655,6 +1667,17 @@ function LoginScreen({ onLogin, users }) {
           <span style={{ fontSize: 10, color: "#38BDF8", fontFamily: "'JetBrains Mono',monospace", background: "rgba(56,189,248,0.1)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(56,189,248,0.15)" }}>v{VERSION}</span>
         </div>
         <p style={{ color: "#64748B", fontSize: 14, marginBottom: 36, marginTop: 4 }}>Deep Space Dashboard</p>
+        {/* Server connection status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, padding: "8px 14px", borderRadius: 10,
+          background: serverStatus === "online" ? "rgba(16,185,129,0.08)" : serverStatus === "offline" ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.08)",
+          border: `1px solid ${serverStatus === "online" ? "rgba(16,185,129,0.2)" : serverStatus === "offline" ? "rgba(245,158,11,0.2)" : "rgba(148,163,184,0.2)"}` }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%",
+            background: serverStatus === "online" ? "#10B981" : serverStatus === "offline" ? "#F59E0B" : "#94A3B8",
+            boxShadow: serverStatus === "online" ? "0 0 6px rgba(16,185,129,0.5)" : "none" }} />
+          <span style={{ fontSize: 12, color: serverStatus === "online" ? "#10B981" : serverStatus === "offline" ? "#F59E0B" : "#94A3B8", fontWeight: 500 }}>
+            {serverStatus === "online" ? "Server connected" : serverStatus === "offline" ? "Server offline — offline login available" : "Checking server..."}
+          </span>
+        </div>
         <form onSubmit={submit} method="post" autoComplete="on">
           <label htmlFor="login-email" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Email</label>
           <input id="login-email" name="email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
@@ -3215,13 +3238,18 @@ function AppInner() {
     (async () => {
       skipSave.current = true;
 
+      // Step 0: Check if server is reachable (health endpoint needs no auth)
+      try {
+        const healthRes = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
+        if (healthRes.ok) serverOnline = true;
+      } catch { serverOnline = false; }
+
       // Only fetch from server if we have an auth token (i.e., user is logged in)
-      // Without token, server returns 401 → just use localStorage/defaults
       const hasToken = !!getSessionToken();
 
       // Step 1: Fetch ALL data from server (only if authenticated)
       let u = null, p = null, cp = null, crg = null, dc = null, dl = null, wl = null;
-      if (hasToken) {
+      if (hasToken && serverOnline) {
         [u, p, cp, crg, dc, dl, wl] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
         ]);
@@ -3311,7 +3339,7 @@ function AppInner() {
           await Promise.all(pushTasks);
         }
       } else {
-        // ── SERVER OFFLINE: use localStorage as fallback ──
+        // ── SERVER OFFLINE or NOT AUTHENTICATED: use localStorage as fallback ──
         if (lu && lu.length > 0) setUsers(lu);
         if (lp && lp.length > 0) setPayments(lp);
         if (lcp && lcp.length > 0) setCpPayments(lcp);
@@ -3319,7 +3347,9 @@ function AppInner() {
         if (ldc && ldc.length > 0) setDcEntries(ldc);
         if (ldl && ldl.length > 0) setDealsData(ldl);
         if (lwl && lwl.length > 0) setWalletsData(lwl);
-        setSyncBanner("offline");
+        // Only show offline banner if user is logged in but server is down
+        // Don't scare users on the login screen
+        if (hasToken && !serverOnline) setSyncBanner("offline");
       }
 
       setLoaded(true);
