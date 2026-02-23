@@ -1496,48 +1496,31 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
   const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
   const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
 
-  const handleSave = form => {
-    if (editPay) {
-      const updated = { ...editPay, ...form };
-
-      if (form.status === "Paid" && editPay.status !== "Paid") {
-        updated.month = month;
-        updated.year = year;
-
-        if (!updated.paidDate) {
-          updated.paidDate = new Date().toISOString().split("T")[0];
-        }
-
-        // Send Telegram notification for paid payment
-        const amount = Number(updated.amount || 0).toLocaleString("en-US");
-        telegramNotify(`💰 PAYMENT #${updated.invoice} marked as PAID 💰
-
-📋 Invoice: #${updated.invoice}
-💵 Amount: $${amount}
-👤 Paid by: ${user.name}
-Payment Hash: ${updated.paymentHash || "N/A"}`);
-      } else if (editPay.status !== form.status) {
+  const handleSave = form => { 
+    if (editPay) { 
+      const updated = { ...editPay, ...form }; 
+      // Send telegram notification when status changes to Paid
+      if (form.status === "Paid" && editPay.status !== "Paid") { 
+        updated.month = month; 
+        
+        updated.year = year; 
+        if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
+        // Send detailed payment notification
+        telegramNotify(`💰 PAYMENT #${form.invoice} marked as PAID 💰\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Paid by: ${user.name}\nPayment Hash: ${form.paymentHash || 'N/A'}`);
+      } else if (form.status !== "Paid") {
         // Notify for other status changes
-        telegramNotify(`🔄 Payment #${editPay.invoice} status changed → ${form.status} by ${user.name}`);
+        telegramNotify(`🔄 Payment #${form.invoice} updated to ${form.status} by ${user.name}`);
       }
-
-      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
-    } else {
+      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
+    } else { 
+      // New payment added
       const newPayment = { ...form, id: genId(), month, year };
       setPayments(prev => [...prev, newPayment]);
-
-      // Send notification for new payment creation
-      const amount = Number(form.amount || 0).toLocaleString("en-US");
-      telegramNotify(`💰 NEW PAYMENT CREATED 💰
-
-📋 Invoice: #${form.invoice}
-💵 Amount: $${amount}
-👤 Created by: ${user.name}
-Status: ${form.status || "Open"}`);
-    }
-
-    setModalOpen(false);
-    setEditPay(null);
+      // Send notification for new payment
+      telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
+    } 
+    setModalOpen(false); 
+    setEditPay(null); 
   };
 
   const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
