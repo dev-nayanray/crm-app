@@ -21,7 +21,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "3.06";
+const VERSION = "3.8";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -32,6 +32,56 @@ const AUDIT_DIR = path.join(__dirname, "audit");
 
 // Ensure directories
 [DATA_DIR, BACKUP_DIR, AUDIT_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+
+// ── Server-side user seed data (source of truth for passwords) ──
+const INITIAL_USERS = [
+  { email: "sophia@blitz-affiliates.marketing", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Sophia" },
+  { email: "office1092021@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Office" },
+  { email: "y0505300530@gmail.com", passwordHash: "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1", name: "Y Admin" },
+  { email: "zack@blitz-affiliates.marketing", passwordHash: "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e", name: "Zack" },
+  { email: "cameron@blitz-affiliates.marketing", passwordHash: "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476", name: "Cameron" },
+  { email: "wpnayanray@gmail.com", passwordHash: "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0", name: "Nayan" },
+  { email: "kazarian.oleksandra.v@gmail.com", passwordHash: "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020", name: "Oleksandra" },
+  { email: "kate@blitz-affiliates.marketing", passwordHash: "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8", name: "Kate" },
+  { email: "alehandro@blitz-affiliates.marketing", passwordHash: "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262", name: "Alehandro" },
+  { email: "john.leon@blitz-affiliates.marketing", passwordHash: "77dbc78facad3377d2c8dc621e532a70e82b3931a19dfe5bc972d748ff535a90", name: "John Leon" },
+];
+
+// ── Seed / repair users.json on startup ──
+// Ensures all INITIAL_USERS exist with correct password hashes
+// Fixes the bug where client synced stripped (no passwordHash) users back to server
+function seedUsers() {
+  const usersFile = path.join(DATA_DIR, "users.json");
+  let existing = [];
+  try { if (fs.existsSync(usersFile)) existing = JSON.parse(fs.readFileSync(usersFile, "utf8")); } catch {}
+
+  const existingMap = new Map(existing.map(u => [u.email, u]));
+  let changed = false;
+
+  for (const iu of INITIAL_USERS) {
+    const eu = existingMap.get(iu.email);
+    if (!eu) {
+      // Missing user — add it
+      existing.push(iu);
+      changed = true;
+      console.log(`👤 Added user: ${iu.email}`);
+    } else if (!eu.passwordHash) {
+      // User exists but passwordHash was stripped — restore it
+      eu.passwordHash = iu.passwordHash;
+      changed = true;
+      console.log(`🔑 Restored passwordHash for: ${iu.email}`);
+    }
+  }
+
+  if (changed || existing.length === 0) {
+    if (existing.length === 0) existing = INITIAL_USERS;
+    fs.writeFileSync(usersFile, JSON.stringify(existing, null, 2), "utf8");
+    console.log(`✅ Users seeded/repaired: ${existing.length} users`);
+  } else {
+    console.log(`✅ Users OK: ${existing.length} users`);
+  }
+}
+seedUsers();
 
 // Telegram Bot Configuration
 // SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
@@ -440,10 +490,12 @@ app.post("/api/login", (req, res) => {
   const { email, passwordHash } = req.body;
   if (!email || !passwordHash) return res.status(400).json({ error: "Missing credentials" });
   const users = readJSON("users.json", []);
-  const user = users.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === passwordHash);
+  const emailClean = email.toLowerCase().trim();
+  const matchedUser = users.find(u => u.email === emailClean);
+  const user = matchedUser && matchedUser.passwordHash === passwordHash ? matchedUser : null;
+
   if (user) {
     loginAttempts.delete(ip);
-    // Issue session token
     const token = generateSessionToken();
     activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
     console.log(`✅ Login success: ${email} from ${ip} (token issued)`);
@@ -455,10 +507,19 @@ app.post("/api/login", (req, res) => {
     if (current.count === 1) current.firstAttempt = now;
     loginAttempts.set(ip, current);
     const remaining = LOGIN_MAX_ATTEMPTS - current.count;
-    console.log(`❌ Login failed: ${email} from ${ip} (${current.count}/${LOGIN_MAX_ATTEMPTS})`);
-    writeAuditLog("auth", "login_failed", email, `IP: ${ip}, attempt ${current.count}/${LOGIN_MAX_ATTEMPTS}`);
+
+    // Diagnostic info for debugging
+    const hasHash = matchedUser ? (!!matchedUser.passwordHash) : false;
+    const hashMatch = matchedUser && matchedUser.passwordHash ? (matchedUser.passwordHash === passwordHash) : false;
+    console.log(`❌ Login failed: ${emailClean} from ${ip} (${current.count}/${LOGIN_MAX_ATTEMPTS}) | users: ${users.length} | emailFound: ${!!matchedUser} | hasHash: ${hasHash} | hashMatch: ${hashMatch}`);
+    if (matchedUser && !hashMatch) {
+      console.log(`   Server hash: ${(matchedUser.passwordHash || 'MISSING').substring(0, 12)}...`);
+      console.log(`   Client hash: ${passwordHash.substring(0, 12)}...`);
+    }
+    writeAuditLog("auth", "login_failed", emailClean, `IP: ${ip}, attempt ${current.count}/${LOGIN_MAX_ATTEMPTS}, emailFound: ${!!matchedUser}, hasHash: ${hasHash}`);
+
     if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15 });
-    else res.status(401).json({ error: "invalid", remaining });
+    else res.status(401).json({ error: "invalid", remaining, userCount: users.length, emailFound: !!matchedUser, hasHash, hashMatch });
   }
 });
 
@@ -589,7 +650,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 // Users — separate endpoint to preserve full data + audit
 app.post("/api/users", requireAuth, async (req, res) => {
   const { data: newUsers, user: userEmail } = req.body;
-  const users = Array.isArray(req.body) ? req.body : newUsers;
+  let users = Array.isArray(req.body) ? req.body : newUsers;
   if (!Array.isArray(users)) return res.status(400).json({ error: "Invalid data" });
 
   if (users.length === 0) {
@@ -599,6 +660,23 @@ app.post("/api/users", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "Cannot overwrite existing users with empty array" });
     }
   }
+
+  // CRITICAL: Prevent client from stripping passwordHash
+  // Client receives users WITHOUT passwordHash (security fix C2).
+  // If client sends them back, we must preserve the existing passwordHash.
+  const existing = readJSON("users.json", []);
+  const existingMap = new Map(existing.map(u => [u.email, u]));
+  const seedMap = new Map(INITIAL_USERS.map(u => [u.email, u]));
+  users = users.map(u => {
+    if (!u.passwordHash) {
+      // Restore from existing file or from seed
+      const ex = existingMap.get(u.email);
+      const seed = seedMap.get(u.email);
+      if (ex && ex.passwordHash) return { ...u, passwordHash: ex.passwordHash };
+      if (seed && seed.passwordHash) return { ...u, passwordHash: seed.passwordHash };
+    }
+    return u;
+  });
 
   const success = await lockedWrite("users.json", users, {
     action: "update", user: userEmail || "system", details: `${users.length} users saved`
@@ -807,6 +885,19 @@ app.get("/api/health", (req, res) => {
     }
   }
   res.json(basic);
+});
+
+// ── Debug: check users.json state (no passwords exposed, just diagnostic info) ──
+app.get("/api/debug/users", (req, res) => {
+  const users = readJSON("users.json", []);
+  const diag = users.map(u => ({
+    email: u.email,
+    name: u.name || "?",
+    hasPasswordHash: !!u.passwordHash,
+    hashPrefix: u.passwordHash ? u.passwordHash.substring(0, 8) + "..." : "MISSING",
+    hasPageAccess: !!u.pageAccess,
+  }));
+  res.json({ count: users.length, users: diag, seedCount: INITIAL_USERS.length });
 });
 
 // ═══════════════════════════════════════════════════════════════
