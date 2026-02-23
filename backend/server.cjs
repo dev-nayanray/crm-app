@@ -88,7 +88,14 @@ seedUsers();
 // SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
 // Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
+ 
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002183891044";
+ 
+const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
+const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044";
+const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
+const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
+ 
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -605,7 +612,7 @@ app.get("/api/session", requireAuth, (req, res) => {
 // 8. DATA ENDPOINTS — With Atomic Writes + Audit + Versioning
 // ═══════════════════════════════════════════════════════════════
 
-const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
+const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers"];
 
 // GET — returns data + version number (REQUIRES AUTH)
 endpoints.forEach(ep => {
@@ -643,13 +650,16 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   payments.forEach(p => {
     const oldP = oldMap.get(p.id);
     if (!oldP) {
-      // New payment - no notification (only notify when paid)
-      // Removed: if (["Open", "On the way", "Approved to pay"].includes(p.status)) sendTelegramNotification(formatOpenPaymentMessage(p));
-      if (p.status === "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
+      // New payment - notify based on status
+      if (p.status === "Paid") {
+        sendTelegramNotification(formatPaidPaymentMessage(p));
+      } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
+        sendOpenPaymentNotification(p);
+      }
     } else if (oldP.status !== p.status) {
       if (p.status === "Paid" && oldP.status !== "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
-      // Removed: Re-opening a previously paid payment notification
-      // else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendTelegramNotification(formatOpenPaymentMessage(p));
+      // Re-opening a previously paid payment notification
+      else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendOpenPaymentNotification(p);
     }
   });
 
@@ -674,7 +684,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 });
 
 // Generic POST for other tables
-["customer-payments", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
+["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers"].forEach(ep => {
   const file = ep + ".json";
   app.post(`/api/${ep}`, requireAuth, async (req, res) => {
     const { data: newData, version: clientVersion, user: userEmail } = req.body;
@@ -1023,7 +1033,53 @@ function sendTelegramNotification(message) {
 
 
 function formatOpenPaymentMessage(p) {
-  return `💰 NEW PAYMENT`;
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `💰 NEW OPEN PAYMENT 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+👤 Opened by: ${p.openBy || "Unknown"}
+📅 Date: ${p.openDate || "N/A"}
+🔖 Status: ${p.status || "Open"}`;
+}
+
+function sendOpenPaymentNotification(p) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Open payment notification skipped (no token configured)");
+    return;
+  }
+
+  const message = formatOpenPaymentMessage(p);
+  
+  const postData = JSON.stringify({
+    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ Open payment notification error:", d);
+      else console.log("✅ Open payment notification sent for invoice:", p.invoice);
+    });
+  });
+
+  req.on('error', err => console.error("❌ Open payment notification error:", err.message));
+  req.write(postData);
+  req.end();
 }
 
 
@@ -1031,10 +1087,7 @@ function formatPaidPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
 
   return `💰 PAYMENT ${p.invoice} marked as PAID 💰
-<<<<<<< HEAD
-=======
 
->>>>>>> 229d8186 (aniter)
 
 💵 Amount: $${amount}
 👤 Paid by: ${p.openBy || "Unknown"}
@@ -1059,6 +1112,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       { command:"/todaycrgcap", description:"Today's CRG cap summary" },
       { command:"/todayagentscap", description:"Today's agents cap" },
       { command:"/payments", description:"Open payments summary" },
+      { command:"/offer", description:"Current offers summary" },
     ]).catch(e => console.log("⚠️ Register commands:", e.message));
 
     bot.onText(/\/start|\/help/, (msg) => {
@@ -1132,6 +1186,39 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
     });
 
+    // /offer
+    bot.onText(/\/offer/, (msg) => {
+      const offers = readJSON("offers.json", []);
+      if (!offers.length) { 
+        bot.sendMessage(msg.chat.id, "📭 No offers found.", { parse_mode: "HTML" }); 
+        return; 
+      }
+      
+      const totalAmount = offers.reduce((s, o) => s + (parseFloat(o.amount) || 0), 0);
+      const openOffers = offers.filter(o => o.status === "Open");
+      const acceptedOffers = offers.filter(o => o.status === "Accepted");
+      const rejectedOffers = offers.filter(o => o.status === "Rejected");
+      
+      let t = `🎯 <b>Current Offers</b>\n\n📊 <b>Summary:</b>\nTotal Offers: ${offers.length}\nOpen: ${openOffers.length} | Accepted: ${acceptedOffers.length} | Rejected: ${rejectedOffers.length}\n💰 Total Amount: $${totalAmount.toLocaleString("en-US")}\n\n`;
+      
+      offers.slice(0, 20).forEach((o, i) => {
+        t += `<b>${i + 1}. ${o.customerName || "N/A"}</b>\n`;
+        t += `   💵 Amount: $${(parseFloat(o.amount) || 0).toLocaleString("en-US")} ${o.currency || "USD"}\n`;
+        t += `   📌 Status: ${o.status || "N/A"}\n`;
+        t += `   📅 Date: ${o.createdDate || "N/A"}\n`;
+        if (o.notes) t += `   📝 Notes: ${o.notes}\n`;
+        t += `\n`;
+      });
+      
+      if (offers.length > 20) t += `... and ${offers.length - 20} more offers`;
+      
+      // Send to the offer group chat
+      bot.sendMessage(OFFER_GROUP_CHAT_ID, t, { parse_mode: "HTML" });
+      
+      // Also confirm to the user
+      bot.sendMessage(msg.chat.id, `✅ Offers sent to group!\n\n${t}`, { parse_mode: "HTML" });
+    });
+
     // ── Inline keyboard callback handler ──
     bot.on("callback_query", async (cq) => {
       const chatId = cq.message.chat.id; bot.answerCallbackQuery(cq.id);
@@ -1193,18 +1280,37 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // Skip hash detection if in ANY waiting state
       if (st) return;
 
+      // Handle Offer: messages from the offer group
+      const offerMessageText = msg.text || '';
+      if (chatId.toString() === OFFER_GROUP_CHAT_ID && offerMessageText.startsWith('Offer:')) {
+        await handleOfferMessage(bot, msg, offerMessageText);
+        return;
+      }
+
       // USDT hash detection (finance group only)
       if (chatId.toString() !== FINANCE_GROUP_CHAT_ID) return;
-      const messageText = msg.text || '';
-      const hashes = extractAllUsdtHashes(messageText);
+      const hashText = msg.text || '';
+      const hashes = extractAllUsdtHashes(hashText);
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
       if (txHashes.length === 0) return;
 
+      // Improved amount detection - look for any number in the message
       const amounts = [];
+      // Match $ amounts: $12, $12.50, $1,200
       const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-      let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      let m; while ((m = p1.exec(hashText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      // Match amounts with $ at end: 12$, 12.50$
       const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
-      while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      while ((m = p2.exec(hashText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      // Match plain numbers (fallback) - look for larger numbers that could be amounts
+      const p3 = /\b(\d{2,7}(?:,\d{3})*(?:\.\d{2})?)\b/g;
+      while ((m = p3.exec(hashText)) !== null) {
+        const num = m[1].replace(/,/g, '');
+        // Only add if it's a reasonable payment amount (between 10 and 100000)
+        if (num >= 10 && num <= 100000 && !amounts.includes(num)) {
+          amounts.push(num);
+        }
+      }
 
       const wallets = readJSON("wallets.json", []);
 
@@ -1238,6 +1344,8 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
         confirmMsg += `\n📊 Status: <b>${status}</b>`;
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+        // Also send to Customer Payment group
+        bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
     });
 
@@ -1294,23 +1402,146 @@ async function checkTRC20Transaction(txHash) {
 async function checkERC20Transaction(txHash) {
   try {
     const CHAIN_ID = "1";
-    const receiptData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+    console.log(`🔍 Checking ERC20 transaction: ${txHash}`);
+
+    // Try Etherscan API V2 first - use correct endpoint format
     let txResult = null;
-    const txData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-    if (txData.status === "1" && txData.message === "OK" && txData.result) txResult = txData.result;
-    if (!txResult) {
-      console.log("⚠️ V2 failed, trying V1...");
-      const v1 = JSON.parse(await httpRequest(`${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-      if (v1.result && typeof v1.result === "object") txResult = v1.result;
+    let errorMsg = "";
+
+    try {
+      // Try V2 API with gettxlist action - more reliable endpoint
+      const txUrl = `${ETHERSCAN_API}?module=account&action=tokentx&contractaddress=${ERC20_USDT_CONTRACT}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      console.log(`🔍 V2 Token TX URL: ${txUrl}`);
+      const txData = JSON.parse(await httpRequest(txUrl));
+      console.log(`🔍 V2 Token TX Response:`, JSON.stringify(txData).substring(0, 500));
+
+      if (txData.status === "1" && txData.result && Array.isArray(txData.result) && txData.result.length > 0) {
+        const tx = txData.result[0];
+        txResult = {
+          from: tx.from,
+          to: tx.to,
+          value: tx.value,
+          input: "",
+          hash: tx.hash
+        };
+        console.log(`🔍 Parsed token tx: from=${txResult.from}, to=${txResult.to}, value=${tx.value}`);
+      } else {
+        errorMsg = txData.message || "No token transfer data";
+        console.log(`🔍 V2 Token TX failed: ${errorMsg}`);
+      }
+    } catch (e) {
+      errorMsg = e.message;
+      console.log(`🔍 V2 Token TX Error: ${e.message}`);
     }
-    if (!txResult) return { success:false, error:"Could not fetch from Etherscan" };
-    const input = txResult.input || "";
-    let amount="0", fromAddress=txResult.from||"", toAddress=txResult.to||"";
-    if (input.startsWith("0xa9059cbb") && input.length >= 74) { amount=(parseInt("0x"+input.slice(-64),16)/1e6).toString(); toAddress="0x"+input.slice(34,74); }
-    else if (txResult.value && txResult.value !== "0x0") { amount=(parseInt(txResult.value,16)/1e18).toString(); }
-    const confirmed = receiptData.status==="1" && receiptData.result && receiptData.result.status==="1";
-    return { success:true, amount, toAddress, fromAddress, confirmed, hash:txHash };
-  } catch (err) { return { success:false, error:err.message }; }
+
+    // Try get_transaction action if token tx failed
+    if (!txResult) {
+      try {
+        const txUrl = `${ETHERSCAN_API}?module=transaction&action=gettxinfo&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+        console.log(`🔍 get_txinfo URL: ${txUrl}`);
+        const txData = JSON.parse(await httpRequest(txUrl));
+        console.log(`🔍 get_txinfo Response:`, JSON.stringify(txData).substring(0, 500));
+
+        if (txData.status === "1" && txData.result) {
+          txResult = txData.result;
+        } else {
+          errorMsg = txData.message || "No transaction data";
+        }
+      } catch (e) {
+        console.log(`🔍 get_txinfo Error: ${e.message}`);
+      }
+    }
+
+    // Try V1 proxy fallback if previous attempts failed
+    if (!txResult) {
+      console.log("⚠️ Previous methods failed, trying V1 proxy...");
+      const v1Url = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      console.log(`🔍 V1 URL: ${v1Url}`);
+      const v1 = JSON.parse(await httpRequest(v1Url));
+      console.log(`🔍 V1 Response:`, JSON.stringify(v1).substring(0, 500));
+      if (v1.result && typeof v1.result === "object") {
+        txResult = v1.result;
+      } else {
+        errorMsg = "V1 also failed";
+      }
+    }
+
+    if (!txResult) {
+      console.log(`❌ All APIs failed: ${errorMsg}`);
+      return { success: false, error: errorMsg || "Could not fetch from Etherscan" };
+    }
+
+    console.log(`🔍 txResult:`, JSON.stringify(txResult).substring(0, 300));
+
+    // Parse the transaction data
+    let amount = "0";
+    let fromAddress = "";
+    let toAddress = "";
+
+    // First try to get from/to from direct fields
+    fromAddress = txResult.from || "";
+    toAddress = txResult.to || "";
+
+    // Handle different response formats
+    if (txResult.input && typeof txResult.input === 'string' && txResult.input.length > 2) {
+      // ERC20 transfer (USDT): 0xa9059cbb + to address (64 chars) + amount (64 chars)
+      if (txResult.input.startsWith("0xa9059cbb") && txResult.input.length >= 138) {
+        const extractedToAddress = "0x" + txResult.input.slice(34, 74);
+        if (extractedToAddress !== "0x") {
+          toAddress = extractedToAddress;
+        }
+        const amountHex = txResult.input.slice(74, 138);
+        if (amountHex && amountHex !== "0000000000000000000000000000000000000000000000000000000000000000") {
+          amount = (parseInt(amountHex, 16) / 1e6).toString(); // USDT has 6 decimals
+        }
+        console.log(`🔍 Parsed from input: toAddress=${toAddress}, amount=${amount}`);
+      }
+      // ETH transfer: value in wei
+      else if (txResult.value && txResult.value !== "0x0" && txResult.value !== "0x") {
+        amount = (parseInt(txResult.value, 16) / 1e18).toString();
+      }
+    } 
+    
+    // Try value field directly if amount still 0
+    if (amount === "0" && txResult.value && txResult.value !== "0x0" && txResult.value !== "0x") {
+      amount = (parseInt(txResult.value, 16) / 1e18).toString();
+    }
+
+    // Try token_value field if available (from tokentx endpoint)
+    if (amount === "0" && txResult.tokenValue) {
+      amount = (parseInt(txResult.tokenValue, 10) / 1e6).toString(); // USDT has 6 decimals
+    }
+    
+    // Try valueDecimal if available
+    if (amount === "0" && txResult.valueDecimal) {
+      amount = (parseFloat(txResult.valueDecimal) / 1).toString();
+    }
+
+    console.log(`🔍 Final parsed: amount=${amount}, toAddress=${toAddress}, fromAddress=${fromAddress}`);
+
+    // Get receipt status for confirmation
+    let confirmed = false;
+    try {
+      const receiptUrl = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      const receiptData = JSON.parse(await httpRequest(receiptUrl));
+      confirmed = receiptData.status === "1" && receiptData.result && receiptData.result.status === "1";
+    } catch (e) {
+      // Receipt check failed, continue anyway
+      console.log(`🔍 Receipt check failed: ${e.message}`);
+    }
+
+    return {
+      success: true,
+      amount,
+      toAddress,
+      fromAddress,
+      confirmed,
+      hash: txHash
+    };
+  } catch (err) {
+    console.log(`❌ checkERC20Transaction error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 }
 
 function verifyWalletAddress(address, wallets) {
@@ -1323,6 +1554,126 @@ function verifyWalletAddress(address, wallets) {
     if (w.btc && w.btc.toLowerCase().trim() === n) return { matched: true, wallet: w.btc, type: "BTC" };
   }
   return { matched: false, error: "Address not in our wallets" };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OFFER MESSAGE PARSER — Handles "Offer:" messages from Telegram
+// ═══════════════════════════════════════════════════════════════
+
+async function handleOfferMessage(bot, msg, messageText) {
+  try {
+    // Parse the message - extract affiliate ID and offers
+    // Format examples:
+    // Offer: 71 GR Quantex 1000 10% BR Seguro Tradex GPT 650 5%
+    // Offer: 80 NO NL 1550+15% Tradeapp GG 5% deductions
+    
+    const lines = messageText.split('\n').filter(l => l.trim());
+    if (lines.length < 1) return;
+    
+    // First line is "Offer:" followed by optional affiliate ID
+    const firstLine = lines[0].replace(/^Offer:\s*/i, '').trim();
+    
+    // Check if first token is an affiliate ID (number like "71", "80")
+    let affiliateId = '';
+    let remainingText = firstLine;
+    
+    // Try to match a number at the start as affiliate ID
+    const idMatch = firstLine.match(/^(\d+)\s+(.*)/);
+    if (idMatch) {
+      affiliateId = idMatch[1];
+      remainingText = idMatch[2];
+    }
+    
+    // Parse individual offers from the remaining text
+    // Each offer format: BRAND AMOUNT PERCENTAGE%
+    // Example: GR Quantex 1000 10%
+    const offerRegex = /([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d+)\s+(\d+(?:\+\d+)?%?)/g;
+    const offers = [];
+    let match;
+    
+    while ((match = offerRegex.exec(remainingText)) !== null) {
+      offers.push({
+        brand: match[1].trim(),
+        amount: match[2].trim(),
+        percentage: match[3].trim()
+      });
+    }
+    
+    // If no offers parsed from regex, try alternative format
+    // Format like: 1550+15% Tradeapp GG 5% deductions
+    if (offers.length === 0) {
+      const altRegex = /(\d+[+%]\d*%?)\s+([A-Za-z]+)/g;
+      while ((match = altRegex.exec(remainingText)) !== null) {
+        offers.push({
+          brand: match[2].trim(),
+          amount: match[1].trim(),
+          percentage: ''
+        });
+      }
+    }
+    
+    if (!affiliateId) {
+      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in message. Format: Offer: 71 GR Quantex 1000 10%");
+      return;
+    }
+    
+    if (offers.length === 0) {
+      bot.sendMessage(msg.chat.id, "❌ Could not parse any offers. Format: Offer: 71 BRAND AMOUNT PERCENTAGE%");
+      return;
+    }
+    
+    // Get existing offers
+    const offersFile = path.join(DATA_DIR, "offers.json");
+    let existingOffers = [];
+    try {
+      if (fs.existsSync(offersFile)) {
+        existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+      }
+    } catch (e) {}
+    
+    // Remove any existing offers for this affiliate
+    existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+    
+    // Add new offers
+    const timestamp = new Date().toISOString().split("T")[0];
+    offers.forEach(o => {
+      existingOffers.push({
+        id: crypto.randomBytes(4).toString('hex'),
+        affiliateId: affiliateId,
+        brand: o.brand,
+        amount: o.amount,
+        percentage: o.percentage,
+        status: "Open",
+        createdDate: timestamp,
+        rawMessage: messageText
+      });
+    });
+    
+    // Save to file
+    await lockedWrite("offers.json", existingOffers, {
+      action: "create",
+      user: "telegram-bot",
+      details: `Added ${offers.length} offers for affiliate ${affiliateId}`
+    });
+    
+    // Broadcast to connected clients
+    broadcastUpdate("offers", existingOffers);
+    
+    // Send confirmation to the group
+    let confirmMsg = `✅ Updated new offer for affiliate ${affiliateId}\n\n`;
+    confirmMsg += `📝 Parsed ${offers.length} offer(s):\n`;
+    offers.forEach((o, i) => {
+      confirmMsg += `${i + 1}. ${o.brand} - $${o.amount} (${o.percentage})\n`;
+    });
+    confirmMsg += `\n💾 Saved to offers.json`;
+    
+    bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+    console.log(`📝 Offer update: Affiliate ${affiliateId} - ${offers.length} offers parsed and saved`);
+    
+  } catch (err) {
+    console.error("❌ Error handling offer message:", err.message);
+    bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
+  }
 }
 
 // Sync endpoints
