@@ -22,7 +22,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
 const PORT = 3001;
-const VERSION = "3.12";
+const VERSION = "3.2";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1030,7 +1030,7 @@ function formatOpenPaymentMessage(p) {
 function formatPaidPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
 
-  return `💰 PAYMENT #${p.invoice} marked as PAID 💰
+  return `💰 PAYMENT ${p.invoice} marked as PAID 💰
 
 📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
