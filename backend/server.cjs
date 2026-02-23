@@ -22,7 +22,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
 const PORT = 3001;
-const VERSION = "3.11";
+const VERSION = "3.12";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
