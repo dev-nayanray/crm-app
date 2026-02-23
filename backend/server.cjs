@@ -1020,15 +1020,15 @@ function sendTelegramNotification(message) {
 }
 
 
-function formatOpenPaymentMessage(p) {
-  const amount = Number(p.amount || 0).toLocaleString("en-US");
+// function formatOpenPaymentMessage(p) {
+//   const amount = Number(p.amount || 0).toLocaleString("en-US");
 
-  return `💰 NEW OPEN PAYMENT 💰
+//   return `💰 NEW OPEN PAYMENT 💰
 
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-👤 Opened by: ${p.openBy || "Unknown"}`;
-}
+// 📋 Invoice: #${p.invoice}
+// 💵 Amount: $${amount}
+// 👤 Opened by: ${p.openBy || "Unknown"}`;
+// }
 
 
 function formatPaidPaymentMessage(p) {
