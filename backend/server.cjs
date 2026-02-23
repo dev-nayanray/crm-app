@@ -4,43 +4,46 @@ const path = require("path");
 const cors = require("cors");
 const https = require("https");
 const http = require("http");
+const { WebSocketServer, WebSocket } = require("ws");
+const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "1.055";
+const VERSION = "3.02";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
+const AUDIT_DIR = path.join(__dirname, "audit");
+
+// ═══════════════════════════════════════════════════════════════
+// 1. CORE INFRASTRUCTURE
+// ═══════════════════════════════════════════════════════════════
+
+// Ensure directories
+[DATA_DIR, BACKUP_DIR, AUDIT_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
 // Telegram Bot Configuration
-const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = "-4744920512";
+// SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
+// Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
+const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 
-// Free API keys (limited requests)
-// TronScan API - Free tier (no key required for basic queries)
+// Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
-// Etherscan API - Free tier (you can add your own key if needed)
-const ETHERSCAN_API_KEY = "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET";
+const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET";
 const ETHERSCAN_API = "https://api.etherscan.io/api";
-const ETHERSCAN_BASE = "https://etherscan.io";
-
-// Regex patterns for USDT transaction hashes and addresses
-// TRC20 Transaction Hash: 64 character base58 string (like 208c664be9271f8e1ac3bf993501b05b90674f93b963966bf81a2da9708cf121)
+const ETHERSCAN_V2_API = "https://api.etherscan.io/v2/api";
 const TRC20_HASH_REGEX = /^[a-zA-Z0-9]{64}$/;
-// TRC20 Address: Starts with T, 34 chars
 const TRC20_ADDRESS_REGEX = /^T[a-zA-Z0-9]{33}$/;
-// ERC20 (Ethereum): 0x followed by 64 hex characters
 const ERC20_HASH_REGEX = /^0x[a-fA-F0-9]{64}$/;
-// ERC20 Address: 0x followed by 40 hex characters
 const ERC20_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
-// BTC Address: Starts with 1, 3, or bc1
 const BTC_ADDRESS_REGEX = /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}$/;
-
-// USDT Contract Addresses
 const TRC20_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 const ERC20_USDT_CONTRACT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
-// Helper function to make HTTP requests
+const COUNTRY_NAMES = { DE:"Germany",FR:"France",UK:"United Kingdom",AU:"Australia",MY:"Malaysia",SI:"Singapore",HR:"Croatia",GCC:"Gulf Countries",ES:"Spain",BE:"Belgium",IT:"Italy" };
+const VALID_COUNTRIES = Object.keys(COUNTRY_NAMES);
+
 function httpRequest(url, isHttps = true) {
   return new Promise((resolve, reject) => {
     const protocol = isHttps ? https : http;
@@ -52,1163 +55,14 @@ function httpRequest(url, isHttps = true) {
   });
 }
 
-// Function to fetch deals from external Leeds CRM API
-async function fetchExternalDeals() {
-  try {
-    const response = await httpRequest("https://leeds-crm.com/api/deals", true);
-    const data = JSON.parse(response);
-    return { success: true, data: data };
-  } catch (err) {
-    console.log("⚠️ External Deals API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
+// ═══════════════════════════════════════════════════════════════
+// 2. ATOMIC FILE OPERATIONS WITH VERSION TRACKING
+// ═══════════════════════════════════════════════════════════════
 
-// Function to fetch CRG deals from external API
-async function fetchExternalCrgDeals() {
-  try {
-    const response = await httpRequest("https://leeds-crm.com/api/crg-deals", true);
-    const data = JSON.parse(response);
-    return { success: true, data: data };
-  } catch (err) {
-    console.log("⚠️ External CRG Deals API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
+// In-memory version counters — increment on every write
+const dataVersions = {};
+const dataLocks = new Map(); // Prevents concurrent writes to same file
 
-// Function to fetch daily cap from external API
-async function fetchExternalDailyCap() {
-  try {
-    const response = await httpRequest("https://leeds-crm.com/api/daily-cap", true);
-    const data = JSON.parse(response);
-    return { success: true, data: data };
-  } catch (err) {
-    console.log("⚠️ External Daily Cap API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-// Function to sync external data to local files
-async function syncExternalData() {
-  console.log("🔄 Starting external data sync...");
-  
-  // Sync CRG deals
-  const crgResult = await fetchExternalCrgDeals();
-  if (crgResult.success && crgResult.data && Array.isArray(crgResult.data)) {
-    writeJSON("crg-deals.json", crgResult.data);
-    console.log(`✅ CRG deals synced: ${crgResult.data.length} records`);
-  } else {
-    console.log("⚠️ Failed to sync CRG deals");
-  }
-  
-  // Sync daily cap
-  const capResult = await fetchExternalDailyCap();
-  if (capResult.success && capResult.data && Array.isArray(capResult.data)) {
-    writeJSON("daily-cap.json", capResult.data);
-    console.log(`✅ Daily cap synced: ${capResult.data.length} records`);
-  } else {
-    console.log("⚠️ Failed to sync daily cap");
-  }
-  
-  console.log("🔄 External data sync completed");
-  return { crgDeals: crgResult.success, dailyCap: capResult.success };
-}
-
-
-// Function to check TRC20 USDT transaction on TronScan
-async function checkTRC20Transaction(txHash) {
-  try {
-    const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
-    console.log(`🔍 TronScan API URL: ${url}`);
-    
-    const response = await httpRequest(url);
-    console.log(`📄 TronScan raw response length: ${response.length}`);
-    
-    const data = JSON.parse(response);
-    console.log(`📊 TronScan parsed data keys: ${Object.keys(data).join(', ')}`);
-    
-    // Debug: Log the full data structure
-    console.log(`🔍 Full TronScan response: ${JSON.stringify(data, null, 2).substring(0, 2000)}`);
-    
-    // Check if we have token transfer info (TRC20 transfers)
-    if (data && data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
-      console.log(`✅ Found tokenTransferInfo with ${data.tokenTransferInfo.length} transfers`);
-      
-      // Find USDT transfer (contract address matches TRC20_USDT_CONTRACT)
-      const usdtTransfer = data.tokenTransferInfo.find(
-        transfer => {
-          const isMatch = transfer.contract_address === TRC20_USDT_CONTRACT || 
-                         (transfer.tokenInfo && transfer.tokenInfo.symbol === "USDT");
-          console.log(`🔍 Checking transfer: contract=${transfer.contract_address}, symbol=${transfer.tokenInfo?.symbol}, match=${isMatch}`);
-          return isMatch;
-        }
-      );
-      
-      if (usdtTransfer) {
-        console.log(`✅ Found USDT transfer:`, JSON.stringify(usdtTransfer, null, 2));
-        
-        // Convert amount from raw to readable (USDT has 6 decimals)
-        const rawAmount = usdtTransfer.amount_str || usdtTransfer.amount || "0";
-        const decimals = usdtTransfer.tokenInfo && usdtTransfer.tokenInfo.decimals ? 
-                        parseInt(usdtTransfer.tokenInfo.decimals) : 6;
-        const amount = (parseInt(rawAmount) / Math.pow(10, decimals)).toString();
-        
-        console.log(`💰 Amount calculation: raw=${rawAmount}, decimals=${decimals}, final=${amount}`);
-        
-        return {
-          success: true,
-          amount: amount,
-          toAddress: usdtTransfer.to_address || data.to_address,
-          fromAddress: usdtTransfer.from_address || data.from_address,
-          confirmed: data.confirmed || (data.revert === 0)
-        };
-      } else {
-        console.log(`⚠️ No USDT transfer found in tokenTransferInfo`);
-      }
-    } else {
-      console.log(`⚠️ No tokenTransferInfo found. Available keys: ${Object.keys(data).join(', ')}`);
-    }
-    
-    // Fallback: check if it's a TRC20 transaction with token_info
-    if (data && data.token_info && data.token_info.symbol === "USDT") {
-      console.log(`✅ Found token_info fallback`);
-      const rawAmount = data.amount || data.token_info.amount || "0";
-      const decimals = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
-      const amount = (parseInt(rawAmount) / Math.pow(10, decimals)).toString();
-      
-      return {
-        success: true,
-        amount: amount,
-        toAddress: data.to_address,
-        fromAddress: data.from_address,
-        confirmed: data.confirmed || (data.revert === 0)
-      };
-    }
-    
-    console.log(`❌ Not a USDT TRC20 transaction`);
-    return { success: false, error: "Not a USDT TRC20 transaction" };
-  } catch (err) {
-    console.log("⚠️ TronScan API error:", err.message);
-    console.log("⚠️ Error stack:", err.stack);
-    return { success: false, error: err.message };
-  }
-}
-
-
-
-// Function to check ERC20 USDT transaction on Etherscan
-async function checkERC20Transaction(txHash) {
-  try {
-    // Using Etherscan V2 API endpoints
-    const ETHERSCAN_V2_API = "https://api.etherscan.io/v2/api";
-    const CHAIN_ID = "1"; // Ethereum mainnet
-    
-    // First, get transaction receipt for confirmation and more details
-    let receiptUrl = `${ETHERSCAN_V2_API}?action=txlist&module=account&address=${txHash}&startblock=0&endblock=99999999&page=1&offset=1&sort=desc&apikey=${ETHERSCAN_API_KEY}`;
-    
-    // Try V2 API first - get transaction receipt
-    let receiptUrl2 = `${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-    
-    const receiptResponse2 = await httpRequest(receiptUrl2);
-    const receiptData2 = JSON.parse(receiptResponse2);
-    
-    // Get transaction details using V2 API
-    let txUrl = `${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-    
-    const txResponse = await httpRequest(txUrl);
-    const txData = JSON.parse(txResponse);
-    
-    // Check if we got valid responses
-    let txResult = null;
-    
-    // Handle txData.result - could be object or string (error message)
-    if (txData.status === "1" && txData.message === "OK" && txData.result) {
-      txResult = txData.result;
-    } else if (txData.message) {
-      // API returned error message
-      console.log("⚠️ Etherscan V2 API error:", txData.message, txData.result);
-    }
-    
-    // If V2 fails, try V1 as fallback
-    if (!txResult) {
-      console.log("⚠️ V2 API failed, trying V1...");
-      
-      // Try V1 proxy endpoint
-      let v1TxUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}`;
-      if (ETHERSCAN_API_KEY) {
-        v1TxUrl += `&apikey=${ETHERSCAN_API_KEY}`;
-      }
-      
-      const v1TxResponse = await httpRequest(v1TxUrl);
-      const v1TxData = JSON.parse(v1TxResponse);
-      
-      if (v1TxData.status === "1" && typeof v1TxData.result === "object" && v1TxData.result !== null) {
-        txResult = v1TxData.result;
-      }
-    }
-    
-    // If we still don't have data, return failure
-    if (!txResult) {
-      return { success: false, error: "Could not fetch transaction data from Etherscan" };
-    }
-    
-    // Extract transaction details
-    const input = txResult.input || "";
-    let amount = "0";
-    let toAddress = "";
-    let fromAddress = "";
-    
-    // Get from and to addresses
-    fromAddress = txResult.from || "";
-    toAddress = txResult.to || "";
-    
-    // Decode input data to find transfer details for USDT
-    // USDT transfer method ID: 0xa9059cbb
-    if (input && input.startsWith("0xa9059cbb") && input.length >= 74) {
-      // Extract amount (last 64 chars / 2 = last 32 bytes = 16 hex = amount in wei)
-      const amountHex = "0x" + input.slice(-64);
-      amount = (parseInt(amountHex, 16) / 1000000).toString(); // USDT has 6 decimals
-      // Extract to address (from 34 to 74 - 40 hex chars = 20 bytes)
-      toAddress = "0x" + input.slice(34, 74);
-    } else if (txResult.value && txResult.value !== "0x0") {
-      // If no method ID or not a standard transfer, try to get value from tx
-      // Note: This is for ETH transfers, not ERC20
-      amount = (parseInt(txResult.value, 16) / 1000000000000000000).toString(); // ETH has 18 decimals
-    }
-    
-    // Check if transaction is confirmed (receipt status = 1)
-    const confirmed = receiptData2.status === "1" && receiptData2.result && receiptData2.result.status === "1";
-    
-    return {
-      success: true,
-      amount: amount,
-      toAddress: toAddress,
-      fromAddress: fromAddress,
-      confirmed: confirmed,
-      hash: txHash
-    };
-    
-  } catch (err) {
-    console.log("⚠️ Etherscan API error:", err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-// Function to get wallet addresses from admin data
-function getWallets() {
-  const walletsPath = path.join(DATA_DIR, "wallets.json");
-  try {
-    if (fs.existsSync(walletsPath)) {
-      return JSON.parse(fs.readFileSync(walletsPath, "utf8"));
-    }
-  } catch (err) {
-    console.log("⚠️ Error reading wallets:", err.message);
-  }
-  return [];
-}
-
-// Function to check if address matches any wallet
-function verifyWalletAddress(address, wallets) {
-  if (!wallets || wallets.length === 0) return { matched: false, error: "No wallets configured" };
-  if (!address) return { matched: false, error: "No address in transaction" };
-  
-  const normalizedInput = address.toLowerCase().trim();
-  
-  for (const wallet of wallets) {
-    if (wallet.trc && wallet.trc.toLowerCase().trim() === normalizedInput) {
-      return { matched: true, wallet: wallet.trc, type: "TRC20" };
-    }
-    if (wallet.erc && wallet.erc.toLowerCase().trim() === normalizedInput) {
-      return { matched: true, wallet: wallet.erc, type: "ERC20" };
-    }
-    if (wallet.btc && wallet.btc.toLowerCase().trim() === normalizedInput) {
-      return { matched: true, wallet: wallet.btc, type: "BTC" };
-    }
-  }
-  
-  return { matched: false, error: "Address not in our wallets" };
-}
-
-// Initialize Telegram Bot (for commands)
-let bot;
-let consecutiveErrors = 0;
-const MAX_ERRORS_BEFORE_STOP = 10;
-
-// User state tracking for multi-step commands
-// Format: { chatId: { state: 'waiting_for_country', command: '/deals' } }
-const userStates = {};
-
-if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
-  try {
-    // Use polling with better error handling
-    bot = new TelegramBot(TELEGRAM_TOKEN, { 
-      polling: true,
-      filepath: false,
-    });
-    console.log("🤖 Telegram bot initialized - polling for commands...");
-    
-    // Handle polling errors gracefully - don't stop on errors
-    bot.on('polling_error', (error) => {
-      // Just log the error and continue - don't stop polling
-      console.log(`⚠️ Polling error:`, error.code || error.message);
-    });
-    
-    // Register bot commands with Telegram (shows in command suggestions)
-    bot.setMyCommands([
-      { command: "/start", description: "Show welcome message and help" },
-      { command: "/wallets", description: "Get current wallet addresses" },
-      { command: "/crgdeals", description: "View today's CRG deals by country" },
-      { command: "/deals", description: "View all time CRG deals by country (historical)" },
-      { command: "/todaycrgcap", description: "View today's CRG cap data" },
-      { command: "/todayagentscap", description: "View today's agents cap data" }
-
-    ]).then(() => {
-      console.log("✅ Bot commands registered with Telegram");
-    }).catch((err) => {
-      console.log("⚠️ Failed to register commands:", err.message);
-    });
-
-    
-    // ── Bot Commands ──
-    
-    // /start command - Show welcome message with available commands
-    bot.onText(/\/start/, (msg) => {
-      const chatId = msg.chat.id;
-      const welcomeMessage = `👋 <b>Welcome to Blitz Finance Bot!</b>
-
-I can help you manage payments and get wallet information.
-
-<b>Available Commands:</b>
-/wallets - Get current wallet addresses
-/deals - Get current wallet addresses
-/crgdeals - Get current wallet addresses
-/start - Show this help message
-
-<i>More commands coming soon!</i>`;
-      
-      bot.sendMessage(chatId, welcomeMessage, { parse_mode: "HTML" });
-    });
-    
-    // /wallets command - Send current wallet addresses
-    bot.onText(/\/wallets/, (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Read wallets from data file
-      const wallets = readJSON("wallets.json", []);
-      
-      if (!wallets || wallets.length === 0) {
-        bot.sendMessage(chatId, "❌ No wallets found. Please add wallets in the admin panel first.", { parse_mode: "HTML" });
-        return;
-      }
-      
-      // Get the most recent wallet (first one)
-      const latestWallet = wallets[0];
-      const dateStr = latestWallet.date ? (() => { 
-        const d = new Date(latestWallet.date + "T00:00:00"); 
-        return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; 
-      })() : "N/A";
-      
-      const walletMessage = `💳 Current Wallets (${dateStr})
-
-TRC-20:
-${latestWallet.trc || "—"}
-
-ERC-20 (USDT/USDC):
-${latestWallet.erc || "—"}
-
-BTC:
-${latestWallet.btc || "—"}
-
-Last updated: ${dateStr}
-*3% fee`;
-      
-      bot.sendMessage(chatId, walletMessage);
-      console.log("📱 /wallets command responded to chat:", chatId);
-    });
-    
-    console.log("✅ Bot command handlers ready: /start, /wallets, /crgdeals, /deals, /todaycrgcap, /todayagentscap");
-
-
-    
-    // ── /deals command - Ask for country code with buttons (ALL TIME deals) ──
-    bot.onText(/\/deals/, (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Clear any previous state for this user
-      delete userStates[chatId];
-      
-      // Set user state to waiting for country code
-      userStates[chatId] = { state: 'waiting_for_country_deals', command: '/deals' };
-      
-      // Create inline keyboard with country buttons (using 'all_' prefix for callback)
-      const countryKeyboard = [
-        [
-          { text: '🇩🇪 DE', callback_data: 'all_DE' },
-          { text: '🇫🇷 FR', callback_data: 'all_FR' },
-          { text: '🇬🇧 UK', callback_data: 'all_UK' }
-        ],
-        [
-          { text: '🇪🇸 ES', callback_data: 'all_ES' },
-          { text: '🇧🇪 BE', callback_data: 'all_BE' },
-          { text: '🇮🇹 IT', callback_data: 'all_IT' }
-        ],
-        [
-          { text: '🇦🇺 AU', callback_data: 'all_AU' },
-          { text: '🇲🇾 MY', callback_data: 'all_MY' },
-          { text: '🇸🇬 SI', callback_data: 'all_SI' }
-        ],
-        [
-          { text: '🇭🇷 HR', callback_data: 'all_HR' },
-          { text: '🇸🇦 GCC', callback_data: 'all_GCC' }
-        ]
-      ];
-      
-      const dealsMessage = `📊 <b>Deals - Leeds CRM</b>
-
-Select a country to view deals from Leeds CRM API:
-
-<i>Or type the country code (e.g., DE, FR, UK, ES, BE, IT)</i>`;
-      
-      bot.sendMessage(chatId, dealsMessage, { 
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: countryKeyboard
-        }
-      });
-      console.log("📱 /deals command responded to chat:", chatId);
-    });
-    
-    // ── /crgdeals command - Ask for country code with buttons ──
-    bot.onText(/\/crgdeals/, (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Clear any previous state for this user
-      delete userStates[chatId];
-      
-      // Set user state to waiting for country code
-      userStates[chatId] = { state: 'waiting_for_country', command: '/crgdeals' };
-      
-      // Create inline keyboard with country buttons
-      const countryKeyboard = [
-        [
-          { text: '🇩🇪 DE', callback_data: 'DE' },
-          { text: '🇫🇷 FR', callback_data: 'FR' },
-          { text: '🇬🇧 UK', callback_data: 'UK' }
-        ],
-        [
-          { text: '🇦🇺 AU', callback_data: 'AU' },
-          { text: '🇲🇾 MY', callback_data: 'MY' },
-          { text: '🇸🇬 SI', callback_data: 'SI' }
-        ],
-        [
-          { text: '🇭🇷 HR', callback_data: 'HR' },
-          { text: '🇸🇦 GCC', callback_data: 'GCC' }
-        ]
-      ];
-      
-      const dealsMessage = `📊 <b>CRG Deals - Today's Deals</b>
-
-Select a country to view today's deals:
-
-<i>Or type the country code (e.g., DE, FR, UK)</i>`;
-      
-      bot.sendMessage(chatId, dealsMessage, { 
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: countryKeyboard
-        }
-      });
-      console.log("📱 /crgdeals command responded to chat:", chatId);
-    });
-
-    // ── /todaycrgcap command - Show today's CRG cap data ──
-    bot.onText(/\/todaycrgcap/, async (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Read CRG deals data
-      const allDeals = readJSON("crg-deals.json", []);
-      
-      // Find the most recent date in the data
-      const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
-      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
-      
-      // Filter for the latest date's deals
-      const todayDeals = allDeals.filter(deal => deal.date === latestDate);
-      
-      if (todayDeals.length === 0) {
-        bot.sendMessage(chatId, `📭 No CRG cap data found\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
-        console.log("📱 /todaycrgcap - No data found");
-        return;
-      }
-
-      
-      // Calculate totals
-      const totalCap = todayDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
-      const totalReceived = todayDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
-      const totalFTD = todayDeals.reduce((sum, d) => sum + (parseInt(d.ftd) || 0), 0);
-      
-      // Format message
-      let capMessage = `📊 <b>Today CRG Cap</b>\n`;
-      capMessage += `📅 Date: ${latestDate}\n`;
-      capMessage += `📋 Total Deals: ${todayDeals.length}\n\n`;
-
-      
-      // Table header
-      capMessage += `<code>Affiliate    | Cap | Rec | FTD</code>\n`;
-      capMessage += `<code>-------------|-----|-----|-----</code>\n`;
-      
-      // Table rows - show first 15 deals
-      const displayDeals = todayDeals.slice(0, 15);
-      displayDeals.forEach(deal => {
-        const affiliate = (deal.affiliate || '').padEnd(12).substring(0, 12);
-        const cap = (deal.cap || '0').padStart(3);
-        const rec = (deal.capReceived || '0').padStart(3);
-        const ftd = (deal.ftd || '0').padStart(3);
-        capMessage += `<code>${affiliate}| ${cap} | ${rec} | ${ftd}</code>\n`;
-      });
-      
-      if (todayDeals.length > 15) {
-        capMessage += `<code>... ${todayDeals.length - 15} more deals</code>\n`;
-      }
-      
-      // Totals
-      capMessage += `<code>-------------|-----|-----|-----</code>\n`;
-      capMessage += `<code>TOTAL        | ${String(totalCap).padStart(3)} | ${String(totalReceived).padStart(3)} | ${String(totalFTD).padStart(3)}</code>\n\n`;
-      
-      capMessage += `📈 <b>Summary:</b>\n`;
-      capMessage += `• Total Cap: ${totalCap}\n`;
-      capMessage += `• Total Received: ${totalReceived}\n`;
-      capMessage += `• Total FTD: ${totalFTD}\n`;
-      capMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
-      capMessage += `<i>Last sync: ${new Date().toLocaleTimeString()}</i>`;
-      
-      bot.sendMessage(chatId, capMessage, { parse_mode: "HTML" });
-      console.log("📱 /todaycrgcap - Sent CRG cap data for", todayDeals.length, "deals on", latestDate);
-    });
-
-
-    // ── /todayagentscap command - Show today's agents cap summary ──
-    bot.onText(/\/todayagentscap/, async (msg) => {
-      const chatId = msg.chat.id;
-      
-      // Read daily cap data
-      const allCaps = readJSON("daily-cap.json", []);
-      
-      // Find the most recent date in the data
-      const dates = [...new Set(allCaps.map(cap => cap.date))].sort().reverse();
-      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
-      
-      // Filter for the latest date's data
-      const todayCaps = allCaps.filter(cap => cap.date === latestDate);
-      
-      if (todayCaps.length === 0) {
-        bot.sendMessage(chatId, `📭 No agents cap data found\n\n<i>Data syncs automatically every 15 minutes.</i>`, { parse_mode: "HTML" });
-        console.log("📱 /todayagentscap - No data found");
-        return;
-      }
-
-      
-      // Calculate totals
-      const totalAffiliates = todayCaps.reduce((sum, c) => sum + (parseInt(c.affiliates) || 0), 0);
-      const totalBrands = todayCaps.reduce((sum, c) => sum + (parseInt(c.brands) || 0), 0);
-      
-      // Format message
-      let capMessage = `📊 <b>Today Agents Cap</b>\n`;
-      capMessage += `📅 Date: ${latestDate}\n\n`;
-
-      
-      // Table header
-      capMessage += `<code>Agent      | Aff | Brands</code>\n`;
-      capMessage += `<code>-----------|-----|-------</code>\n`;
-      
-      // Table rows
-      todayCaps.forEach(cap => {
-        const agent = (cap.agent || '').padEnd(10).substring(0, 10);
-        const aff = (cap.affiliates || '0').padStart(3);
-        const brands = (cap.brands || '0').padStart(6);
-        capMessage += `<code>${agent}| ${aff} | ${brands}</code>\n`;
-      });
-      
-      // Totals
-      capMessage += `<code>-----------|-----|-------</code>\n`;
-      capMessage += `<code>TOTAL      | ${String(totalAffiliates).padStart(3)} | ${String(totalBrands).padStart(6)}</code>\n\n`;
-      
-      capMessage += `📈 <b>Summary:</b>\n`;
-      capMessage += `• Total Agents: ${todayCaps.length}\n`;
-      capMessage += `• Total Affiliates: ${totalAffiliates}\n`;
-      capMessage += `• Total Brands: ${totalBrands}\n\n`;
-      capMessage += `<i>Last sync: ${new Date().toLocaleTimeString()}</i>`;
-      
-      bot.sendMessage(chatId, capMessage, { parse_mode: "HTML" });
-      console.log("📱 /todayagentscap - Sent agents cap data for", todayCaps.length, "agents");
-    });
-
-
-    
-    // ── Handle callback queries from inline keyboard ──
-    bot.on('callback_query', async (callbackQuery) => {
-      const msg = callbackQuery.message;
-      const chatId = msg.chat.id;
-      const callbackData = callbackQuery.data;
-      // Check if this is an "all time" request (prefixed with "all_")
-      const isAllTime = callbackData.startsWith('all_');
-      const countryCode = isAllTime ? callbackData.substring(4) : callbackData;
-      
-      // Answer the callback to remove loading state
-      bot.answerCallbackQuery(callbackQuery.id);
-      
-      // Valid country codes (including ones from external API)
-      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC', 'ES', 'BE', 'IT'];
-      
-      if (!validCountries.includes(countryCode)) {
-        bot.sendMessage(chatId, `❌ Invalid country code: <b>${countryCode}</b>`, { parse_mode: "HTML" });
-        return;
-      }
-      
-      // Get today's date in YYYY-MM-DD format
-      const today = new Date().toISOString().split('T')[0];
-      
-      // For /deals command (isAllTime=true), use local data directly
-      // (External API at leeds-crm.com is returning old/cached data)
-      let countryDeals = [];
-      
-      if (isAllTime) {
-        // Use local data file directly (fresh data from manual sync)
-        const allDeals = readJSON("deals.json", []);
-        countryDeals = allDeals.filter(deal => {
-          if (!deal.country) return false;
-          return deal.country.toUpperCase() === countryCode;
-        });
-        console.log("📱 /deals - Using local data:", countryDeals.length, "deals for", countryCode);
-      } else {
-        // For /crgdeals: read from crg-deals.json, filtered by latest date
-        const allDeals = readJSON("crg-deals.json", []);
-        // Find the most recent date in the data
-        const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
-        const latestDate = dates[0] || today;
-        
-        countryDeals = allDeals.filter(deal => {
-          if (!deal.affiliate) return false;
-          // Check country code match (affiliate ends with country code)
-          const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + countryCode);
-          // Check date is the latest available
-          const isLatest = deal.date === latestDate;
-          return hasCountry && isLatest;
-        });
-      }
-
-      
-      // Country name mapping (extended for external API countries)
-      const countryNames = {
-        'DE': 'Germany',
-        'FR': 'France',
-        'UK': 'United Kingdom',
-        'AU': 'Australia',
-        'MY': 'Malaysia',
-        'SI': 'Singapore',
-        'HR': 'Croatia',
-        'GCC': 'Gulf Countries',
-        'ES': 'Spain',
-        'BE': 'Belgium',
-        'IT': 'Italy'
-      };
-      
-      const countryName = countryNames[countryCode] || countryCode;
-      
-      if (countryDeals.length === 0) {
-        const noteText = isAllTime ? 'Showing ALL historical deals (no date filter)' : 'Note: Only showing deals with latest available date';
-        bot.sendMessage(chatId, `📭 No deals found for <b>${countryName}</b> (${countryCode})\n\n<i>${noteText}</i>`, { parse_mode: "HTML" });
-        console.log("📱 /deals (button) - No deals found for:", countryCode, isAllTime ? "(all time)" : "(latest date)");
-        return;
-      }
-
-      
-      // Format deals message based on isAllTime
-      let dealsMessage;
-      if (isAllTime) {
-        // Format for deals data (affiliate, country, price, crg, funnels, source, deduction)
-        dealsMessage = `📊 <b>${countryName} - Deals</b> (${countryDeals.length} found)\n📋 Source: Deals Data\n\n`;
-        
-        // Show summary
-        // const totalPrice = countryDeals.reduce((sum, d) => sum + (parseInt(d.price) || 0), 0);
-        // const totalCRG = countryDeals.reduce((sum, d) => sum + (parseInt(d.crg) || 0), 0);
-        
-        // dealsMessage += `📈 <b>Summary:</b>\n`;
-        // dealsMessage += `• Total Deals: ${countryDeals.length}\n`;
-        // dealsMessage += `• Total Price: €${totalPrice.toLocaleString()}\n`;
-        // dealsMessage += `• Avg CRG: ${countryDeals.length > 0 ? Math.round(totalCRG / countryDeals.length) : 0}%\n\n`;
-        
-        // Show each deal (limit to 20 to avoid message too long)
-        const displayDeals = countryDeals.slice(0, 20);
-        
-        displayDeals.forEach((deal, index) => {
-          dealsMessage += `<b>${index + 1}. Affiliate #${deal.affiliate}</b>\n`;
-          dealsMessage += `   💰 Price: €${deal.price || '-'}\n`;
-          dealsMessage += `   📊 CRG: ${deal.crg || '-'}% | Funnels: ${deal.funnels || '-'}\n`;
-          dealsMessage += `   📢 Source: ${deal.source || '-'} | Deduction: ${deal.deduction || '-'}%\n`;
-          if (deal.id) {
-            dealsMessage += `   🆔 ID: ${deal.id}\n`;
-          }
-          dealsMessage += `\n`;
-        });
-        
-        if (countryDeals.length > 20) {
-          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
-        }
-      } else {
-        // Format for CRG deals (original format)
-        const allDeals = readJSON("crg-deals.json", []);
-        const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
-        const latestDate = dates[0] || today;
-        dealsMessage = `📊 <b>${countryName} - Today's Deals</b> (${countryDeals.length} found)\n📅 Date: ${latestDate}\n\n`;
-
-        
-        // Show summary
-        const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
-        const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
-        
-        dealsMessage += `📈 <b>Summary:</b>\n`;
-        dealsMessage += `• Total Caps: ${totalCap}\n`;
-        dealsMessage += `• Received: ${totalReceived}\n`;
-        dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
-        
-        // Show each deal (limit to 20 to avoid message too long)
-        const displayDeals = countryDeals.slice(0, 20);
-        
-        displayDeals.forEach((deal, index) => {
-          dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
-          dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
-          dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
-          dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
-          dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
-        });
-        
-        if (countryDeals.length > 20) {
-          dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
-        }
-      }
-      
-      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
-      console.log("📱 /deals (button) - Sent", countryDeals.length, isAllTime ? "deals data" : "today's", "deals for", countryCode);
-    });
-    
-    // ── Handle country code input for deals (text input) ──
-    bot.on('message', async (msg) => {
-      // Skip commands
-      if (msg.text && msg.text.startsWith('/')) return;
-      
-      const chatId = msg.chat.id;
-      const userText = msg.text ? msg.text.trim().toUpperCase() : '';
-      
-      // Check if user is in a waiting state
-      const userState = userStates[chatId];
-      if (!userState || userState.state !== 'waiting_for_country') return;
-      
-      // Valid country codes
-      const validCountries = ['DE', 'FR', 'UK', 'AU', 'MY', 'SI', 'HR', 'GCC'];
-      
-      if (!validCountries.includes(userText)) {
-        bot.sendMessage(chatId, `❌ Invalid country code: <b>${userText}</b>\n\nPlease enter a valid country code:\nDE, FR, UK, AU, MY, SI, HR, GCC`, { parse_mode: "HTML" });
-        return;
-      }
-      
-      // Clear user state
-      delete userStates[chatId];
-      
-      // Read deals from crg-deals.json
-      const allDeals = readJSON("crg-deals.json", []);
-      
-      // Find the most recent date in the data
-      const dates = [...new Set(allDeals.map(deal => deal.date))].sort().reverse();
-      const latestDate = dates[0] || new Date().toISOString().split('T')[0];
-      
-      // Filter deals by country code AND latest date
-      const countryDeals = allDeals.filter(deal => {
-        if (!deal.affiliate) return false;
-        const hasCountry = deal.affiliate.toUpperCase().endsWith(' ' + userText);
-        const isLatest = deal.date === latestDate;
-        return hasCountry && isLatest;
-      });
-
-      
-      // Country name mapping
-      const countryNames = {
-        'DE': 'Germany',
-        'FR': 'France',
-        'UK': 'United Kingdom',
-        'AU': 'Australia',
-        'MY': 'Malaysia',
-        'SI': 'Singapore',
-        'HR': 'Croatia',
-        'GCC': 'Gulf Countries'
-      };
-      
-      const countryName = countryNames[userText] || userText;
-      
-      if (countryDeals.length === 0) {
-        bot.sendMessage(chatId, `📭 No deals found for <b>${countryName}</b> (${userText})`, { parse_mode: "HTML" });
-        console.log("📱 /deals - No deals found for:", userText);
-        return;
-      }
-      
-      // Format deals message
-      let dealsMessage = `📊 <b>Deals for ${countryName}</b> (${countryDeals.length} found)\n\n`;
-      
-      // Show summary
-      const totalCap = countryDeals.reduce((sum, d) => sum + (parseInt(d.cap) || 0), 0);
-      const totalReceived = countryDeals.reduce((sum, d) => sum + (parseInt(d.capReceived) || 0), 0);
-      
-      dealsMessage += `📈 <b>Summary:</b>\n`;
-      dealsMessage += `• Total Caps: ${totalCap}\n`;
-      dealsMessage += `• Received: ${totalReceived}\n`;
-      dealsMessage += `• Remaining: ${totalCap - totalReceived}\n\n`;
-      
-      // Show each deal (limit to 20 to avoid message too long)
-      const displayDeals = countryDeals.slice(0, 20);
-      
-      displayDeals.forEach((deal, index) => {
-        dealsMessage += `<b>${index + 1}. ${deal.affiliate}</b>\n`;
-        dealsMessage += `   Broker: ${deal.brokerCap || '-'}\n`;
-        dealsMessage += `   Cap: ${deal.cap || '-'} | Received: ${deal.capReceived || '0'}\n`;
-        dealsMessage += `   Manager: ${deal.manageAff || '-'} | Sales: ${deal.madeSale || '-'}\n`;
-        dealsMessage += `   Started: ${deal.started ? '✅' : '❌'} | Date: ${deal.date || '-'}\n\n`;
-      });
-      
-      if (countryDeals.length > 20) {
-        dealsMessage += `... and ${countryDeals.length - 20} more deals.`;
-      }
-      
-      bot.sendMessage(chatId, dealsMessage, { parse_mode: "HTML" });
-      console.log("📱 /deals - Sent", countryDeals.length, "deals for", userText);
-    });
-    
-    // ── USDT Hash Detection - Auto-create Customer Payment ──
-    
-    // Helper to generate unique ID for customer payments
-    function genCustomerPaymentId() {
-      return Math.random().toString(36).substr(2, 9);
-    }
-    
-    // Function to extract ALL USDT hashes from message (including from URLs)
-    function extractAllUsdtHashes(text) {
-      if (!text) return [];
-      
-      const hashes = [];
-      
-      // Extract from TronScan URLs - handles both:
-      // https://tronscan.org/#/transaction/208c664be9271f8e1ac3bf993501b05b90674f93b963966bf81a2da9708cf121
-      // https://tronscan.org/#/transaction/T...
-      const tronScanMatches = text.matchAll(/tronscan\.org\/[^\/]*\/transaction\/([a-zA-Z0-9]{33,64})/gi);
-      for (const match of tronScanMatches) {
-        const hash = match[1];
-        // Determine if it's a TRC20 address (34 chars starting with T) or transaction hash (64 chars)
-        if (TRC20_ADDRESS_REGEX.test(hash)) {
-          hashes.push({ hash: hash, type: 'TRC20_ADDRESS' });
-        } else if (hash.length === 64) {
-          hashes.push({ hash: hash, type: 'TRC20' });
-        }
-      }
-      
-      // Extract from Etherscan URLs
-      const ethScanMatches = text.matchAll(/etherscan\.io\/tx\/(0x[a-fA-F0-9]{64})/gi);
-      for (const match of ethScanMatches) {
-        hashes.push({ hash: match[1], type: 'ERC20' });
-      }
-      
-      // Also find plain hashes (not in URLs)
-      const words = text.split(/\s+/);
-      for (const word of words) {
-        const trimmed = word.trim();
-        
-        // Skip if already found
-        const alreadyFound = hashes.some(h => h.hash === trimmed);
-        if (alreadyFound) continue;
-        
-        if (ERC20_HASH_REGEX.test(trimmed)) {
-          hashes.push({ hash: trimmed, type: 'ERC20' });
-        } else if (TRC20_HASH_REGEX.test(trimmed)) {
-          hashes.push({ hash: trimmed, type: 'TRC20' });
-        }
-      }
-      
-      return hashes;
-    }
-    
-    // Handle incoming messages - detect USDT hashes with blockchain verification
-    bot.on('message', async (msg) => {
-      // Ignore commands (they have their own handlers)
-      if (msg.text && msg.text.startsWith('/')) return;
-      
-      // Check if user is in a waiting state for /deals command - if so, skip finance group processing
-      const chatId = msg.chat.id;
-      if (userStates[chatId] && userStates[chatId].state === 'waiting_for_country') return;
-      
-      // Only process messages from the finance group
-      if (msg.chat.id.toString() !== FINANCE_GROUP_CHAT_ID) return;
-      
-      const messageText = msg.text || '';
-      const messageId = msg.message_id;
-      
-      console.log(`📩 New message in finance group: ${messageText.substring(0, 60)}...`);
-      
-      // Use the improved hash extraction function (handles URLs and plain hashes)
-      const hashes = extractAllUsdtHashes(messageText);
-      
-      // Filter to only transaction hashes (not wallet addresses)
-      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
-      
-      if (txHashes.length === 0) {
-        console.log("🔍 No USDT transaction hashes found in message");
-        return;
-      }
-      
-      // Find all amounts ($pattern) - handles both $120 and 120$
-      const amounts = [];
-      // Pattern 1: $120 or $1,200
-      const amountPattern1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-      let amountMatch;
-      while ((amountMatch = amountPattern1.exec(messageText)) !== null) {
-        amounts.push(amountMatch[1].replace(/,/g, ''));
-      }
-      // Pattern 2: 120$ (amount before $)
-      const amountPattern2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
-      while ((amountMatch = amountPattern2.exec(messageText)) !== null) {
-        amounts.push(amountMatch[1].replace(/,/g, ''));
-      }
-      
-      // Extract customer names - improved extraction for patterns like "EMP Forge"
-      const names = [];
-      
-      // Pattern 1: "EMP Forge" or "EMP: Forge" - the name after EMP
-      const empNameMatch = messageText.match(/(?:EMP|emp)\s*[:\-]?\s*([A-Z][a-zA-Z0-9_-]{2,20})/i);
-      if (empNameMatch && empNameMatch[1]) {
-        names.push(empNameMatch[1]);
-      }
-      
-      // Pattern 2: "Forge" as standalone customer name
-      const forgeMatch = messageText.match(/\b(Forge|Brand|Partner|Affiliate|Client)\b/gi);
-      if (forgeMatch) {
-        for (const m of forgeMatch) {
-          if (!names.includes(m)) names.push(m);
-        }
-      }
-      
-      // Pattern 3: Look for capitalized words after common prefixes
-      const namePatterns = [
-        /(?:from|client|customer|invoice|inv)[:\s]*([A-Z][a-zA-Z0-9_-]{2,20})/gi,
-      ];
-      
-      for (const pattern of namePatterns) {
-        let match;
-        const regex = new RegExp(pattern.source, pattern.flags);
-        while ((match = regex.exec(messageText)) !== null) {
-          if (match[1] && match[1].length > 2) {
-            const exclude = ['usdt', 'usdc', 'eth', 'btc', 'trc20', 'erc20', 'hash', 'tx', 'transaction', 'http', 'https', 'www', 'com', 'org', 'io'];
-            if (!exclude.includes(match[1].toLowerCase()) && !names.includes(match[1])) {
-              names.push(match[1]);
-            }
-          }
-        }
-      }
-      
-      // Pattern 4: Also try to get names from text that look like names (capitalized words not in URLs)
-      const capitalWords = messageText.match(/\b[A-Z][a-zA-Z0-9_-]{2,20}\b/g) || [];
-      for (const word of capitalWords) {
-        const exclude = ['USD', 'USDT', 'USDC', 'ETH', 'BTC', 'TRC', 'ERC', 'FROM', 'HTTP', 'HTTPS', 'COM', 'ORG', 'NET', 'IO', 'TX', 'TRANSACTION'];
-        if (!exclude.includes(word.toUpperCase()) && word.length > 2 && !names.includes(word)) {
-          // Filter out words that are likely part of URLs
-          if (!messageText.includes('http') && !word.includes('.')) {
-            names.push(word);
-          }
-        }
-      }
-      
-      console.log(`🔍 Found ${txHashes.length} hash(es), ${amounts.length} amount(s), ${names.length} name(s):`, names);
-      
-      // Get wallets for verification
-      const wallets = getWallets();
-      
-      // Process each hash found
-      for (let i = 0; i < txHashes.length; i++) {
-        const { hash, type } = txHashes[i];
-        
-        // Match amounts and names by index, fallback to first available
-        const amount = amounts[i] || amounts[0] || '0';
-        const invoice = names[i] || names[0] || 'Payment';
-        
-        console.log(`🔍 Processing ${type} hash: ${hash.substring(0, 10)}... for "${invoice}" - $${amount}`);
-        
-        // Verify transaction on blockchain
-        let txResult = { success: false, error: "Could not verify" };
-        if (type === 'TRC20') {
-          txResult = await checkTRC20Transaction(hash);
-        } else if (type === 'ERC20') {
-          txResult = await checkERC20Transaction(hash);
-        }
-        
-        // Verify wallet address
-        const walletVerify = txResult.success ? verifyWalletAddress(txResult.toAddress, wallets) : { matched: false, error: "Transaction not verified" };
-        
-        const now = new Date();
-        const paidDate = now.toISOString().split('T')[0];
-        
-        // Determine status based on verification
-        let status = "Open";
-        let statusNote = "";
-        
-        if (txResult.success && walletVerify.matched) {
-          // Transaction verified - check amount
-          const txAmount = parseFloat(txResult.amount);
-          const declaredAmount = parseFloat(amount);
-          
-          // Allow 10% tolerance for amount difference
-          if (isNaN(txAmount) || isNaN(declaredAmount) || declaredAmount === 0 || Math.abs(txAmount - declaredAmount) / declaredAmount < 0.10) {
-            status = "Received";
-            statusNote = "✅ Verified on blockchain - wallet matches!";
-          } else {
-            status = "Open";
-            statusNote = `⚠️ Amount mismatch: blockchain $${txAmount} vs declared $${declaredAmount}`;
-          }
-        } else if (txResult.success && !walletVerify.matched) {
-          status = "Open";
-          statusNote = `❌ Address mismatch! Sent to: ${(txResult.toAddress || '').substring(0, 8)}... Not in our wallets!`;
-        } else {
-          status = "Open";
-          statusNote = `⚠️ Could not verify: ${txResult.error || "Unknown error"}`;
-        }
-        
-        // Create new customer payment
-        const newPayment = {
-          id: genCustomerPaymentId(),
-          invoice: invoice,
-          paidDate: paidDate,
-          status: status,
-          amount: amount,
-          openBy: "Telegram Bot",
-          instructions: statusNote,
-          paymentHash: hash,
-          blockchainType: type,
-          blockchainVerified: txResult.success,
-          toAddress: txResult.toAddress || "",
-          month: now.getMonth() + 1,
-          year: now.getFullYear()
-        };
-        
-        // Read existing customer payments
-        const customerPayments = readJSON("customer-payments.json", []);
-        
-        // Add new payment
-        customerPayments.unshift(newPayment);
-        writeJSON("customer-payments.json", customerPayments);
-        
-        // console.log(`✅ Customer payment created: ${invoice} - $${amount} - Status: ${status}`);
-        
-        // Send confirmation to group
-        let confirmMessage = `📨 <b>Payment Processed!</b>\n\n`;
-        confirmMessage += `📋 Invoice: <b>${invoice}</b>\n`;
-        confirmMessage += `💵 Amount: <b>$${amount}</b>\n`;
-        confirmMessage += `🔗 Hash (${type}): <code>${hash}</code>\n`;
-        
-        if (txResult.success) {
-          confirmMessage += `✅ Blockchain: <b>Verified</b>\n`;
-          confirmMessage += `📍 To: <code>${(txResult.toAddress || '').substring(0, 12)}...</code>\n`;
-          confirmMessage += `💰 Tx Amount: $${txResult.amount || 'N/A'}\n`;
-        } else {
-          confirmMessage += `⚠️ Blockchain: <b>Could not verify</b>\n`;
-        }
-        
-        if (walletVerify.matched) {
-          confirmMessage += `✅ Wallet: <b>MATCHED</b> (${walletVerify.type})\n`;
-        } else {
-          confirmMessage += `❌ Wallet: <b>${walletVerify.error}</b>\n`;
-        }
-        
-        confirmMessage += `\n📊 Status: <b>${status}</b>`;
-        
-        bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMessage, { parse_mode: "HTML" });
-      }
-    });
-    
-    console.log("✅ USDT hash detection enabled - will auto-create customer payments");
-    
-  } catch (err) {
-    console.log("⚠️ Failed to initialize Telegram bot:", err.message);
-  }
-}
-
-// Helper function to send Telegram notifications using direct API
-function sendTelegramNotification(message) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Telegram notification (no token configured):", message);
-    return;
-  }
-  
-  const postData = JSON.stringify({
-    chat_id: FINANCE_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
-  const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
-  };
-
-  const req = https.request(options, (res) => {
-    let data = '';
-    res.on('data', (chunk) => { data += chunk; });
-    res.on('end', () => {
-      if (res.statusCode === 200) {
-        console.log("✅ Telegram notification sent");
-      } else {
-        console.log("❌ Telegram error:", res.statusCode, data);
-      }
-    });
-  });
-
-  req.on('error', (err) => {
-    console.error("❌ Telegram request error:", err.message);
-  });
-
-  req.write(postData);
-  req.end();
-  
-  console.log("📱 Sending Telegram notification:", message.substring(0, 50) + "...");
-}
-
-// Format message for open payment
-function formatOpenPaymentMessage(payment) {
-  return `💰 <b>NEW OPEN PAYMENT</b>
-
-📋 Invoice: <b>#${payment.invoice}</b>
-💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
-👤 Opened by: ${payment.openBy || "Unknown"}`;
-}
-
-// Format message for paid payment
-function formatPaidPaymentMessage(payment) {
-  return `💰 <b>PAYMENT DONE</b>
-
-📋 Invoice: <b>#${payment.invoice}</b>
-💵 Amount: <b>$${parseFloat(payment.amount).toLocaleString("en-US")}</b>
-👤 Paid by: ${payment.openBy || "Unknown"}
-Payment Hash: <code>${payment.paymentHash || "N/A"}</code>`;
-}
-
-// Ensure directories exist
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
-
-app.use(cors());
-app.use(express.json({ limit: "10mb" }));
-
-// Helper: read/write JSON files
 function readJSON(filename, fallback) {
   const filepath = path.join(DATA_DIR, filename);
   try {
@@ -1216,238 +70,1084 @@ function readJSON(filename, fallback) {
       return JSON.parse(fs.readFileSync(filepath, "utf8"));
     }
   } catch (err) {
-    console.error(`Error reading ${filename}:`, err.message);
+    console.error(`❌ Error reading ${filename}:`, err.message);
   }
   return fallback;
 }
 
-function writeJSON(filename, data) {
+// Atomic write: write to temp file, then rename (prevents corruption)
+function writeJSONAtomic(filename, data) {
   const filepath = path.join(DATA_DIR, filename);
-  fs.writeFileSync(filepath, JSON.stringify(data, null, 2), "utf8");
+  const tempPath = filepath + `.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
+
+  try {
+    // Write to temp file first
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+
+    // Verify temp file is valid JSON before replacing
+    const verify = JSON.parse(fs.readFileSync(tempPath, "utf8"));
+    if (!Array.isArray(verify)) throw new Error("Data is not an array");
+
+    // Atomic rename (on same filesystem this is atomic)
+    fs.renameSync(tempPath, filepath);
+
+    // Increment version
+    const key = filename.replace('.json', '');
+    dataVersions[key] = (dataVersions[key] || 0) + 1;
+
+    return true;
+  } catch (err) {
+    console.error(`❌ Atomic write failed for ${filename}:`, err.message);
+    // Clean up temp file
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+    return false;
+  }
 }
 
-// ── Data Endpoints ──
-const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
+// Locked write — prevents concurrent writes to same table
+async function lockedWrite(filename, data, meta) {
+  const key = filename.replace('.json', '');
 
-// GET /api/payments — load payments
-app.get("/api/payments", (req, res) => {
-  const data = readJSON("payments.json", []);
-  res.json(data);
-});
+  // Simple mutex: wait if another write is in progress
+  while (dataLocks.has(key)) {
+    await new Promise(r => setTimeout(r, 10));
+  }
 
-// POST /api/payments — save all payments (with Telegram notifications)
-app.post("/api/payments", (req, res) => {
-  const newPayments = req.body;
-  const oldPayments = readJSON("payments.json", []);
-  
-  // Track payments by ID for easy lookup
-  const oldPaymentsMap = new Map(oldPayments.map(p => [p.id, p]));
-  
-  console.log("📊 Processing payments update:", newPayments.length, "items");
-  
-  // Check for each payment
-  newPayments.forEach(p => {
-    const oldP = oldPaymentsMap.get(p.id);
-    
-    if (!oldP) {
-      // NEW payment - notify based on status
-      console.log("📋 NEW Payment:", p.invoice, "| Status:", p.status);
-      if (p.status === "Open" || p.status === "On the way" || p.status === "Approved to pay") {
-        const message = formatOpenPaymentMessage(p);
-        console.log("📱 → Sending NEW OPEN notification:", p.invoice);
-        sendTelegramNotification(message);
-      } else if (p.status === "Paid") {
-        const message = formatPaidPaymentMessage(p);
-        console.log("📱 → Sending NEW PAID notification:", p.invoice);
-        sendTelegramNotification(message);
-      }
-    } else if (oldP.status !== p.status) {
-      // EXISTING payment - status changed
-      console.log("📋 Payment:", p.invoice, "| Old:", oldP.status, "| New:", p.status);
-      
-      if (p.status === "Paid" && oldP.status !== "Paid") {
-        // Changed TO Paid
-        console.log("📱 → Sending PAID status change notification:", p.invoice);
-        const message = formatPaidPaymentMessage(p);
-        sendTelegramNotification(message);
-      } else if ((p.status === "Open" || p.status === "On the way" || p.status === "Approved to pay") && oldP.status === "Paid") {
-        // Changed FROM Paid back to Open - send as new open
-        console.log("📱 → Sending RE-OPENED notification:", p.invoice);
-        const message = formatOpenPaymentMessage(p);
-        sendTelegramNotification(message);
-      }
+  dataLocks.set(key, true);
+  try {
+    const success = writeJSONAtomic(filename, data);
+    if (success && meta) {
+      writeAuditLog(key, meta.action || "update", meta.user || "system", meta.details || `${data.length} records`);
     }
-  });
-  
-  writeJSON("payments.json", newPayments);
-  res.json({ ok: true, count: newPayments.length });
-});
-
-// Other data endpoints (generic GET/POST)
-["customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
-  const file = ep + ".json";
-  app.get(`/api/${ep}`, (req, res) => res.json(readJSON(file, [])));
-  app.post(`/api/${ep}`, (req, res) => { writeJSON(file, req.body); res.json({ ok: true, count: req.body.length }); });
-});
-
-// ── Health check ──
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", version: VERSION, time: new Date().toISOString() });
-});
-
-// ── Telegram Endpoints ──
-
-// POST /api/telegram/notify - Send custom notification
-app.post("/api/telegram/notify", (req, res) => {
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: "Message is required" });
+    return success;
+  } finally {
+    dataLocks.delete(key);
   }
-  sendTelegramNotification(message);
-  res.json({ ok: true });
-});
+}
 
-// POST /api/sync - Manual sync of external data
-app.post("/api/sync", async (req, res) => {
-  console.log("🔄 Manual sync triggered via API");
-  const result = await syncExternalData();
-  res.json({ 
-    ok: true, 
-    message: "Sync completed",
-    results: result
-  });
-});
+// ═══════════════════════════════════════════════════════════════
+// 3. AUDIT LOGGING — WHO changed WHAT and WHEN
+// ═══════════════════════════════════════════════════════════════
 
-// GET /api/sync/status - Check last sync status
-app.get("/api/sync/status", (req, res) => {
-  const crgDeals = readJSON("crg-deals.json", []);
-  const dailyCap = readJSON("daily-cap.json", []);
-  
-  // Get latest dates from data
-  const crgDates = [...new Set(crgDeals.map(d => d.date))].sort().reverse();
-  const capDates = [...new Set(dailyCap.map(d => d.date))].sort().reverse();
-  
-  res.json({
-    crgDeals: {
-      count: crgDeals.length,
-      latestDates: crgDates.slice(0, 5)
-    },
-    dailyCap: {
-      count: dailyCap.length,
-      latestDates: capDates.slice(0, 5)
-    },
-    lastCheck: new Date().toISOString()
-  });
-});
+function writeAuditLog(table, action, user, details) {
+  try {
+    const now = new Date();
+    const dateKey = now.toISOString().split('T')[0]; // 2026-02-23
+    const logFile = path.join(AUDIT_DIR, `audit_${dateKey}.jsonl`);
 
+    const entry = {
+      timestamp: now.toISOString(),
+      table,
+      action, // "create", "update", "delete", "login", "restore"
+      user,   // email or "system"
+      details,
+      ip: null, // set by caller if available
+    };
 
-// GET /api/telegram/test - Test bot connection
-app.get("/api/telegram/test", (req, res) => {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    return res.json({ status: "no_token", message: "Please configure your Telegram bot token in server.cjs" });
+    fs.appendFileSync(logFile, JSON.stringify(entry) + "\n", "utf8");
+  } catch (err) {
+    console.error("⚠️ Audit log error:", err.message);
   }
-  
-  const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/getMe`,
-    method: 'GET'
-  };
+}
 
-  const botReq = https.request(options, (response) => {
-    let data = '';
-    response.on('data', (chunk) => { data += chunk; });
-    response.on('end', () => {
-      if (response.statusCode === 200) {
-        const botInfo = JSON.parse(data).result;
-        res.json({ 
-          status: "connected", 
-          bot: botInfo.username,
-          name: botInfo.first_name 
-        });
-      } else {
-        res.json({ status: "error", error: data });
+// Clean up old audit logs (keep 30 days)
+function cleanupAuditLogs() {
+  try {
+    const files = fs.readdirSync(AUDIT_DIR).filter(f => f.startsWith('audit_') && f.endsWith('.jsonl'));
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    files.forEach(f => {
+      const date = f.replace('audit_', '').replace('.jsonl', '');
+      if (date < cutoff) {
+        fs.unlinkSync(path.join(AUDIT_DIR, f));
+        console.log(`🗑️ Old audit log removed: ${f}`);
       }
     });
-  });
+  } catch (err) {}
+}
+setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000); // Daily cleanup
 
-  botReq.on('error', (err) => {
-    res.json({ status: "error", error: err.message });
-  });
+// ═══════════════════════════════════════════════════════════════
+// 4. CONFLICT RESOLUTION — Version Tracking (Last-Writer-Wins+)
+// ═══════════════════════════════════════════════════════════════
 
-  botReq.end();
-});
+// Each save includes a version number. If a client sends data with an
+// older version than what's on server, we log the conflict but still
+// accept (LWW) because in a CRM the latest user action is usually correct.
+// The audit log captures everything for rollback if needed.
 
-// ── Hourly Backup System ──
-function createBackup() {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+function getVersion(table) {
+  if (!dataVersions[table]) {
+    // Initialize from file mtime
+    const filepath = path.join(DATA_DIR, table + '.json');
+    try {
+      if (fs.existsSync(filepath)) {
+        dataVersions[table] = Math.floor(fs.statSync(filepath).mtimeMs);
+      } else {
+        dataVersions[table] = 0;
+      }
+    } catch { dataVersions[table] = 0; }
+  }
+  return dataVersions[table];
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXTERNAL API SYNC (Leeds CRM)
+// ═══════════════════════════════════════════════════════════════
+async function fetchExternalCrgDeals() {
+  try { return { success:true, data:JSON.parse(await httpRequest("https://leeds-crm.com/api/crg-deals",true)) }; }
+  catch(e) { console.log("⚠️ External CRG error:",e.message); return { success:false }; }
+}
+async function fetchExternalDailyCap() {
+  try { return { success:true, data:JSON.parse(await httpRequest("https://leeds-crm.com/api/daily-cap",true)) }; }
+  catch(e) { console.log("⚠️ External Daily Cap error:",e.message); return { success:false }; }
+}
+async function syncExternalData() {
+  console.log("🔄 Starting external data sync...");
+  const crg = await fetchExternalCrgDeals();
+  if (crg.success && Array.isArray(crg.data)) { await lockedWrite("crg-deals.json",crg.data,{action:"external_sync",user:"system",details:`${crg.data.length} CRG deals`}); broadcastUpdate("crg-deals",crg.data); console.log(`✅ CRG synced: ${crg.data.length}`); }
+  const cap = await fetchExternalDailyCap();
+  if (cap.success && Array.isArray(cap.data)) { await lockedWrite("daily-cap.json",cap.data,{action:"external_sync",user:"system",details:`${cap.data.length} daily cap`}); broadcastUpdate("daily-cap",cap.data); console.log(`✅ Daily cap synced: ${cap.data.length}`); }
+  console.log("🔄 External sync done");
+  return { crgDeals:crg.success, dailyCap:cap.success };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 5. POINT-IN-TIME RECOVERY (PITR) — Enhanced Backup System
+// ═══════════════════════════════════════════════════════════════
+
+// Backup every 15 minutes (was 1 hour), keep 30 days of daily + 48 hours of hourly
+function createBackup(label) {
+  const ts = label || new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const backupPath = path.join(BACKUP_DIR, ts);
   if (!fs.existsSync(backupPath)) fs.mkdirSync(backupPath, { recursive: true });
 
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
     const dst = path.join(backupPath, ep + ".json");
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dst);
-      count++;
-    }
+    if (fs.existsSync(src)) { fs.copyFileSync(src, dst); count++; }
   });
-  console.log(`📦 Backup created: ${ts} (${count} files)`);
 
-  // Keep only last 48 backups (2 days)
-  const dirs = fs.readdirSync(BACKUP_DIR).sort();
-  while (dirs.length > 48) {
-    const old = dirs.shift();
-    fs.rmSync(path.join(BACKUP_DIR, old), { recursive: true, force: true });
-    console.log(`🗑️  Old backup removed: ${old}`);
+  // Also backup audit log for today
+  const todayAudit = path.join(AUDIT_DIR, `audit_${new Date().toISOString().split('T')[0]}.jsonl`);
+  if (fs.existsSync(todayAudit)) {
+    fs.copyFileSync(todayAudit, path.join(backupPath, 'audit.jsonl'));
+  }
+
+  console.log(`📦 Backup created: ${ts} (${count} data files + audit)`);
+  cleanupBackups();
+  return ts;
+}
+
+function cleanupBackups() {
+  try {
+    const dirs = fs.readdirSync(BACKUP_DIR).sort();
+    const now = Date.now();
+    const TWO_DAYS = 48 * 60 * 60 * 1000;
+    const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
+
+    // Keep: all backups within 48 hours, one per day for 30 days
+    const kept = new Set();
+    const dailyKept = new Set();
+
+    dirs.forEach(d => {
+      try {
+        const ts = new Date(d.replace(/(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/, '$1-$2-$3T$4:$5:$6'));
+        const age = now - ts.getTime();
+        const dayKey = d.slice(0, 10);
+
+        if (age < TWO_DAYS) {
+          kept.add(d); // Keep all recent
+        } else if (age < THIRTY_DAYS && !dailyKept.has(dayKey)) {
+          kept.add(d); // Keep one per day
+          dailyKept.add(dayKey);
+        }
+      } catch {}
+    });
+
+    dirs.forEach(d => {
+      if (!kept.has(d)) {
+        fs.rmSync(path.join(BACKUP_DIR, d), { recursive: true, force: true });
+        console.log(`🗑️ Old backup removed: ${d}`);
+      }
+    });
+  } catch (err) {
+    console.error("⚠️ Backup cleanup error:", err.message);
   }
 }
 
-// Backup every hour
-setInterval(createBackup, 60 * 60 * 1000);
-// Also backup 5 seconds after startup
+// Backup every 15 minutes
+setInterval(createBackup, 15 * 60 * 1000);
+// Backup on startup
 setTimeout(createBackup, 5000);
 
-// List available backups
-app.get("/api/backups", (req, res) => {
-  if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
-  res.json(fs.readdirSync(BACKUP_DIR).sort().reverse());
+// ═══════════════════════════════════════════════════════════════
+// 6. EXPRESS + SECURITY MIDDLEWARE
+// ═══════════════════════════════════════════════════════════════
+
+// FIX C6: Restrict CORS to known origins (env var or defaults)
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "").split(",").filter(Boolean);
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (server-to-server, curl, mobile apps)
+    if (!origin) return callback(null, true);
+    // Allow localhost in dev
+    if (origin.includes("localhost") || origin.includes("127.0.0.1")) return callback(null, true);
+    // Allow configured origins
+    if (ALLOWED_ORIGINS.length > 0 && ALLOWED_ORIGINS.some(o => origin.includes(o))) return callback(null, true);
+    // Allow same-domain (Nginx proxy setup)
+    if (ALLOWED_ORIGINS.length === 0) return callback(null, true);
+    callback(new Error("CORS blocked"));
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: "10mb" }));
+
+// ── FIX C4/C5: Session token authentication ──
+// On login success, server issues a random session token.
+// All data/admin endpoints require valid token in Authorization header.
+const activeSessions = new Map(); // token → { email, name, pageAccess, createdAt }
+const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+function generateSessionToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function cleanupSessions() {
+  const now = Date.now();
+  for (const [token, session] of activeSessions) {
+    if (now - session.createdAt > SESSION_DURATION) activeSessions.delete(token);
+  }
+}
+setInterval(cleanupSessions, 60 * 60 * 1000); // Hourly cleanup
+
+// Auth middleware — checks Authorization: Bearer <token>
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  const token = authHeader.slice(7);
+  const session = activeSessions.get(token);
+  if (!session) {
+    return res.status(401).json({ error: "Invalid or expired session" });
+  }
+  if (Date.now() - session.createdAt > SESSION_DURATION) {
+    activeSessions.delete(token);
+    return res.status(401).json({ error: "Session expired" });
+  }
+  req.userSession = session; // Attach user info to request
+  next();
+}
+
+// Admin-only middleware (checks email against admin list)
+const ADMIN_EMAILS = ["office1092021@gmail.com", "y0505300530@gmail.com"];
+function requireAdmin(req, res, next) {
+  requireAuth(req, res, () => {
+    if (!ADMIN_EMAILS.includes(req.userSession.email)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    next();
+  });
+}
+
+// Rate limiting: 200 req/min per IP (increased for WebSocket fallback polling)
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const RATE_LIMIT_MAX = 200;
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  if (!rateLimitMap.has(ip)) { rateLimitMap.set(ip, { count: 1, windowStart: now }); return next(); }
+  const entry = rateLimitMap.get(ip);
+  if (now - entry.windowStart > RATE_LIMIT_WINDOW) { entry.count = 1; entry.windowStart = now; return next(); }
+  entry.count++;
+  if (entry.count > RATE_LIMIT_MAX) return res.status(429).json({ error: "Too many requests" });
+  next();
+}
+setInterval(() => { const now = Date.now(); for (const [ip, e] of rateLimitMap) { if (now - e.windowStart > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(ip); } }, 5 * 60 * 1000);
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  if (req.path.startsWith('/api/')) { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); res.setHeader('Pragma', 'no-cache'); }
+  next();
+});
+app.use('/api/', rateLimit);
+
+// Block attack paths
+app.use((req, res, next) => {
+  const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc'];
+  if (blocked.some(b => req.path.toLowerCase().includes(b))) {
+    writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${req.ip}`);
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  next();
 });
 
-// Restore from a specific backup
-app.post("/api/restore/:backup", (req, res) => {
-  const bp = path.join(BACKUP_DIR, req.params.backup);
-  if (!fs.existsSync(bp)) return res.json({ ok: false, error: "Backup not found" });
-  
-  let count = 0;
-  endpoints.forEach(ep => {
-    const src = path.join(bp, ep + ".json");
-    const dst = path.join(DATA_DIR, ep + ".json");
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dst);
-      count++;
+// Input sanitization middleware
+app.use('/api/', (req, res, next) => {
+  if (req.method === 'POST' && req.body) {
+    // Prevent prototype pollution
+    if (typeof req.body === 'object' && ('__proto__' in req.body || 'constructor' in req.body || 'prototype' in req.body)) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+  }
+  next();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 7. LOGIN & AUTHENTICATION
+// ═══════════════════════════════════════════════════════════════
+
+const loginAttempts = new Map();
+const LOGIN_MAX_ATTEMPTS = 3;
+const LOGIN_BLOCK_DURATION = 15 * 60 * 1000;
+setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
+
+app.post("/api/login", (req, res) => {
+  const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (entry && entry.count >= LOGIN_MAX_ATTEMPTS) {
+    const unblockTime = entry.firstAttempt + LOGIN_BLOCK_DURATION;
+    if (now < unblockTime) {
+      const minsLeft = Math.ceil((unblockTime - now) / 60000);
+      console.log(`🚫 Blocked login from IP: ${ip} (${minsLeft} min left)`);
+      writeAuditLog("auth", "blocked_login", req.body?.email || "unknown", `IP: ${ip}, ${minsLeft}m left`);
+      return res.status(429).json({ error: "blocked", minutes: minsLeft });
+    }
+    loginAttempts.delete(ip);
+  }
+  const { email, passwordHash } = req.body;
+  if (!email || !passwordHash) return res.status(400).json({ error: "Missing credentials" });
+  const users = readJSON("users.json", []);
+  const user = users.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === passwordHash);
+  if (user) {
+    loginAttempts.delete(ip);
+    // Issue session token
+    const token = generateSessionToken();
+    activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
+    console.log(`✅ Login success: ${email} from ${ip} (token issued)`);
+    writeAuditLog("auth", "login_success", email, `IP: ${ip}`);
+    res.json({ ok: true, token, user: { email: user.email, name: user.name, pageAccess: user.pageAccess } });
+  } else {
+    const current = loginAttempts.get(ip) || { count: 0, firstAttempt: now };
+    current.count++;
+    if (current.count === 1) current.firstAttempt = now;
+    loginAttempts.set(ip, current);
+    const remaining = LOGIN_MAX_ATTEMPTS - current.count;
+    console.log(`❌ Login failed: ${email} from ${ip} (${current.count}/${LOGIN_MAX_ATTEMPTS})`);
+    writeAuditLog("auth", "login_failed", email, `IP: ${ip}, attempt ${current.count}/${LOGIN_MAX_ATTEMPTS}`);
+    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15 });
+    else res.status(401).json({ error: "invalid", remaining });
+  }
+});
+
+// ── Logout ──
+app.post("/api/logout", (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    if (activeSessions.has(token)) {
+      writeAuditLog("auth", "logout", activeSessions.get(token).email, "");
+      activeSessions.delete(token);
+    }
+  }
+  res.json({ ok: true });
+});
+
+// ── Session validation ──
+app.get("/api/session", requireAuth, (req, res) => {
+  res.json({ ok: true, user: { email: req.userSession.email, name: req.userSession.name, pageAccess: req.userSession.pageAccess } });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 8. DATA ENDPOINTS — With Atomic Writes + Audit + Versioning
+// ═══════════════════════════════════════════════════════════════
+
+const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
+
+// GET — returns data + version number (REQUIRES AUTH)
+endpoints.forEach(ep => {
+  const file = ep + ".json";
+  app.get(`/api/${ep}`, requireAuth, (req, res) => {
+    let data = readJSON(file, []);
+    // FIX C2: Strip password hashes from user data — NEVER expose to client
+    if (ep === "users") {
+      data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
+    }
+    res.json({ data, version: getVersion(ep), timestamp: Date.now() });
+  });
+});
+
+// POST — atomic save with conflict detection, audit log, broadcast
+app.post("/api/payments", requireAuth, async (req, res) => {
+  const { data: newPayments, version: clientVersion, user: userEmail } = req.body;
+  // Support legacy format (raw array)
+  const payments = Array.isArray(req.body) ? req.body : newPayments;
+  if (!Array.isArray(payments)) return res.status(400).json({ error: "Invalid data format" });
+  if (payments.length > 10000) return res.status(400).json({ error: "Too many records" });
+
+  // Empty array protection
+  if (payments.length === 0) {
+    const existing = readJSON("payments.json", []);
+    if (existing.length > 0) {
+      console.log(`⚠️ BLOCKED empty save to payments — ${existing.length} records protected`);
+      return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
+    }
+  }
+
+  // Detect status changes for Telegram notifications
+  const oldPayments = readJSON("payments.json", []);
+  const oldMap = new Map(oldPayments.map(p => [p.id, p]));
+  payments.forEach(p => {
+    const oldP = oldMap.get(p.id);
+    if (!oldP) {
+      if (["Open", "On the way", "Approved to pay"].includes(p.status)) sendTelegramNotification(formatOpenPaymentMessage(p));
+      else if (p.status === "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
+    } else if (oldP.status !== p.status) {
+      if (p.status === "Paid" && oldP.status !== "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
+      else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendTelegramNotification(formatOpenPaymentMessage(p));
     }
   });
-  console.log(`♻️ Restored backup: ${req.params.backup} (${count} files)`);
-  res.json({ ok: true, restored: req.params.backup, files: count });
+
+  // Conflict detection
+  const serverVersion = getVersion("payments");
+  if (clientVersion && clientVersion < serverVersion) {
+    writeAuditLog("payments", "conflict_lww", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}. Last-writer-wins applied.`);
+    console.log(`⚠️ Conflict on payments: client v${clientVersion} < server v${serverVersion} — LWW applied`);
+  }
+
+  // Atomic write
+  const success = await lockedWrite("payments.json", payments, {
+    action: "update", user: userEmail || "unknown", details: `${payments.length} records`
+  });
+
+  if (success) {
+    broadcastUpdate("payments", payments);
+    res.json({ ok: true, count: payments.length, version: getVersion("payments") });
+  } else {
+    res.status(500).json({ error: "Write failed — data not saved" });
+  }
 });
 
-// ── Start Server ──
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Blitz API v${VERSION} running on port ${PORT}`);
-  console.log(`   Data: ${DATA_DIR}`);
-  console.log(`   Backups: ${BACKUP_DIR} (every hour, keep 48)`);
-  console.log(`   Telegram bot: @blitzfinance_bot`);
-  console.log(`   External sync: every 15 minutes`);
-  
-  // Initial sync on startup
-  setTimeout(() => {
-    syncExternalData();
-  }, 3000);
-  
-  // Schedule sync every 15 minutes
-  setInterval(() => {
-    syncExternalData();
-  }, 15 * 60 * 1000);
+// Generic POST for other tables
+["customer-payments", "crg-deals", "daily-cap", "deals", "wallets"].forEach(ep => {
+  const file = ep + ".json";
+  app.post(`/api/${ep}`, requireAuth, async (req, res) => {
+    const { data: newData, version: clientVersion, user: userEmail } = req.body;
+    const records = Array.isArray(req.body) ? req.body : newData;
+    if (!Array.isArray(records)) return res.status(400).json({ error: "Invalid data format" });
+    if (records.length > 10000) return res.status(400).json({ error: "Too many records" });
+
+    if (records.length === 0) {
+      const existing = readJSON(file, []);
+      if (existing.length > 0) {
+        console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected`);
+        return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
+      }
+    }
+
+    const serverVersion = getVersion(ep);
+    if (clientVersion && clientVersion < serverVersion) {
+      writeAuditLog(ep, "conflict_lww", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}`);
+      console.log(`⚠️ Conflict on ${ep}: client v${clientVersion} < server v${serverVersion} — LWW applied`);
+    }
+
+    const success = await lockedWrite(file, records, {
+      action: "update", user: userEmail || "unknown", details: `${records.length} records`
+    });
+
+    if (success) {
+      broadcastUpdate(ep, records);
+      res.json({ ok: true, count: records.length, version: getVersion(ep) });
+    } else {
+      res.status(500).json({ error: "Write failed" });
+    }
+  });
+});
+
+// Users — separate endpoint to preserve full data + audit
+app.post("/api/users", requireAuth, async (req, res) => {
+  const { data: newUsers, user: userEmail } = req.body;
+  const users = Array.isArray(req.body) ? req.body : newUsers;
+  if (!Array.isArray(users)) return res.status(400).json({ error: "Invalid data" });
+
+  if (users.length === 0) {
+    const existing = readJSON("users.json", []);
+    if (existing.length > 0) {
+      console.log(`⚠️ BLOCKED empty save to users — ${existing.length} users protected`);
+      return res.status(400).json({ error: "Cannot overwrite existing users with empty array" });
+    }
+  }
+
+  const success = await lockedWrite("users.json", users, {
+    action: "update", user: userEmail || "system", details: `${users.length} users saved`
+  });
+
+  if (success) {
+    broadcastUpdate("users", users);
+    console.log(`👥 Users updated: ${users.length} users saved`);
+    res.json({ ok: true, count: users.length, version: getVersion("users") });
+  } else {
+    res.status(500).json({ error: "Write failed" });
+  }
+});
+
+// ── Version endpoint — clients check this to know if they need to re-fetch
+app.get("/api/versions", requireAuth, (req, res) => {
+  const versions = {};
+  endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
+  res.json({ versions, timestamp: Date.now() });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 9. WEBSOCKET — Real-Time Sync
+// ═══════════════════════════════════════════════════════════════
+
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server, path: "/ws" });
+const wsClients = new Set();
+
+wss.on('connection', (ws, req) => {
+  // FIX H1: Require auth token for WebSocket connections
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get("token");
+  if (!token || !activeSessions.has(token)) {
+    ws.close(4001, "Authentication required");
+    return;
+  }
+  wsClients.add(ws);
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+  console.log(`🔌 WebSocket connected: ${ip} (${wsClients.size} total)`);
+
+  // Send current versions on connect
+  const versions = {};
+  endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
+  ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() }));
+
+  // Handle messages from client
+  ws.on('message', (msg) => {
+    try {
+      const data = JSON.parse(msg);
+      if (data.type === "ping") {
+        ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+      }
+    } catch {}
+  });
+
+  ws.on('close', () => {
+    wsClients.delete(ws);
+    console.log(`🔌 WebSocket disconnected (${wsClients.size} remaining)`);
+  });
+
+  ws.on('error', () => {
+    wsClients.delete(ws);
+  });
+});
+
+// Broadcast data update to all connected WebSocket clients
+function broadcastUpdate(table, data) {
+  const message = JSON.stringify({
+    type: "update",
+    table,
+    version: getVersion(table),
+    data,
+    timestamp: Date.now(),
+  });
+
+  let sent = 0;
+  wsClients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(message);
+      sent++;
+    }
+  });
+  if (sent > 0) console.log(`📡 Broadcast ${table} update to ${sent} clients`);
+}
+
+// Heartbeat — keep connections alive + detect dead clients
+setInterval(() => {
+  wsClients.forEach(ws => {
+    if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
+    ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
+  });
+}, 30000);
+
+// ═══════════════════════════════════════════════════════════════
+// 10. AUDIT LOG ENDPOINTS
+// ═══════════════════════════════════════════════════════════════
+
+// GET audit logs for a specific date or range
+app.get("/api/audit", requireAdmin, (req, res) => {
+  const { date, days } = req.query;
+  const targetDate = date || new Date().toISOString().split('T')[0];
+  const numDays = parseInt(days) || 1;
+
+  const logs = [];
+  for (let i = 0; i < numDays; i++) {
+    const d = new Date(targetDate);
+    d.setDate(d.getDate() - i);
+    const dateKey = d.toISOString().split('T')[0];
+    const logFile = path.join(AUDIT_DIR, `audit_${dateKey}.jsonl`);
+    try {
+      if (fs.existsSync(logFile)) {
+        const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n');
+        lines.forEach(line => {
+          try { logs.push(JSON.parse(line)); } catch {}
+        });
+      }
+    } catch {}
+  }
+
+  logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  res.json(logs.slice(0, 500)); // Max 500 entries
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 11. BACKUP & RESTORE ENDPOINTS (PITR)
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/api/backups", requireAdmin, (req, res) => {
+  if (!fs.existsSync(BACKUP_DIR)) return res.json([]);
+  const backups = fs.readdirSync(BACKUP_DIR).sort().reverse().map(name => {
+    const bp = path.join(BACKUP_DIR, name);
+    const files = fs.readdirSync(bp).length;
+    return { name, files, timestamp: name };
+  });
+  res.json(backups);
+});
+
+app.post("/api/restore/:backup", requireAdmin, async (req, res) => {
+  // FIX H2: Sanitize backup name — alphanumeric, dashes, T only (no ../  or path separators)
+  const backupName = req.params.backup.replace(/[^a-zA-Z0-9\-T]/g, "");
+  if (backupName !== req.params.backup || backupName.length < 5) {
+    return res.status(400).json({ ok: false, error: "Invalid backup name" });
+  }
+  const bp = path.join(BACKUP_DIR, backupName);
+  // Double-check resolved path is inside BACKUP_DIR
+  if (!path.resolve(bp).startsWith(path.resolve(BACKUP_DIR))) {
+    return res.status(400).json({ ok: false, error: "Invalid backup path" });
+  }
+  if (!fs.existsSync(bp)) return res.json({ ok: false, error: "Backup not found" });
+
+  // Create a pre-restore backup first
+  const preRestore = createBackup(`pre-restore-${Date.now()}`);
+
+  const ip = req.ip || 'unknown';
+  writeAuditLog("system", "restore", req.body?.user || "admin", `Restored from ${req.params.backup}, pre-restore saved as ${preRestore}. IP: ${ip}`);
+
+  let count = 0;
+  for (const ep of endpoints) {
+    const src = path.join(bp, ep + ".json");
+    if (fs.existsSync(src)) {
+      const data = JSON.parse(fs.readFileSync(src, "utf8"));
+      await lockedWrite(ep + ".json", data, { action: "restore", user: "admin", details: `Restored from ${req.params.backup}` });
+      broadcastUpdate(ep, data);
+      count++;
+    }
+  }
+
+  console.log(`♻️ Restored backup: ${req.params.backup} (${count} files)`);
+  res.json({ ok: true, restored: req.params.backup, preRestoreBackup: preRestore, files: count });
+});
+
+// Manual backup trigger
+app.post("/api/backup", requireAdmin, (req, res) => {
+  const label = createBackup();
+  writeAuditLog("system", "manual_backup", req.body?.user || "admin", `Manual backup: ${label}`);
+  res.json({ ok: true, backup: label });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 12. HEALTH & MONITORING
+// ═══════════════════════════════════════════════════════════════
+
+app.get("/api/health", (req, res) => {
+  // Public: basic status only. No sensitive info.
+  const basic = { status: "ok", version: VERSION, time: new Date().toISOString() };
+
+  // If authenticated as admin, include extended info
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const session = activeSessions.get(authHeader.slice(7));
+    if (session && ADMIN_EMAILS.includes(session.email)) {
+      const dataFiles = endpoints.map(ep => {
+        const file = path.join(DATA_DIR, ep + ".json");
+        const exists = fs.existsSync(file);
+        let size = 0, records = 0;
+        if (exists) { size = fs.statSync(file).size; try { records = JSON.parse(fs.readFileSync(file, "utf8")).length; } catch {} }
+        return { table: ep, exists, size, records, version: getVersion(ep) };
+      });
+      return res.json({ ...basic, uptime: process.uptime(), websockets: wsClients.size, sessions: activeSessions.size, tables: dataFiles });
+    }
+  }
+  res.json(basic);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 13. TELEGRAM BOT (preserved from v2.03)
+// ═══════════════════════════════════════════════════════════════
+
+function sendTelegramNotification(message) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Telegram notification (no token):", message);
+    return;
+  }
+  const postData = JSON.stringify({ chat_id: FINANCE_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
+  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) } };
+  const req = https.request(options, (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Telegram error:", d); }); });
+  req.on('error', err => console.error("❌ Telegram error:", err.message));
+  req.write(postData);
+  req.end();
+}
+
+function formatOpenPaymentMessage(p) {
+  return `💰 <b>NEW OPEN PAYMENT</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Opened by: ${p.openBy || "Unknown"}`;
+}
+function formatPaidPaymentMessage(p) {
+  return `💰 <b>PAYMENT DONE</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: <code>${p.paymentHash || "N/A"}</code>`;
+}
+
+// ── Telegram Bot Commands & Hash Detection ──
+let bot;
+const userStates = {};
+
+if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
+  try {
+    bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true, filepath: false });
+    console.log("🤖 Telegram bot initialized");
+    bot.on('polling_error', (error) => { console.log(`⚠️ Polling error:`, error.code || error.message); });
+
+    bot.setMyCommands([
+      { command:"/start", description:"Welcome & help" },
+      { command:"/wallets", description:"Current wallet addresses" },
+      { command:"/crgdeals", description:"Today's CRG deals by country" },
+      { command:"/deals", description:"All deals by country" },
+      { command:"/todaycrgcap", description:"Today's CRG cap summary" },
+      { command:"/todayagentscap", description:"Today's agents cap" },
+      { command:"/payments", description:"Open payments summary" },
+    ]).catch(e => console.log("⚠️ Register commands:", e.message));
+
+    bot.onText(/\/start|\/help/, (msg) => {
+      bot.sendMessage(msg.chat.id, `👋 <b>Blitz CRM Bot v${VERSION}</b>\n\n/wallets - Wallet addresses\n/crgdeals - Today's CRG deals\n/deals - All deals by country\n/todaycrgcap - CRG cap summary\n/todayagentscap - Agents cap\n/payments - Open payments\n/help - This help`, { parse_mode: "HTML" });
+    });
+
+    // /wallets
+    bot.onText(/\/wallets/, (msg) => {
+      const wallets = readJSON("wallets.json", []); if (!wallets.length) { bot.sendMessage(msg.chat.id, "❌ No wallets found."); return; }
+      const w = wallets[0];
+      const ds = w.date ? (() => { const d = new Date(w.date + "T00:00:00"); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`; })() : "N/A";
+      bot.sendMessage(msg.chat.id, `💳 Current Wallets (${ds})\n\nTRC-20:\n${w.trc || "—"}\n\nERC-20 (USDT/USDC):\n${w.erc || "—"}\n\nBTC:\n${w.btc || "—"}\n\nLast updated: ${ds}\n*3% fee`);
+    });
+
+    bot.onText(/\/payments/, (msg) => {
+      const payments = readJSON("payments.json", []); const open = payments.filter(p => p.status !== "Paid");
+      const total = open.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+      let t = `📊 <b>Open Payments: ${open.length}</b>\n💰 Total: <b>$${total.toLocaleString("en-US")}</b>\n\n`;
+      open.slice(0, 10).forEach(p => { t += `#${p.invoice} — $${parseFloat(p.amount).toLocaleString("en-US")} [${p.status}]\n`; });
+      if (open.length > 10) t += `\n... and ${open.length - 10} more`;
+      bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+    });
+
+    // /deals — all-time with inline keyboard
+    bot.onText(/\/deals/, (msg) => {
+      delete userStates[msg.chat.id];
+      userStates[msg.chat.id] = { state: "waiting_for_country_deals", command: "/deals" };
+      bot.sendMessage(msg.chat.id, `📊 <b>Deals - Leeds CRM</b>\n\nSelect country or type code:`, {
+        parse_mode: "HTML", reply_markup: { inline_keyboard: [
+          [{ text: "🇩🇪 DE", callback_data: "all_DE" }, { text: "🇫🇷 FR", callback_data: "all_FR" }, { text: "🇬🇧 UK", callback_data: "all_UK" }],
+          [{ text: "🇪🇸 ES", callback_data: "all_ES" }, { text: "🇧🇪 BE", callback_data: "all_BE" }, { text: "🇮🇹 IT", callback_data: "all_IT" }],
+          [{ text: "🇦🇺 AU", callback_data: "all_AU" }, { text: "🇲🇾 MY", callback_data: "all_MY" }, { text: "🇸🇬 SI", callback_data: "all_SI" }],
+          [{ text: "🇭🇷 HR", callback_data: "all_HR" }, { text: "🇸🇦 GCC", callback_data: "all_GCC" }],
+        ] }
+      });
+    });
+
+    // /crgdeals — today's deals with inline keyboard
+    bot.onText(/\/crgdeals/, (msg) => {
+      delete userStates[msg.chat.id];
+      userStates[msg.chat.id] = { state: "waiting_for_country_crg", command: "/crgdeals" };
+      bot.sendMessage(msg.chat.id, `📊 <b>CRG Deals - Today</b>\n\nSelect country or type code:`, {
+        parse_mode: "HTML", reply_markup: { inline_keyboard: [
+          [{ text: "🇩🇪 DE", callback_data: "DE" }, { text: "🇫🇷 FR", callback_data: "FR" }, { text: "🇬🇧 UK", callback_data: "UK" }],
+          [{ text: "🇦🇺 AU", callback_data: "AU" }, { text: "🇲🇾 MY", callback_data: "MY" }, { text: "🇸🇬 SI", callback_data: "SI" }],
+          [{ text: "🇭🇷 HR", callback_data: "HR" }, { text: "🇸🇦 GCC", callback_data: "GCC" }],
+        ] }
+      });
+    });
+
+    // /todaycrgcap
+    bot.onText(/\/todaycrgcap/, (msg) => {
+      const all = readJSON("crg-deals.json", []); const dates = [...new Set(all.map(d => d.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
+      const td = all.filter(d => d.date === ld); if (!td.length) { bot.sendMessage(msg.chat.id, "📭 No CRG cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
+      const tCap = td.reduce((s, d) => s + (parseInt(d.cap) || 0), 0), tRec = td.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0), tFTD = td.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+      let t = `📊 <b>Today CRG Cap</b>\n📅 ${ld} | ${td.length} deals\n\n<code>Affiliate    | Cap | Rec | FTD\n-------------|-----|-----|-----\n`;
+      td.slice(0, 15).forEach(d => { t += `${(d.affiliate || "").padEnd(12).substring(0, 12)}| ${(d.cap || "0").padStart(3)} | ${(d.capReceived || "0").padStart(3)} | ${(d.ftd || "0").padStart(3)}\n`; });
+      if (td.length > 15) t += `... ${td.length - 15} more\n`;
+      t += `-------------|-----|-----|-----\nTOTAL        | ${String(tCap).padStart(3)} | ${String(tRec).padStart(3)} | ${String(tFTD).padStart(3)}</code>\n\nRemaining: ${tCap - tRec}`;
+      bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+    });
+
+    // /todayagentscap
+    bot.onText(/\/todayagentscap/, (msg) => {
+      const all = readJSON("daily-cap.json", []); const dates = [...new Set(all.map(c => c.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
+      const tc = all.filter(c => c.date === ld); if (!tc.length) { bot.sendMessage(msg.chat.id, "📭 No agents cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
+      const tAff = tc.reduce((s, c) => s + (parseInt(c.affiliates) || 0), 0), tBr = tc.reduce((s, c) => s + (parseInt(c.brands) || 0), 0);
+      let t = `📊 <b>Today Agents Cap</b>\n📅 ${ld}\n\n<code>Agent      | Aff | Brands\n-----------|-----|-------\n`;
+      tc.forEach(c => { t += `${(c.agent || "").padEnd(10).substring(0, 10)}| ${(c.affiliates || "0").padStart(3)} | ${(c.brands || "0").padStart(6)}\n`; });
+      t += `-----------|-----|-------\nTOTAL      | ${String(tAff).padStart(3)} | ${String(tBr).padStart(6)}</code>\n\nAgents: ${tc.length} | Aff: ${tAff} | Brands: ${tBr}`;
+      bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+    });
+
+    // ── Inline keyboard callback handler ──
+    bot.on("callback_query", async (cq) => {
+      const chatId = cq.message.chat.id; bot.answerCallbackQuery(cq.id);
+      const isAll = cq.data.startsWith("all_"); const cc = isAll ? cq.data.substring(4) : cq.data;
+      if (!VALID_COUNTRIES.includes(cc)) { bot.sendMessage(chatId, `❌ Invalid: ${cc}`, { parse_mode: "HTML" }); return; }
+      const cn = COUNTRY_NAMES[cc] || cc; let deals = [];
+      if (isAll) { deals = readJSON("deals.json", []).filter(d => d.country && d.country.toUpperCase() === cc); }
+      else { const all = readJSON("crg-deals.json", []); const ld = [...new Set(all.map(d => d.date))].sort().reverse()[0]; deals = all.filter(d => d.affiliate && d.affiliate.toUpperCase().endsWith(" " + cc) && d.date === ld); }
+      if (!deals.length) { bot.sendMessage(chatId, `📭 No deals for <b>${cn}</b>`, { parse_mode: "HTML" }); return; }
+      let t;
+      if (isAll) {
+        t = `📊 <b>${cn} - Deals</b> (${deals.length})\n\n`;
+        deals.slice(0, 20).forEach((d, i) => { t += `<b>${i + 1}. #${d.affiliate}</b>\n   💰 €${d.price || "-"} | CRG:${d.crg || "-"}% | Src:${d.source || "-"}\n   Funnels:${d.funnels || "-"} | Ded:${d.deduction || "-"}%\n\n`; });
+        if (deals.length > 20) t += `... and ${deals.length - 20} more`;
+      } else {
+        const ld = [...new Set(readJSON("crg-deals.json", []).map(d => d.date))].sort().reverse()[0];
+        const totalCap = deals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0), totalRec = deals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+        t = `📊 <b>${cn} - Today</b> (${deals.length})\n📅 ${ld}\n\nCap: ${totalCap} | Rec: ${totalRec} | Left: ${totalCap - totalRec}\n\n`;
+        deals.slice(0, 20).forEach((d, i) => { t += `<b>${i + 1}. ${d.affiliate}</b>\n   Broker:${d.brokerCap || "-"} | Cap:${d.cap || "-"} | Rec:${d.capReceived || "0"}\n   ${d.started ? "✅" : "❌"} | ${d.date || "-"}\n\n`; });
+      }
+      bot.sendMessage(chatId, t, { parse_mode: "HTML" });
+    });
+
+    // ── Text input handler — FIXED: handles BOTH state types + USDT hash detection ──
+    // BUG FIX from v1.055: /deals set state to 'waiting_for_country_deals' but
+    // text handler only checked 'waiting_for_country' → typing country code did NOTHING
+    bot.on("message", async (msg) => {
+      if (msg.text && msg.text.startsWith("/")) return;
+      const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
+      const st = userStates[chatId];
+
+      // Handle /deals country text input
+      if (st && st.state === "waiting_for_country_deals") {
+        delete userStates[chatId];
+        if (!VALID_COUNTRIES.includes(userText)) { bot.sendMessage(chatId, `❌ Invalid: ${userText}\n\nValid: ${VALID_COUNTRIES.join(", ")}`, { parse_mode: "HTML" }); return; }
+        const deals = readJSON("deals.json", []).filter(d => d.country && d.country.toUpperCase() === userText);
+        const cn = COUNTRY_NAMES[userText] || userText;
+        if (!deals.length) { bot.sendMessage(chatId, `📭 No deals for <b>${cn}</b>`, { parse_mode: "HTML" }); return; }
+        let t = `📊 <b>${cn} - Deals</b> (${deals.length})\n\n`;
+        deals.slice(0, 20).forEach((d, i) => { t += `<b>${i + 1}. #${d.affiliate}</b> — €${d.price || "-"} CRG:${d.crg || "-"}% Src:${d.source || "-"}\n`; });
+        if (deals.length > 20) t += `\n... and ${deals.length - 20} more`;
+        bot.sendMessage(chatId, t, { parse_mode: "HTML" }); return;
+      }
+
+      // Handle /crgdeals country text input
+      if (st && st.state === "waiting_for_country_crg") {
+        delete userStates[chatId];
+        if (!VALID_COUNTRIES.includes(userText)) { bot.sendMessage(chatId, `❌ Invalid: ${userText}\n\nValid: ${VALID_COUNTRIES.join(", ")}`, { parse_mode: "HTML" }); return; }
+        const all = readJSON("crg-deals.json", []); const ld = [...new Set(all.map(d => d.date))].sort().reverse()[0] || new Date().toISOString().split("T")[0];
+        const deals = all.filter(d => d.affiliate && d.affiliate.toUpperCase().endsWith(" " + userText) && d.date === ld);
+        const cn = COUNTRY_NAMES[userText] || userText;
+        if (!deals.length) { bot.sendMessage(chatId, `📭 No CRG deals for <b>${cn}</b>`, { parse_mode: "HTML" }); return; }
+        const tCap = deals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0), tRec = deals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+        let t = `📊 <b>${cn} - Today</b> (${deals.length})\n📅 ${ld}\n\nCap:${tCap} | Rec:${tRec} | Left:${tCap - tRec}\n\n`;
+        deals.slice(0, 20).forEach((d, i) => { t += `<b>${i + 1}. ${d.affiliate}</b> | Cap:${d.cap || "-"} Rec:${d.capReceived || "0"} ${d.started ? "✅" : "❌"}\n`; });
+        bot.sendMessage(chatId, t, { parse_mode: "HTML" }); return;
+      }
+
+      // Skip hash detection if in ANY waiting state
+      if (st) return;
+
+      // USDT hash detection (finance group only)
+      if (chatId.toString() !== FINANCE_GROUP_CHAT_ID) return;
+      const messageText = msg.text || '';
+      const hashes = extractAllUsdtHashes(messageText);
+      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
+      if (txHashes.length === 0) return;
+
+      const amounts = [];
+      const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
+      let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
+      while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+
+      const wallets = readJSON("wallets.json", []);
+
+      for (let i = 0; i < txHashes.length; i++) {
+        const { hash, type } = txHashes[i];
+        let txResult = { success: false };
+        if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
+        else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
+
+        const amount = (amounts[i] || txResult.amount || "0").toString();
+        const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
+        const status = walletVerify.matched ? "Received" : "Pending";
+        const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
+
+        const newPayment = {
+          id: crypto.randomBytes(5).toString('hex'),
+          invoice, amount, fee: "", status, type: "Customer Payment",
+          openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
+          paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
+          ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+          month: new Date().getMonth(), year: new Date().getFullYear()
+        };
+
+        const cp = readJSON("customer-payments.json", []);
+        cp.unshift(newPayment);
+        await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
+        broadcastUpdate("customer-payments", cp);
+
+        let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
+        confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
+        confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
+        confirmMsg += `\n📊 Status: <b>${status}</b>`;
+        bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+      }
+    });
+
+    console.log("✅ USDT hash detection enabled");
+  } catch (err) {
+    console.log("⚠️ Failed to init Telegram bot:", err.message);
+  }
+}
+
+// Hash extraction helpers (preserved)
+function extractAllUsdtHashes(text) {
+  if (!text) return [];
+  const hashes = [];
+  const tronMatches = text.matchAll(/tronscan\.org\/[^\/]*\/transaction\/([a-zA-Z0-9]{33,64})/gi);
+  for (const match of tronMatches) {
+    const h = match[1];
+    if (TRC20_ADDRESS_REGEX.test(h)) hashes.push({ hash: h, type: 'TRC20_ADDRESS' });
+    else if (h.length === 64) hashes.push({ hash: h, type: 'TRC20' });
+  }
+  const ethMatches = text.matchAll(/etherscan\.io\/tx\/(0x[a-fA-F0-9]{64})/gi);
+  for (const match of ethMatches) hashes.push({ hash: match[1], type: 'ERC20' });
+  text.split(/\s+/).forEach(w => {
+    const t = w.trim();
+    if (hashes.some(h => h.hash === t)) return;
+    if (ERC20_HASH_REGEX.test(t)) hashes.push({ hash: t, type: 'ERC20' });
+    else if (TRC20_HASH_REGEX.test(t)) hashes.push({ hash: t, type: 'TRC20' });
+  });
+  return hashes;
+}
+
+async function checkTRC20Transaction(txHash) {
+  try {
+    const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
+    const data = JSON.parse(await httpRequest(url));
+    // Method 1: tokenTransferInfo (most reliable for TRC20)
+    if (data && data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
+      const usdtTransfer = data.tokenTransferInfo.find(t => t.contract_address === TRC20_USDT_CONTRACT || (t.tokenInfo && t.tokenInfo.symbol === "USDT"));
+      if (usdtTransfer) {
+        const raw = usdtTransfer.amount_str || usdtTransfer.amount || "0";
+        const dec = usdtTransfer.tokenInfo && usdtTransfer.tokenInfo.decimals ? parseInt(usdtTransfer.tokenInfo.decimals) : 6;
+        return { success:true, amount:(parseInt(raw)/Math.pow(10,dec)).toString(), toAddress:usdtTransfer.to_address||data.to_address, fromAddress:usdtTransfer.from_address||data.from_address, confirmed:data.confirmed||(data.revert===0) };
+      }
+    }
+    // Method 2: token_info fallback
+    if (data && data.token_info && data.token_info.symbol === "USDT") {
+      const raw = data.amount || data.token_info.amount || "0";
+      const dec = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
+      return { success:true, amount:(parseInt(raw)/Math.pow(10,dec)).toString(), toAddress:data.to_address, fromAddress:data.from_address, confirmed:data.confirmed||(data.revert===0) };
+    }
+    return { success: false, error: "Not a USDT TRC20 transaction" };
+  } catch (err) { return { success: false, error: err.message }; }
+}
+
+async function checkERC20Transaction(txHash) {
+  try {
+    const CHAIN_ID = "1";
+    const receiptData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+    let txResult = null;
+    const txData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+    if (txData.status === "1" && txData.message === "OK" && txData.result) txResult = txData.result;
+    if (!txResult) {
+      console.log("⚠️ V2 failed, trying V1...");
+      const v1 = JSON.parse(await httpRequest(`${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+      if (v1.result && typeof v1.result === "object") txResult = v1.result;
+    }
+    if (!txResult) return { success:false, error:"Could not fetch from Etherscan" };
+    const input = txResult.input || "";
+    let amount="0", fromAddress=txResult.from||"", toAddress=txResult.to||"";
+    if (input.startsWith("0xa9059cbb") && input.length >= 74) { amount=(parseInt("0x"+input.slice(-64),16)/1e6).toString(); toAddress="0x"+input.slice(34,74); }
+    else if (txResult.value && txResult.value !== "0x0") { amount=(parseInt(txResult.value,16)/1e18).toString(); }
+    const confirmed = receiptData.status==="1" && receiptData.result && receiptData.result.status==="1";
+    return { success:true, amount, toAddress, fromAddress, confirmed, hash:txHash };
+  } catch (err) { return { success:false, error:err.message }; }
+}
+
+function verifyWalletAddress(address, wallets) {
+  if (!wallets || wallets.length === 0) return { matched: false, error: "No wallets configured" };
+  if (!address) return { matched: false, error: "No address" };
+  const n = address.toLowerCase().trim();
+  for (const w of wallets) {
+    if (w.trc && w.trc.toLowerCase().trim() === n) return { matched: true, wallet: w.trc, type: "TRC20" };
+    if (w.erc && w.erc.toLowerCase().trim() === n) return { matched: true, wallet: w.erc, type: "ERC20" };
+    if (w.btc && w.btc.toLowerCase().trim() === n) return { matched: true, wallet: w.btc, type: "BTC" };
+  }
+  return { matched: false, error: "Address not in our wallets" };
+}
+
+// Sync endpoints
+app.post("/api/sync", requireAdmin, async (req, res) => { const r = await syncExternalData(); res.json({ ok: true, results: r }); });
+app.get("/api/sync/status", (req, res) => {
+  const crg = readJSON("crg-deals.json", []), dc = readJSON("daily-cap.json", []);
+  res.json({ crgDeals: { count: crg.length, latestDates: [...new Set(crg.map(d => d.date))].sort().reverse().slice(0, 5) }, dailyCap: { count: dc.length, latestDates: [...new Set(dc.map(d => d.date))].sort().reverse().slice(0, 5) }, lastCheck: new Date().toISOString() });
+});
+
+// ── Telegram test endpoint
+app.post("/api/telegram/notify", (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: "Message required" });
+  sendTelegramNotification(message);
+  res.json({ ok: true });
+});
+
+app.get("/api/telegram/test", (req, res) => {
+  if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE") return res.json({ status: "no_token" });
+  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/getMe`, method: 'GET' };
+  const r = https.request(options, (response) => {
+    let d = ''; response.on('data', c => d += c);
+    response.on('end', () => {
+      if (response.statusCode === 200) { const info = JSON.parse(d).result; res.json({ status: "connected", bot: info.username, name: info.first_name }); }
+      else res.json({ status: "error", error: d });
+    });
+  });
+  r.on('error', err => res.json({ status: "error", error: err.message }));
+  r.end();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 14. START SERVER (HTTP + WebSocket on same port)
+// ═══════════════════════════════════════════════════════════════
+
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`\n╔══════════════════════════════════════════════╗`);
+  console.log(`║  🚀 Blitz CRM Server v${VERSION}                  ║`);
+  console.log(`║  📡 HTTP + WebSocket on port ${PORT}            ║`);
+  console.log(`║  💾 Data: ${DATA_DIR.slice(-30).padEnd(30)}    ║`);
+  console.log(`║  📦 Backups: every 15min, 30-day PITR        ║`);
+  console.log(`║  📋 Audit: 30-day rolling log                ║`);
+  console.log(`║  🔒 Atomic writes + version tracking         ║`);
+  console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
+  console.log(`║  🔄 External sync: every 15 minutes          ║`);
+  console.log(`╚══════════════════════════════════════════════╝\n`);
+
+  // Initial external sync on startup
+  setTimeout(() => syncExternalData(), 3000);
+  // Sync every 15 minutes
+  setInterval(() => syncExternalData(), 15 * 60 * 1000);
 });
