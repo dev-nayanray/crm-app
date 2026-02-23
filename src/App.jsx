@@ -129,11 +129,14 @@ const INITIAL_USERS = [
   { email: "zack@blitz-affiliates.marketing", passwordHash: "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e", name: "Zack" },
   { email: "cameron@blitz-affiliates.marketing", passwordHash: "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476", name: "Cameron" },
   { email: "wpnayanray@gmail.com", passwordHash: "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0", name: "Nayan" },
+  { email: "kazarian.oleksandra.v@gmail.com", passwordHash: "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020", name: "Oleksandra" },
+  { email: "kate@blitz-affiliates.marketing", passwordHash: "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8", name: "Kate" },
+  { email: "alehandro@blitz-affiliates.marketing", passwordHash: "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262", name: "Alehandro" },
 ];
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "2.02";
+const VERSION = "2.04";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -158,8 +161,10 @@ async function apiGet(endpoint) {
     if (!res.ok) throw new Error('not ok');
     serverOnline = true;
     const data = await res.json();
-    // Also backup to localStorage
-    lsSave(endpoint, data);
+    // Only cache to localStorage if data is non-empty — NEVER overwrite good cache with empty
+    if (Array.isArray(data) && data.length > 0) {
+      lsSave(endpoint, data);
+    }
     return data;
   } catch (e) { serverOnline = false; return null; }
 }
@@ -167,14 +172,28 @@ async function apiGet(endpoint) {
 async function apiSave(endpoint, data) {
   // Always save to localStorage first (instant)
   lsSave(endpoint, data);
-  // Then try API
+  // Then try API — with retry on failure
   try {
-    await fetch(`${API_BASE}/${endpoint}`, {
+    const res = await fetch(`${API_BASE}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data), signal: AbortSignal.timeout(4000),
     });
+    if (!res.ok) throw new Error('save failed');
     serverOnline = true;
-  } catch (e) { serverOnline = false; }
+    return true;
+  } catch (e) {
+    serverOnline = false;
+    // Retry once after 2 seconds
+    try {
+      await new Promise(r => setTimeout(r, 2000));
+      await fetch(`${API_BASE}/${endpoint}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data), signal: AbortSignal.timeout(4000),
+      });
+      serverOnline = true;
+      return true;
+    } catch (e2) { return false; }
+  }
 }
 
 // Telegram API functions
@@ -2880,11 +2899,41 @@ export default function App() {
         // ── SERVER IS ONLINE: it is the source of truth ──
         const pushTasks = [];
 
-        // For EACH table independently: server > localStorage > defaults
-        // USERS
-        if (u !== null && u.length > 0) { setUsers(u); }
-        else if (lu && lu.length > 0) { setUsers(lu); pushTasks.push(apiSave('users', lu)); }
-        else { pushTasks.push(apiSave('users', INITIAL_USERS)); }
+        // USERS — special handling: MERGE + UPDATE
+        // Adds new users from INITIAL_USERS, updates passwords if changed in code
+        if (u !== null && u.length > 0) {
+          const serverMap = new Map(u.map(x => [x.email, x]));
+          let changed = false;
+          // Add missing users
+          const newUsers = INITIAL_USERS.filter(x => !serverMap.has(x.email));
+          if (newUsers.length > 0) changed = true;
+          // Update passwords for existing users if hash differs in INITIAL_USERS
+          const updated = u.map(su => {
+            const iu = INITIAL_USERS.find(x => x.email === su.email);
+            if (iu && iu.passwordHash && iu.passwordHash !== su.passwordHash) {
+              changed = true;
+              return { ...su, passwordHash: iu.passwordHash };
+            }
+            return su;
+          });
+          const merged = [...updated, ...newUsers];
+          if (changed) {
+            setUsers(merged);
+            pushTasks.push(apiSave('users', merged));
+          } else {
+            setUsers(u);
+          }
+        } else if (lu && lu.length > 0) {
+          // Server empty, localStorage has users — merge with INITIAL too
+          const lsEmails = new Set(lu.map(x => x.email));
+          const newUsers = INITIAL_USERS.filter(x => !lsEmails.has(x.email));
+          const merged = newUsers.length > 0 ? [...lu, ...newUsers] : lu;
+          setUsers(merged);
+          pushTasks.push(apiSave('users', merged));
+        } else {
+          setUsers(INITIAL_USERS);
+          pushTasks.push(apiSave('users', INITIAL_USERS));
+        }
 
         // PAYMENTS
         if (p !== null && p.length > 0) { setPayments(p); }
@@ -2965,13 +3014,14 @@ export default function App() {
   }, [loaded]);
 
   // Save on every change: localStorage (instant) + API (shared)
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('users', users); }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('payments', payments); }, [payments]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('customer-payments', cpPayments); }, [cpPayments]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('crg-deals', crgDeals); }, [crgDeals]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('daily-cap', dcEntries); }, [dcEntries]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('deals', dealsData); }, [dealsData]);
-  useEffect(() => { if (!skipSave.current && loaded) apiSave('wallets', walletsData); }, [walletsData]);
+  // SAFETY: Never save empty arrays — protects against accidental data wipe
+  useEffect(() => { if (!skipSave.current && loaded && users.length > 0) apiSave('users', users); }, [users]);
+  useEffect(() => { if (!skipSave.current && loaded && payments.length > 0) apiSave('payments', payments); }, [payments]);
+  useEffect(() => { if (!skipSave.current && loaded && cpPayments.length > 0) apiSave('customer-payments', cpPayments); }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded && crgDeals.length > 0) apiSave('crg-deals', crgDeals); }, [crgDeals]);
+  useEffect(() => { if (!skipSave.current && loaded && dcEntries.length > 0) apiSave('daily-cap', dcEntries); }, [dcEntries]);
+  useEffect(() => { if (!skipSave.current && loaded && dealsData.length > 0) apiSave('deals', dealsData); }, [dealsData]);
+  useEffect(() => { if (!skipSave.current && loaded && walletsData.length > 0) apiSave('wallets', walletsData); }, [walletsData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
 
