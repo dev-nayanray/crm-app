@@ -972,11 +972,13 @@ function sendTelegramNotification(message) {
   req.end();
 }
 
-function formatOpenPaymentMessage(p) {
-  return `💰 <b>NEW OPEN PAYMENT</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Opened by: ${p.openBy || "Unknown"}`;
-}
 function formatPaidPaymentMessage(p) {
-  return `💰 <b>PAYMENT DONE</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: <code>${p.paymentHash || "N/A"}</code>`;
+  return `💰 PAYMENT  #${p.invoice} marked as PAID 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${parseFloat(p.amount).toLocaleString("en-US")}
+👤 Paid by: ${p.openBy || "Unknown"}
+Payment Hash: ${p.paymentHash || "N/A"}`;
 }
 
 // ── Telegram Bot Commands & Hash Detection ──
