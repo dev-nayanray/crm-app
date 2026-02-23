@@ -22,7 +22,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
 const PORT = 3001;
-const VERSION = "3.09";
+const VERSION = "3.10";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -253,24 +253,16 @@ function getVersion(table) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EXTERNAL API SYNC (Leeds CRM)
+// INTERNAL DATA SYNC (reads local files directly — no HTTP self-call)
 // ═══════════════════════════════════════════════════════════════
-async function fetchExternalCrgDeals() {
-  try { return { success:true, data:JSON.parse(await httpRequest("https://leeds-crm.com/api/crg-deals",true)) }; }
-  catch(e) { console.log("⚠️ External CRG error:",e.message); return { success:false }; }
-}
-async function fetchExternalDailyCap() {
-  try { return { success:true, data:JSON.parse(await httpRequest("https://leeds-crm.com/api/daily-cap",true)) }; }
-  catch(e) { console.log("⚠️ External Daily Cap error:",e.message); return { success:false }; }
-}
+// NOTE: Previously these fetched from https://leeds-crm.com/api/* which IS this server.
+// After adding auth, the server couldn't call its own endpoints. Now reads files directly.
 async function syncExternalData() {
-  console.log("🔄 Starting external data sync...");
-  const crg = await fetchExternalCrgDeals();
-  if (crg.success && Array.isArray(crg.data)) { await lockedWrite("crg-deals.json",crg.data,{action:"external_sync",user:"system",details:`${crg.data.length} CRG deals`}); broadcastUpdate("crg-deals",crg.data); console.log(`✅ CRG synced: ${crg.data.length}`); }
-  const cap = await fetchExternalDailyCap();
-  if (cap.success && Array.isArray(cap.data)) { await lockedWrite("daily-cap.json",cap.data,{action:"external_sync",user:"system",details:`${cap.data.length} daily cap`}); broadcastUpdate("daily-cap",cap.data); console.log(`✅ Daily cap synced: ${cap.data.length}`); }
-  console.log("🔄 External sync done");
-  return { crgDeals:crg.success, dailyCap:cap.success };
+  console.log("🔄 Internal data sync check...");
+  const crg = readJSON("crg-deals.json", []);
+  const cap = readJSON("daily-cap.json", []);
+  console.log(`📊 Data status: ${crg.length} CRG deals, ${cap.length} daily cap entries`);
+  return { crgDeals: crg.length > 0, dailyCap: cap.length > 0 };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -456,9 +448,10 @@ app.use((req, res, next) => {
 
 // Input sanitization middleware
 app.use('/api/', (req, res, next) => {
-  if (req.method === 'POST' && req.body) {
-    // Prevent prototype pollution
-    if (typeof req.body === 'object' && ('__proto__' in req.body || 'constructor' in req.body || 'prototype' in req.body)) {
+  if (req.method === 'POST' && req.body && typeof req.body === 'object') {
+    // Prevent prototype pollution — check OWN properties only (not inherited ones like 'constructor')
+    const keys = Object.keys(req.body);
+    if (keys.includes('__proto__') || keys.includes('prototype')) {
       return res.status(400).json({ error: "Invalid input" });
     }
   }
