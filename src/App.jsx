@@ -332,11 +332,12 @@ const INITIAL_USERS = [
   { email: "kazarian.oleksandra.v@gmail.com", passwordHash: "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020", name: "Oleksandra" },
   { email: "kate@blitz-affiliates.marketing", passwordHash: "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8", name: "Kate" },
   { email: "alehandro@blitz-affiliates.marketing", passwordHash: "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262", name: "Alehandro" },
+  { email: "john.leon@blitz-affiliates.marketing", passwordHash: "77dbc78facad3377d2c8dc621e532a70e82b3931a19dfe5bc972d748ff535a90", name: "John Leon" },
 ];
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.06";
+const VERSION = "3.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1700,6 +1701,35 @@ function LoginScreen({ onLogin, users }) {
             {loading ? "Signing in..." : "Sign In →"}
           </button>
         </form>
+        {/* Open in App button (PWA / mobile) */}
+        <div style={{ textAlign: "center", marginTop: 20 }}>
+          <a href={window.location.href}
+            onClick={(e) => {
+              e.preventDefault();
+              // Try to open as standalone PWA
+              if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
+                return; // Already in app mode
+              }
+              // For mobile: prompt to add to home screen
+              if (/iPhone|iPad|Android/i.test(navigator.userAgent)) {
+                alert("To open as an app:\n\n📱 iPhone/iPad: Tap Share → Add to Home Screen\n🤖 Android: Tap ⋮ menu → Add to Home Screen");
+              } else {
+                // Desktop: try to trigger install prompt
+                if (window.deferredPrompt) {
+                  window.deferredPrompt.prompt();
+                } else {
+                  window.open(window.location.href, '_blank', 'toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=420,height=800');
+                }
+              }
+            }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.15)", borderRadius: 12, color: "#38BDF8", fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", transition: "all 0.2s ease" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(56,189,248,0.12)"; e.currentTarget.style.borderColor = "rgba(56,189,248,0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(56,189,248,0.06)"; e.currentTarget.style.borderColor = "rgba(56,189,248,0.15)"; }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            Open in App
+          </a>
+        </div>
       </div>
     </div>
   );
