@@ -88,7 +88,7 @@ seedUsers();
 // SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
 // Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
+const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002183891044";
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -1031,8 +1031,11 @@ function formatPaidPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
 
   return `💰 PAYMENT ${p.invoice} marked as PAID 💰
+<<<<<<< HEAD
+=======
 
-📋 Invoice: #${p.invoice}
+>>>>>>> 229d8186 (aniter)
+
 💵 Amount: $${amount}
 👤 Paid by: ${p.openBy || "Unknown"}
 Payment Hash: ${p.paymentHash || "N/A"}`;
