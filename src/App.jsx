@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.11";
+const VERSION = "3.12";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -370,15 +370,17 @@ function authHeaders() { const t = getSessionToken(); return t ? { 'Authorizatio
 // ── Version tracking per table (for conflict resolution)
 const dataVersions = {};
 
+// Flag to force logout on 401 (avoids reload loop)
+let sessionExpiredFlag = false;
+
 async function apiGet(endpoint) {
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
     if (res.status === 401) {
-      // Session expired on server — force re-login (NOT "offline")
-      console.log("⚠️ Session expired (401) — forcing re-login");
+      // Session expired on server — clear everything, flag for logout
       setSessionToken(null);
       localStorage.removeItem('blitz_session');
-      window.location.reload(); // Reload page → shows login screen
+      sessionExpiredFlag = true;
       return null;
     }
     if (!res.ok) throw new Error('not ok');
@@ -404,10 +406,10 @@ async function apiSave(endpoint, data, userEmail) {
       signal: AbortSignal.timeout(5000),
     });
     if (res.status === 401) {
-      // Session expired — force re-login
+      // Session expired — flag for logout
       setSessionToken(null);
       localStorage.removeItem('blitz_session');
-      window.location.reload();
+      sessionExpiredFlag = true;
       return false;
     }
     if (!res.ok) throw new Error('save failed');
@@ -774,7 +776,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
     { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
     { key: "crg", label: "CRG Deals", color: "#F59E0B" },
     { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
-    { key: "deals", label: "Deals", color: "#10B981" },
+    { key: "deals", label: "Offers", color: "#10B981" },
   ];
   if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
 
@@ -997,7 +999,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
             {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
-              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
+              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
@@ -1015,17 +1017,17 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
               onMouseEnter={e => e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = rowBg}
             >
-              <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                 >{p.invoice}</span>
               </td>
-              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Affiliate Payment"}</span>
               </td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {p.status !== "Paid" && statusOptions && onStatusChange ? (
                   <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
                     style={{ padding: "3px 4px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(statusStyle(p.status)), appearance: "auto", outline: "none", maxWidth: "100%" }}>
@@ -1035,14 +1037,14 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
                   <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
@@ -1125,7 +1127,7 @@ const ALL_PAGES = [
   { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
   { key: "crg", label: "CRG Deals", color: "#F59E0B" },
   { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
-  { key: "deals", label: "Deals", color: "#10B981" },
+  { key: "deals", label: "Offers", color: "#10B981" },
 ];
 
 function getPageAccess(user) {
@@ -1315,7 +1317,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
             {(wallets || []).map((w, wi) => {
               const isEditing = editingWallet === w.id;
               return (
-                <div key={w.id} style={{ padding: "18px 24px", borderBottom: wi < wallets.length - 1 ? "1px solid #F1F5F9" : "none" }}>
+                <div key={w.id} style={{ padding: "18px 24px", borderBottom: wi < wallets.length - 1 ? "1px solid #CBD5E1" : "none" }}>
                   {isEditing ? (
                     <div>
                       <div style={{ marginBottom: 12 }}>
@@ -1363,11 +1365,11 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                       </div>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <tbody>
-                          <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
+                          <tr style={{ borderBottom: "1px solid #CBD5E1" }}>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B", width: 120 }}>TRC:</td>
                             <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.trc || "—"}</td>
                           </tr>
-                          <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
+                          <tr style={{ borderBottom: "1px solid #CBD5E1" }}>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>ERC USDT/USDC:</td>
                             <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.erc || "—"}</td>
                           </tr>
@@ -1972,27 +1974,27 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
             {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
-              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
+              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
         <tbody>
           {sorted.map((p, i) => (
-            <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+            <tr key={p.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
             >
-              <td style={{ padding: "7px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                 >{p.invoice}</span>
               </td>
-              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Brand Payment"}</span>
               </td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange ? (
                   <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
                     style={{ padding: "3px 4px", borderRadius: 4, fontSize: 11, fontWeight: 700, border: "1px solid #E2E8F0", cursor: "pointer", ...(CP_STATUS_COLORS[p.status] || {}), appearance: "auto", outline: "none", maxWidth: "100%" }}>
@@ -2002,14 +2004,14 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
                   <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
@@ -2466,37 +2468,37 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                   <thead>
                     <tr style={{ background: "#FFFFFF" }}>
                       {["Affiliate","Deal","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Funnel","Actions"].map(h =>
-                        <th key={h} style={{ padding: "8px 12px", textAlign: "center", color: "#676879", fontSize: 12, fontWeight: 600, borderBottom: "1px solid #E6E9EF", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap", ...(h === "Affiliate" ? { textAlign: "left", paddingLeft: 14 } : {}) }}>{h}</th>
+                        <th key={h} style={{ padding: "8px 12px", textAlign: "center", color: "#676879", fontSize: 12, fontWeight: 600, borderBottom: "2px solid #94A3B8", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", ...(h === "Affiliate" ? { textAlign: "left", paddingLeft: 14 } : {}) }}>{h}</th>
                       )}
                     </tr>
                   </thead>
                   <tbody>
                     {sortedItems.map((d, rowIdx) => (
-                      <tr key={d.id} style={{ borderBottom: "1px solid #E6E9EF", transition: "background 0.15s", height: 37 }}
+                      <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s", height: 37 }}
                         onMouseEnter={e => e.currentTarget.style.background = "#F5F6F8"}
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <td style={{ padding: "0 14px", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", color: "#323338" }}>
+                        <td style={{ padding: "0 14px", fontWeight: 600, fontSize: 14, borderRight: "1px solid #CBD5E1", color: "#323338" }}>
                           <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0073EA", textDecoration: "none" }}
                             onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"}
                             onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}
                           >{d.affiliate}</span>
                         </td>
-                        <td style={{ padding: "0 12px", borderRight: "1px solid #E6E9EF", fontSize: 13, color: "#323338" }}>{d.deal || ""}</td>
-                        <td style={{ padding: "0 14px", borderRight: "1px solid #E6E9EF", fontSize: 13, color: "#323338", textAlign: "center" }}>{d.brokerCap || ""}</td>
-                        <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
+                        <td style={{ padding: "0 12px", borderRight: "1px solid #CBD5E1", fontSize: 13, color: "#323338" }}>{d.deal || ""}</td>
+                        <td style={{ padding: "0 14px", borderRight: "1px solid #CBD5E1", fontSize: 13, color: "#323338", textAlign: "center" }}>{d.brokerCap || ""}</td>
+                        <td style={{ padding: 0, borderRight: "1px solid #CBD5E1", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
                         </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
-                        <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #CBD5E1", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
+                        <td style={{ padding: 0, borderRight: "1px solid #CBD5E1", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.madeSale || ""}</span>
                         </td>
-                        <td style={{ padding: "0 10px", borderRight: "1px solid #E6E9EF", textAlign: "center" }}>
+                        <td style={{ padding: "0 10px", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
                           {d.started ? <span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span> : ""}
                         </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
-                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
-                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
+                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
+                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
                         <td style={{ padding: "4px 8px" }}>
                           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             {crgSort === "manual" && <>
@@ -2543,7 +2545,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
           );
         })}
 
-        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No deals yet. Click "New Affiliate" to add one.</div>}
+        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No offers yet. Click "New Affiliate" to add one.</div>}
       </main>
 
       {modalOpen && (
@@ -2848,7 +2850,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                   <thead>
                     <tr style={{ background: "#F8FAFC" }}>
                       {["Agent","Affiliates","Brands","Total","Actions"].map(h =>
-                        <th key={h} style={{ padding: "12px 16px", textAlign: h === "Agent" ? "left" : "center", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{h}</th>
+                        <th key={h} style={{ padding: "12px 16px", textAlign: h === "Agent" ? "left" : "center", color: "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{h}</th>
                       )}
                     </tr>
                   </thead>
@@ -2856,18 +2858,18 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                     {sortedItems.map((d, rowIdx) => {
                       const t = (parseInt(d.affiliates) || 0) + (parseInt(d.brands) || 0);
                       return (
-                        <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+                        <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
                           onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
                           onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding: "12px 16px", borderRight: "1px solid #F1F5F9" }}>
+                          <td style={{ padding: "12px 16px", borderRight: "1px solid #CBD5E1" }}>
                             <span onClick={() => { setEditEntry(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3, fontWeight: 700, fontSize: 15 }}
                               onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                               onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                             >{d.agent}</span>
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.affiliates || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.brands || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{t || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.affiliates || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.brands || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #CBD5E1" }}>{t || ""}</td>
                           <td style={{ padding: "8px 8px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
                               {dcSort !== "alpha" && <>
@@ -3073,11 +3075,11 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Deals</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Offers</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 600, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search deals..."
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search offers..."
                 style={{ ...inp, paddingLeft: 40, background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, fontSize: 14 }} />
             </div>
             {sortCol && <button onClick={() => { setSortCol(null); setSortDir("asc"); }}
@@ -3085,7 +3087,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
             >↕ Sort: {sortCol} {sortDir === "asc" ? "↑" : "↓"} ✕</button>}
             <button onClick={() => { setEditDeal(null); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)", whiteSpace: "nowrap" }}
-            >{I.plus} New Deal</button>
+            >{I.plus} New Offer</button>
           </div>
         </div>
 
@@ -3093,7 +3095,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16, marginBottom: 28, maxWidth: 300 }}>
           <div style={{ background: "#ECFDF5", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "#10B981" }} />
-            <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Total Deals</div>
+            <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Total Offers</div>
             <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#10B981" }}>{filtered.length}</div>
           </div>
         </div>
@@ -3117,7 +3119,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                     { key: null, label: "Actions" },
                   ].map(h =>
                     <th key={h.label} onClick={h.key ? () => handleColumnSort(h.key) : undefined}
-                      style={{ padding: "12px 14px", textAlign: h.label === "Funnels" || h.label === "Source" ? "left" : "center", color: sortCol === h.key ? "#0F172A" : "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap", cursor: h.key ? "pointer" : "default", userSelect: "none", background: sortCol === h.key ? "#E2E8F0" : "transparent", transition: "background 0.15s" }}
+                      style={{ padding: "12px 14px", textAlign: h.label === "Funnels" || h.label === "Source" ? "left" : "center", color: sortCol === h.key ? "#0F172A" : "#64748B", fontSize: 12, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", cursor: h.key ? "pointer" : "default", userSelect: "none", background: sortCol === h.key ? "#E2E8F0" : "transparent", transition: "background 0.15s" }}
                       onMouseEnter={e => { if (h.key) e.currentTarget.style.background = "#E2E8F0"; }}
                       onMouseLeave={e => { if (h.key) e.currentTarget.style.background = sortCol === h.key ? "#E2E8F0" : "transparent"; }}
                     >
@@ -3132,21 +3134,21 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No deals yet. Click "New Deal" to add one.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No offers yet. Click "New Offer" to add one.</td></tr>
                 )}
                 {sorted.map((d, i) => (
-                  <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
+                  <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
                     onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                     {/* Client: affiliate + country */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 15, borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 15, borderRight: "1px solid #CBD5E1" }}>
                       <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                         onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                         onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                       >{d.affiliate}</span>
                     </td>
                     {/* Country badge — click to edit */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
                       {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "country" ? (
                         <input autoFocus value={d.country || ""} onChange={e => handleInlineChange(d.id, "country", e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2))}
                           onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
@@ -3157,7 +3159,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       )}
                     </td>
                     {/* Price — click to edit */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #CBD5E1" }}>
                       {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "price" ? (
                         <input autoFocus type="number" value={d.price || ""} onChange={e => handleInlineChange(d.id, "price", e.target.value)}
                           onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
@@ -3168,7 +3170,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       )}
                     </td>
                     {/* CRG — click to edit */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #CBD5E1" }}>
                       {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "crg" ? (
                         <input autoFocus type="number" value={d.crg || ""} onChange={e => handleInlineChange(d.id, "crg", e.target.value)}
                           onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
@@ -3179,19 +3181,19 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       )}
                     </td>
                     {/* Deal Type */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
                       <span style={{ background: "#0EA5E9", color: "#FFF", padding: "4px 14px", borderRadius: 4, fontSize: 13, fontWeight: 700, letterSpacing: 0.5 }}>{d.dealType || "CRG"}</span>
                     </td>
                     {/* Deductions */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 13, fontWeight: 600, borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 13, fontWeight: 600, borderRight: "1px solid #CBD5E1" }}>
                       {d.deduction ? <span style={{ background: "#FEF3C7", color: "#92400E", padding: "4px 12px", borderRadius: 4 }}>{d.deduction}</span> : <span style={{ color: "#CBD5E1" }}>Not specified</span>}
                     </td>
                     {/* Funnels */}
-                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #CBD5E1", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnels || ""}</td>
                     {/* Source */}
-                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #F1F5F9", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.source || ""}</td>
+                    <td style={{ padding: "12px 14px", fontSize: 13, color: "#334155", borderRight: "1px solid #CBD5E1", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.source || ""}</td>
                     {/* Date */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 12, color: "#64748B", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 12, color: "#64748B", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>
                       {d.date ? (() => { const dt = new Date(d.date + "T00:00:00"); return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`; })() : ""}
                     </td>
                     {/* Actions */}
@@ -3215,18 +3217,18 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
           </div>
           {/* Footer */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 20px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
-            <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{filtered.length} deals</span>
+            <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{filtered.length} offers</span>
           </div>
         </div>
       </main>
 
       {modalOpen && (
-        <Modal title={editDeal ? "Edit Deal" : "New Deal"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
+        <Modal title={editDeal ? "Edit Offer" : "New Offer"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
           <DealsForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
         </Modal>
       )}
       {delConfirm && (
-        <Modal title="Delete Deal" onClose={() => setDelConfirm(null)}>
+        <Modal title="Delete Offer" onClose={() => setDelConfirm(null)}>
           <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
             <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
@@ -3327,6 +3329,14 @@ function AppInner() {
         [u, p, cp, crg, dc, dl, wl] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
         ]);
+        // If any API call got 401 → session expired, force logout
+        if (sessionExpiredFlag) {
+          sessionExpiredFlag = false;
+          setUser(null);
+          skipSave.current = false;
+          setLoaded(true);
+          return;
+        }
       }
 
       // Step 2: Get localStorage data (backup/offline cache)
