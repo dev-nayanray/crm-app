@@ -989,19 +989,57 @@ function sendTelegramNotification(message) {
     console.log("📱 Telegram notification skipped (no token configured)");
     return;
   }
-  const postData = JSON.stringify({ chat_id: FINANCE_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
-  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) } };
-  const req = https.request(options, (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Telegram error:", d); }); });
+
+  const postData = JSON.stringify({
+    chat_id: FINANCE_GROUP_CHAT_ID,
+    text: message
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ Telegram error:", d);
+    });
+  });
+
   req.on('error', err => console.error("❌ Telegram error:", err.message));
   req.write(postData);
   req.end();
 }
 
+
 function formatOpenPaymentMessage(p) {
-  return `💰 <b>NEW OPEN PAYMENT</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Opened by: ${p.openBy || "Unknown"}`;
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+
+  return `💰 NEW OPEN PAYMENT 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+👤 Opened by: ${p.openBy || "Unknown"}`;
 }
+
+
 function formatPaidPaymentMessage(p) {
-  return `💰 <b>PAYMENT DONE</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: <code>${p.paymentHash || "N/A"}</code>`;
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+
+  return `💰 PAYMENT #${p.invoice} marked as PAID 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+👤 Paid by: ${p.openBy || "Unknown"}
+Payment Hash: ${p.paymentHash || "N/A"}`;
 }
 
 // ── Telegram Bot Commands & Hash Detection ──
