@@ -3205,10 +3205,17 @@ function AppInner() {
     (async () => {
       skipSave.current = true;
 
-      // Step 1: Fetch ALL data from server
-      const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
-      ]);
+      // Only fetch from server if we have an auth token (i.e., user is logged in)
+      // Without token, server returns 401 → just use localStorage/defaults
+      const hasToken = !!getSessionToken();
+
+      // Step 1: Fetch ALL data from server (only if authenticated)
+      let u = null, p = null, cp = null, crg = null, dc = null, dl = null, wl = null;
+      if (hasToken) {
+        [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+          apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
+        ]);
+      }
 
       // Step 2: Get localStorage data (backup/offline cache)
       const lu = lsGet('users', null);
@@ -3309,13 +3316,13 @@ function AppInner() {
       setTimeout(() => { skipSave.current = false; }, 800);
       setTimeout(() => setSyncBanner(null), 5000);
     })();
-  }, []);
+  }, [user]); // Re-run when user logs in (gets session token)
 
   // ── WebSocket Real-Time Sync ──
   // Primary: WebSocket for instant updates from other users
   // Fallback: HTTP polling every 15s if WebSocket disconnected
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !getSessionToken()) return;
 
     // Connect WebSocket
     connectWebSocket();
