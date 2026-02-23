@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.09";
+const VERSION = "3.10";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1597,6 +1597,7 @@ function LoginScreen({ onLogin, users }) {
   const [blocked, setBlocked] = useState(0);
   const [serverStatus, setServerStatus] = useState("checking");
   const [debugData, setDebugData] = useState(null);
+  const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1687,10 +1688,19 @@ function LoginScreen({ onLogin, users }) {
             onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
             onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
           <label htmlFor="login-password" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Password</label>
-          <input id="login-password" name="password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
-            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
-            onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+          <div style={{ position: "relative", marginBottom: 20 }}>
+            <input id="login-password" name="password" type={showPass ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
+              style={{ width: "100%", padding: "12px 16px", paddingRight: 48, background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", transition: "all 0.2s ease", caretColor: "#38BDF8" }}
+              onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
+              onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+            <button type="button" onClick={() => setShowPass(!showPass)} tabIndex={-1}
+              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 4, color: showPass ? "#38BDF8" : "#64748B", transition: "color 0.2s" }}>
+              {showPass
+                ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              }
+            </button>
+          </div>
 
           {error && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>}
 
