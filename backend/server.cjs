@@ -20,8 +20,9 @@ const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
+app.disable('x-powered-by'); // Don't reveal tech stack
 const PORT = 3001;
-const VERSION = "3.8";
+const VERSION = "3.09";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -473,33 +474,81 @@ const LOGIN_MAX_ATTEMPTS = 3;
 const LOGIN_BLOCK_DURATION = 15 * 60 * 1000;
 setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
 
+// ═══════════════════════════════════════════════════════════════
+// LOGIN — v3.09 BULLETPROOF with INITIAL_USERS fallback + debug
+// ═══════════════════════════════════════════════════════════════
 app.post("/api/login", (req, res) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
+
+  // IP blocking
   const entry = loginAttempts.get(ip);
   if (entry && entry.count >= LOGIN_MAX_ATTEMPTS) {
     const unblockTime = entry.firstAttempt + LOGIN_BLOCK_DURATION;
     if (now < unblockTime) {
       const minsLeft = Math.ceil((unblockTime - now) / 60000);
-      console.log(`🚫 Blocked login from IP: ${ip} (${minsLeft} min left)`);
-      writeAuditLog("auth", "blocked_login", req.body?.email || "unknown", `IP: ${ip}, ${minsLeft}m left`);
       return res.status(429).json({ error: "blocked", minutes: minsLeft });
     }
     loginAttempts.delete(ip);
   }
+
   const { email, passwordHash } = req.body;
-  if (!email || !passwordHash) return res.status(400).json({ error: "Missing credentials" });
-  const users = readJSON("users.json", []);
+  if (!email || !passwordHash) {
+    return res.status(400).json({ error: "Missing credentials" });
+  }
+
   const emailClean = email.toLowerCase().trim();
-  const matchedUser = users.find(u => u.email === emailClean);
-  const user = matchedUser && matchedUser.passwordHash === passwordHash ? matchedUser : null;
+  const fileUsers = readJSON("users.json", []);
+
+  // ── TRY 1: Match against users.json file ──
+  let user = fileUsers.find(u => u.email === emailClean && u.passwordHash === passwordHash);
+
+  // ── TRY 2: If file match failed, try INITIAL_USERS (hardcoded, always has hashes) ──
+  if (!user) {
+    const seedMatch = INITIAL_USERS.find(u => u.email === emailClean && u.passwordHash === passwordHash);
+    if (seedMatch) {
+      user = seedMatch;
+      // Also repair users.json while we're at it
+      const existing = fileUsers.find(u => u.email === emailClean);
+      if (existing && !existing.passwordHash) {
+        existing.passwordHash = passwordHash;
+        try { fs.writeFileSync(path.join(DATA_DIR, "users.json"), JSON.stringify(fileUsers, null, 2), "utf8"); } catch {}
+        console.log("🔧 Auto-repaired passwordHash for:", emailClean);
+      } else if (!existing) {
+        fileUsers.push(seedMatch);
+        try { fs.writeFileSync(path.join(DATA_DIR, "users.json"), JSON.stringify(fileUsers, null, 2), "utf8"); } catch {}
+        console.log("👤 Auto-added missing user:", emailClean);
+      }
+    }
+  }
+
+  // ── Build debug info ──
+  const fileMatch = fileUsers.find(u => u.email === emailClean);
+  const seedMatch = INITIAL_USERS.find(u => u.email === emailClean);
+  const debug = {
+    v: VERSION,
+    fileUsersCount: fileUsers.length,
+    fileUsersWithHash: fileUsers.filter(u => !!u.passwordHash).length,
+    fileUsersNoHash: fileUsers.filter(u => !u.passwordHash).map(u => u.email),
+    emailInFile: !!fileMatch,
+    emailInSeed: !!seedMatch,
+    fileHasHash: fileMatch ? !!fileMatch.passwordHash : false,
+    seedHasHash: seedMatch ? !!seedMatch.passwordHash : false,
+    hashMatchFile: fileMatch ? (fileMatch.passwordHash === passwordHash) : false,
+    hashMatchSeed: seedMatch ? (seedMatch.passwordHash === passwordHash) : false,
+    serverHash8: fileMatch && fileMatch.passwordHash ? fileMatch.passwordHash.substring(0, 8) : "NONE",
+    clientHash8: passwordHash.substring(0, 8),
+    seedHash8: seedMatch ? seedMatch.passwordHash.substring(0, 8) : "NONE",
+    dataDir: DATA_DIR,
+    fileExists: fs.existsSync(path.join(DATA_DIR, "users.json")),
+  };
 
   if (user) {
     loginAttempts.delete(ip);
     const token = generateSessionToken();
     activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
-    console.log(`✅ Login success: ${email} from ${ip} (token issued)`);
-    writeAuditLog("auth", "login_success", email, `IP: ${ip}`);
+    console.log("✅ Login OK:", emailClean, "| method:", fileMatch && fileMatch.passwordHash === passwordHash ? "file" : "seed_fallback");
+    writeAuditLog("auth", "login_success", emailClean, "IP: " + ip);
     res.json({ ok: true, token, user: { email: user.email, name: user.name, pageAccess: user.pageAccess } });
   } else {
     const current = loginAttempts.get(ip) || { count: 0, firstAttempt: now };
@@ -508,18 +557,11 @@ app.post("/api/login", (req, res) => {
     loginAttempts.set(ip, current);
     const remaining = LOGIN_MAX_ATTEMPTS - current.count;
 
-    // Diagnostic info for debugging
-    const hasHash = matchedUser ? (!!matchedUser.passwordHash) : false;
-    const hashMatch = matchedUser && matchedUser.passwordHash ? (matchedUser.passwordHash === passwordHash) : false;
-    console.log(`❌ Login failed: ${emailClean} from ${ip} (${current.count}/${LOGIN_MAX_ATTEMPTS}) | users: ${users.length} | emailFound: ${!!matchedUser} | hasHash: ${hasHash} | hashMatch: ${hashMatch}`);
-    if (matchedUser && !hashMatch) {
-      console.log(`   Server hash: ${(matchedUser.passwordHash || 'MISSING').substring(0, 12)}...`);
-      console.log(`   Client hash: ${passwordHash.substring(0, 12)}...`);
-    }
-    writeAuditLog("auth", "login_failed", emailClean, `IP: ${ip}, attempt ${current.count}/${LOGIN_MAX_ATTEMPTS}, emailFound: ${!!matchedUser}, hasHash: ${hasHash}`);
+    console.log("❌ Login FAILED:", emailClean, "| debug:", JSON.stringify(debug));
+    writeAuditLog("auth", "login_failed", emailClean, "IP: " + ip);
 
-    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15 });
-    else res.status(401).json({ error: "invalid", remaining, userCount: users.length, emailFound: !!matchedUser, hasHash, hashMatch });
+    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15, debug });
+    else res.status(401).json({ error: "invalid", remaining, debug });
   }
 });
 
@@ -865,6 +907,26 @@ app.post("/api/backup", requireAdmin, (req, res) => {
 // 12. HEALTH & MONITORING
 // ═══════════════════════════════════════════════════════════════
 
+// ── TEMPORARY DEBUG ENDPOINT — remove after login is fixed! ──
+app.get("/api/debug/users", (req, res) => {
+  const users = readJSON("users.json", []);
+  const safe = users.map(u => ({
+    email: u.email,
+    name: u.name,
+    hasPasswordHash: !!u.passwordHash,
+    hashLength: u.passwordHash ? u.passwordHash.length : 0,
+    hashPrefix: u.passwordHash ? u.passwordHash.substring(0, 12) + "..." : "MISSING",
+    pageAccess: u.pageAccess,
+  }));
+  res.json({
+    totalUsers: users.length,
+    withHash: users.filter(u => !!u.passwordHash).length,
+    withoutHash: users.filter(u => !u.passwordHash).length,
+    seedRanOnStartup: true,
+    users: safe,
+  });
+});
+
 app.get("/api/health", (req, res) => {
   // Public: basic status only. No sensitive info.
   const basic = { status: "ok", version: VERSION, time: new Date().toISOString() };
@@ -906,7 +968,7 @@ app.get("/api/debug/users", (req, res) => {
 
 function sendTelegramNotification(message) {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Telegram notification (no token):", message);
+    console.log("📱 Telegram notification skipped (no token configured)");
     return;
   }
   const postData = JSON.stringify({ chat_id: FINANCE_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
@@ -1233,7 +1295,7 @@ app.get("/api/telegram/test", (req, res) => {
       else res.json({ status: "error", error: d });
     });
   });
-  r.on('error', err => res.json({ status: "error", error: err.message }));
+  r.on('error', err => { console.error("TG test error:", err.message); res.json({ status: "error", error: "Connection failed" }); });
   r.end();
 });
 
