@@ -28,5 +28,25 @@
     "email": "wpnayanray@gmail.com",
     "passwordHash": "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0",
     "name": "Nayan"
+  },
+  {
+    "email": "kazarian.oleksandra.v@gmail.com",
+    "passwordHash": "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020",
+    "name": "Oleksandra"
+  },
+  {
+    "email": "kate@blitz-affiliates.marketing",
+    "passwordHash": "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8",
+    "name": "Kate"
+  },
+  {
+    "email": "alehandro@blitz-affiliates.marketing",
+    "passwordHash": "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262",
+    "name": "Alehandro"
+  },
+  {
+    "email": "john.leon@blitz-affiliates.marketing",
+    "passwordHash": "77dbc78facad3377d2c8dc621e532a70e82b3931a19dfe5bc972d748ff535a90",
+    "name": "John Leon"
   }
 ]
