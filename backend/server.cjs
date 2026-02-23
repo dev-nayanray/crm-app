@@ -1020,27 +1020,27 @@ function sendTelegramNotification(message) {
 }
 
 
-// function formatOpenPaymentMessage(p) {
-//   const amount = Number(p.amount || 0).toLocaleString("en-US");
-
-//   return `💰 NEW OPEN PAYMENT 💰
-
-// 📋 Invoice: #${p.invoice}
-// 💵 Amount: $${amount}
-// 👤 Opened by: ${p.openBy || "Unknown"}`;
-// }
-
-
-function formatPaidPaymentMessage(p) {
+function formatOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
 
-  return `💰 PAYMENT #${p.invoice} marked as PAID 💰
+  return `💰 NEW OPEN PAYMENT 💰
 
 📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
-👤 Paid by: ${p.openBy || "Unknown"}
-Payment Hash: ${p.paymentHash || "N/A"}`;
+👤 Opened by: ${p.openBy || "Unknown"}`;
 }
+
+
+// function formatPaidPaymentMessage(p) {
+//   const amount = Number(p.amount || 0).toLocaleString("en-US");
+
+//   return `💰 PAYMENT #${p.invoice} marked as PAID 💰
+
+// 📋 Invoice: #${p.invoice}
+// 💵 Amount: $${amount}
+// 👤 Paid by: ${p.openBy || "Unknown"}
+// Payment Hash: ${p.paymentHash || "N/A"}`;
+// }
 
 // ── Telegram Bot Commands & Hash Detection ──
 let bot;
