@@ -22,7 +22,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
 const PORT = 3001;
-const VERSION = "3.10";
+const VERSION = "3.11";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -88,7 +88,7 @@ seedUsers();
 // SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
 // Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002830517753";
+const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -361,8 +361,29 @@ app.use(express.json({ limit: "10mb" }));
 // ── FIX C4/C5: Session token authentication ──
 // On login success, server issues a random session token.
 // All data/admin endpoints require valid token in Authorization header.
-const activeSessions = new Map(); // token → { email, name, pageAccess, createdAt }
-const SESSION_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+// activeSessions loaded above from SESSION_FILE
+const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days (matches client)
+const SESSION_FILE = path.join(DATA_DIR, ".sessions.json");
+
+// Load persisted sessions on startup (survive server restarts)
+const activeSessions = new Map();
+try {
+  if (fs.existsSync(SESSION_FILE)) {
+    const saved = JSON.parse(fs.readFileSync(SESSION_FILE, "utf8"));
+    const now = Date.now();
+    for (const [token, session] of Object.entries(saved)) {
+      if (now - session.createdAt < SESSION_DURATION) activeSessions.set(token, session);
+    }
+    console.log(`🔑 Restored ${activeSessions.size} active sessions from disk`);
+  }
+} catch (e) { console.log("⚠️ Could not restore sessions:", e.message); }
+
+function persistSessions() {
+  try {
+    const obj = Object.fromEntries(activeSessions);
+    fs.writeFileSync(SESSION_FILE, JSON.stringify(obj), "utf8");
+  } catch {}
+}
 
 function generateSessionToken() {
   return crypto.randomBytes(32).toString("hex");
@@ -370,9 +391,11 @@ function generateSessionToken() {
 
 function cleanupSessions() {
   const now = Date.now();
+  let cleaned = 0;
   for (const [token, session] of activeSessions) {
-    if (now - session.createdAt > SESSION_DURATION) activeSessions.delete(token);
+    if (now - session.createdAt > SESSION_DURATION) { activeSessions.delete(token); cleaned++; }
   }
+  if (cleaned > 0) { persistSessions(); console.log(`🧹 Cleaned ${cleaned} expired sessions`); }
 }
 setInterval(cleanupSessions, 60 * 60 * 1000); // Hourly cleanup
 
@@ -540,6 +563,7 @@ app.post("/api/login", (req, res) => {
     loginAttempts.delete(ip);
     const token = generateSessionToken();
     activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
+    persistSessions();
     console.log("✅ Login OK:", emailClean, "| method:", fileMatch && fileMatch.passwordHash === passwordHash ? "file" : "seed_fallback");
     writeAuditLog("auth", "login_success", emailClean, "IP: " + ip);
     res.json({ ok: true, token, user: { email: user.email, name: user.name, pageAccess: user.pageAccess } });
@@ -566,6 +590,7 @@ app.post("/api/logout", (req, res) => {
     if (activeSessions.has(token)) {
       writeAuditLog("auth", "logout", activeSessions.get(token).email, "");
       activeSessions.delete(token);
+      persistSessions();
     }
   }
   res.json({ ok: true });
@@ -972,13 +997,11 @@ function sendTelegramNotification(message) {
   req.end();
 }
 
+function formatOpenPaymentMessage(p) {
+  return `💰 <b>NEW OPEN PAYMENT</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Opened by: ${p.openBy || "Unknown"}`;
+}
 function formatPaidPaymentMessage(p) {
-  return `💰 PAYMENT  #${p.invoice} marked as PAID 💰
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${parseFloat(p.amount).toLocaleString("en-US")}
-👤 Paid by: ${p.openBy || "Unknown"}
-Payment Hash: ${p.paymentHash || "N/A"}`;
+  return `💰 <b>PAYMENT DONE</b>\n\n📋 Invoice: <b>#${p.invoice}</b>\n💵 Amount: <b>$${parseFloat(p.amount).toLocaleString("en-US")}</b>\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: <code>${p.paymentHash || "N/A"}</code>`;
 }
 
 // ── Telegram Bot Commands & Hash Detection ──
