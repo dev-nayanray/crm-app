@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.10";
+const VERSION = "3.11";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -373,11 +373,17 @@ const dataVersions = {};
 async function apiGet(endpoint) {
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
-    if (res.status === 401) { setSessionToken(null); serverOnline = false; return null; }
+    if (res.status === 401) {
+      // Session expired on server — force re-login (NOT "offline")
+      console.log("⚠️ Session expired (401) — forcing re-login");
+      setSessionToken(null);
+      localStorage.removeItem('blitz_session');
+      window.location.reload(); // Reload page → shows login screen
+      return null;
+    }
     if (!res.ok) throw new Error('not ok');
     serverOnline = true;
     const json = await res.json();
-    // Support new format { data, version, timestamp } AND legacy format (raw array)
     const data = json.data || json;
     if (json.version) dataVersions[endpoint] = json.version;
     if (Array.isArray(data) && data.length > 0) {
@@ -397,7 +403,13 @@ async function apiSave(endpoint, data, userEmail) {
       body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
       signal: AbortSignal.timeout(5000),
     });
-    if (res.status === 401) { setSessionToken(null); serverOnline = false; return false; }
+    if (res.status === 401) {
+      // Session expired — force re-login
+      setSessionToken(null);
+      localStorage.removeItem('blitz_session');
+      window.location.reload();
+      return false;
+    }
     if (!res.ok) throw new Error('save failed');
     const json = await res.json();
     if (json.version) dataVersions[endpoint] = json.version;
