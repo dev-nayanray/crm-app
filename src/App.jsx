@@ -1,4 +1,204 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from "react";
+
+/* ── Dark Mode Context ── */
+const ThemeContext = createContext({ dark: false, toggle: () => {} });
+function useTheme() { return useContext(ThemeContext); }
+
+/* ── Toast Notification System ── */
+const ToastContext = createContext({ addToast: () => {} });
+function useToast() { return useContext(ToastContext); }
+
+function ToastProvider({ children }) {
+  const [toasts, setToasts] = useState([]);
+  const addToast = useCallback((message, type = "info", duration = 3000) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  }, []);
+
+  const colors = {
+    success: { bg: "rgba(16,185,129,0.12)", border: "#10B981", color: "#34D399", icon: "✅" },
+    error: { bg: "rgba(239,68,68,0.12)", border: "#EF4444", color: "#F87171", icon: "❌" },
+    warning: { bg: "rgba(245,158,11,0.12)", border: "#F59E0B", color: "#FBBF24", icon: "⚠️" },
+    info: { bg: "rgba(56,189,248,0.12)", border: "#38BDF8", color: "#7DD3FC", icon: "ℹ️" },
+  };
+
+  return (
+    <ToastContext.Provider value={{ addToast }}>
+      {children}
+      <div style={{ position: "fixed", top: 16, right: 16, zIndex: 99999, display: "flex", flexDirection: "column", gap: 8, maxWidth: 380 }}>
+        {toasts.map(t => {
+          const c = colors[t.type] || colors.info;
+          return (
+            <div key={t.id} style={{ padding: "12px 18px", background: c.bg, border: `1px solid ${c.border}`, borderRadius: 12, color: c.color, fontSize: 14, fontWeight: 500, boxShadow: "0 8px 30px rgba(0,0,0,0.25), 0 0 40px rgba(56,189,248,0.06)", backdropFilter: "blur(16px)", display: "flex", alignItems: "center", gap: 10, animation: "slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1)" }}>
+              <span style={{ fontSize: 18 }}>{c.icon}</span>
+              <span>{t.message}</span>
+            </div>
+          );
+        })}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+/* ── Dark Mode CSS — Deep Space 2026 ── */
+const darkModeCSS = `
+  :root {
+    --space-void: #080B14;
+    --space-deep: #0C1021;
+    --space-mid: #111729;
+    --space-surface: #161D31;
+    --space-elevated: #1C2540;
+    --space-border: rgba(56, 189, 248, 0.08);
+    --space-border-glow: rgba(56, 189, 248, 0.15);
+    --neon-cyan: #38BDF8;
+    --neon-lime: #A3E635;
+    --neon-pink: #F472B6;
+    --neon-purple: #A78BFA;
+    --neon-orange: #FB923C;
+    --text-primary: #F1F5F9;
+    --text-secondary: #94A3B8;
+    --text-muted: #64748B;
+    --glass-bg: rgba(12, 16, 33, 0.7);
+    --glass-border: rgba(56, 189, 248, 0.1);
+    --glass-blur: 20px;
+    --shadow-neon: 0 0 20px rgba(56, 189, 248, 0.08), 0 0 60px rgba(56, 189, 248, 0.03);
+    --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.15); } 50% { box-shadow: 0 0 20px rgba(56,189,248,0.3); } }
+  @keyframes border-flow { 0% { border-color: rgba(56,189,248,0.1); } 50% { border-color: rgba(56,189,248,0.25); } 100% { border-color: rgba(56,189,248,0.1); } }
+  @keyframes stagger-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+  .dark-mode {
+    background: var(--space-void) !important;
+    color: var(--text-primary) !important;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+  .dark-mode * { transition: background 0.2s ease, border-color 0.2s ease, color 0.15s ease, box-shadow 0.2s ease; }
+
+  /* Glass containers */
+  .dark-mode .blitz-header {
+    background: rgba(12, 16, 33, 0.85) !important;
+    backdrop-filter: blur(20px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+    border-color: var(--space-border) !important;
+    border-bottom: 1px solid var(--glass-border) !important;
+    box-shadow: 0 1px 0 rgba(56,189,248,0.05), 0 4px 30px rgba(0,0,0,0.3) !important;
+  }
+
+  .dark-mode input, .dark-mode select, .dark-mode textarea {
+    background: var(--space-deep) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--space-border-glow) !important;
+    caret-color: var(--neon-cyan);
+  }
+  .dark-mode input:focus, .dark-mode select:focus, .dark-mode textarea:focus {
+    border-color: var(--neon-cyan) !important;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.1), 0 0 20px rgba(56,189,248,0.05) !important;
+    outline: none !important;
+  }
+  .dark-mode input::placeholder { color: var(--text-muted) !important; }
+
+  /* Tables — the core */
+  .dark-mode table { color: var(--text-primary) !important; border-collapse: separate !important; border-spacing: 0 !important; }
+  .dark-mode table thead tr { background: var(--space-deep) !important; }
+  .dark-mode table thead th {
+    border-color: var(--space-border) !important;
+    color: var(--text-secondary) !important;
+    text-transform: uppercase !important;
+    font-size: 10px !important;
+    letter-spacing: 0.8px !important;
+  }
+  .dark-mode table tbody tr {
+    border-color: var(--space-border) !important;
+    animation: stagger-in 0.3s ease both;
+  }
+  .dark-mode table tbody tr:hover {
+    background: rgba(56, 189, 248, 0.04) !important;
+    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.06);
+  }
+  .dark-mode table td, .dark-mode table th {
+    border-color: var(--space-border) !important;
+    color: var(--text-secondary) !important;
+  }
+
+  /* Surfaces */
+  .dark-mode [style*="background: #FFFFFF"], .dark-mode [style*="background:#FFFFFF"] {
+    background: var(--space-surface) !important;
+    border-color: var(--space-border) !important;
+    box-shadow: var(--shadow-neon) !important;
+  }
+  .dark-mode [style*="background: #F8FAFC"], .dark-mode [style*="background:#F8FAFC"] { background: var(--space-deep) !important; }
+  .dark-mode [style*="background: #F1F5F9"], .dark-mode [style*="background:#F1F5F9"] { background: var(--space-void) !important; }
+  .dark-mode [style*="color: #0F172A"], .dark-mode [style*="color:#0F172A"] { color: var(--text-primary) !important; }
+  .dark-mode [style*="color: #334155"], .dark-mode [style*="color:#334155"] { color: var(--text-secondary) !important; }
+  .dark-mode [style*="color: #64748B"], .dark-mode [style*="color:#64748B"] { color: var(--text-muted) !important; }
+  .dark-mode [style*="color: #475569"] { color: var(--text-secondary) !important; }
+  .dark-mode [style*="border: 1px solid #E2E8F0"], .dark-mode [style*="border:1px solid #E2E8F0"] { border-color: var(--space-border) !important; }
+  .dark-mode [style*="border-color: #E2E8F0"] { border-color: var(--space-border) !important; }
+  .dark-mode [style*="border-bottom: 2px solid #E2E8F0"] { border-color: var(--space-border-glow) !important; }
+
+  /* Modal glass effect */
+  .dark-mode .blitz-modal-content {
+    background: rgba(22, 29, 49, 0.95) !important;
+    backdrop-filter: blur(24px) saturate(180%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+    border: 1px solid var(--glass-border) !important;
+    box-shadow: var(--shadow-elevated), 0 0 80px rgba(56,189,248,0.05) !important;
+    animation: fadeUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+
+  /* Buttons — tactile feedback */
+  .dark-mode button {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+  .dark-mode button:active {
+    transform: scale(0.96) !important;
+  }
+  .dark-mode button[style*="background: linear-gradient"]:hover,
+  .dark-mode button[style*="background:linear-gradient"]:hover {
+    box-shadow: 0 0 24px rgba(14,165,233,0.35) !important;
+    filter: brightness(1.1) !important;
+  }
+
+  /* Summary cards — glass bento */
+  .dark-mode [style*="borderRadius: 14"] {
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+  }
+
+  /* Scrollbar */
+  .dark-mode ::-webkit-scrollbar { width: 6px; height: 6px; }
+  .dark-mode ::-webkit-scrollbar-track { background: var(--space-void); }
+  .dark-mode ::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.15); border-radius: 3px; }
+  .dark-mode ::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.3); }
+
+  /* Neon status badges in dark */
+  .dark-mode [style*="background: #FEF3C7"] { background: rgba(245,158,11,0.15) !important; color: #FBBF24 !important; }
+  .dark-mode [style*="background: #ECFDF5"] { background: rgba(16,185,129,0.12) !important; }
+  .dark-mode [style*="background: #EFF6FF"] { background: rgba(56,189,248,0.1) !important; }
+  .dark-mode [style*="background: #FEF2F2"] { background: rgba(239,68,68,0.1) !important; }
+  .dark-mode [style*="background: #FFFBEB"] { background: rgba(245,158,11,0.1) !important; }
+  .dark-mode [style*="background: #E2E8F0"] { background: var(--space-elevated) !important; color: var(--text-secondary) !important; }
+
+  /* Login screen */
+  .dark-mode [style*="minHeight: \\"100vh\\"][style*="background: \\"#F1F5F9"] { background: var(--space-void) !important; }
+
+  /* Selection */
+  .dark-mode ::selection { background: rgba(56,189,248,0.25); color: #FFF; }
+
+  /* Mobile nav dark */
+  .dark-mode [style*="position: fixed"][style*="background: #FFFFFF"] {
+    background: rgba(12, 16, 33, 0.97) !important;
+    border-color: var(--space-border) !important;
+  }
+`;
 
 /* ── Mobile Responsive CSS ── */
 const mobileCSS = `
@@ -136,7 +336,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "2.04";
+const VERSION = "2.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -148,20 +348,30 @@ function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.strin
 const API_BASE = (() => {
   const h = window.location.hostname;
   if (h === 'localhost' || h === '127.0.0.1') return 'http://localhost:3001/api';
-  // Use same-origin /api path — Nginx proxies to Node.js backend
-  // This works with both HTTP and HTTPS, no mixed content issues
   return '/api';
 })();
 
+const WS_URL = (() => {
+  const h = window.location.hostname;
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  if (h === 'localhost' || h === '127.0.0.1') return 'ws://localhost:3001/ws';
+  return `${proto}//${h}/ws`;
+})();
+
 let serverOnline = false;
+
+// ── Version tracking per table (for conflict resolution)
+const dataVersions = {};
 
 async function apiGet(endpoint) {
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, { signal: AbortSignal.timeout(4000) });
     if (!res.ok) throw new Error('not ok');
     serverOnline = true;
-    const data = await res.json();
-    // Only cache to localStorage if data is non-empty — NEVER overwrite good cache with empty
+    const json = await res.json();
+    // Support new format { data, version, timestamp } AND legacy format (raw array)
+    const data = json.data || json;
+    if (json.version) dataVersions[endpoint] = json.version;
     if (Array.isArray(data) && data.length > 0) {
       lsSave(endpoint, data);
     }
@@ -169,16 +379,19 @@ async function apiGet(endpoint) {
   } catch (e) { serverOnline = false; return null; }
 }
 
-async function apiSave(endpoint, data) {
-  // Always save to localStorage first (instant)
+async function apiSave(endpoint, data, userEmail) {
+  // Optimistic: save to localStorage instantly
   lsSave(endpoint, data);
-  // Then try API — with retry on failure
+  // Then push to server with version info
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data), signal: AbortSignal.timeout(4000),
+      body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) throw new Error('save failed');
+    const json = await res.json();
+    if (json.version) dataVersions[endpoint] = json.version;
     serverOnline = true;
     return true;
   } catch (e) {
@@ -186,14 +399,69 @@ async function apiSave(endpoint, data) {
     // Retry once after 2 seconds
     try {
       await new Promise(r => setTimeout(r, 2000));
-      await fetch(`${API_BASE}/${endpoint}`, {
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data), signal: AbortSignal.timeout(4000),
+        body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
+        signal: AbortSignal.timeout(5000),
       });
-      serverOnline = true;
-      return true;
-    } catch (e2) { return false; }
+      if (res.ok) { const json = await res.json(); if (json.version) dataVersions[endpoint] = json.version; serverOnline = true; return true; }
+    } catch (e2) {}
+    return false;
   }
+}
+
+// ── WebSocket Manager (real-time sync) ──
+let wsConnection = null;
+let wsReconnectTimer = null;
+const wsListeners = new Set();
+
+function connectWebSocket() {
+  if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
+  try {
+    wsConnection = new WebSocket(WS_URL);
+    wsConnection.onopen = () => {
+      console.log('🔌 WebSocket connected');
+      serverOnline = true;
+    };
+    wsConnection.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'update') {
+          // Real-time update from another user
+          if (msg.version) dataVersions[msg.table] = msg.version;
+          if (Array.isArray(msg.data) && msg.data.length > 0) {
+            lsSave(msg.table, msg.data);
+          }
+          // Notify all listeners
+          wsListeners.forEach(fn => fn(msg));
+        } else if (msg.type === 'versions') {
+          Object.entries(msg.versions).forEach(([k, v]) => { dataVersions[k] = v; });
+        }
+      } catch {}
+    };
+    wsConnection.onclose = () => {
+      wsConnection = null;
+      // Reconnect after 3 seconds
+      if (!wsReconnectTimer) wsReconnectTimer = setTimeout(() => { wsReconnectTimer = null; connectWebSocket(); }, 3000);
+    };
+    wsConnection.onerror = () => { wsConnection = null; };
+  } catch {}
+}
+
+function onWsUpdate(fn) { wsListeners.add(fn); return () => wsListeners.delete(fn); }
+
+// ── Debounced Auto-Save helper ──
+function useDebouncedSave(endpoint, data, delay = 500, userEmail) {
+  const timerRef = useRef(null);
+  const latestData = useRef(data);
+  latestData.current = data;
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      apiSave(endpoint, latestData.current, userEmail);
+    }, delay);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [data, endpoint, delay, userEmail]);
 }
 
 // Telegram API functions
@@ -291,7 +559,7 @@ const INITIAL = [
 
 /* ── Icons ── */
 const I = {
-  logo: <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="8" fill="#0EA5E9"/><path d="M8 10h12M8 14h8M8 18h10" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round"/></svg>,
+  logo: <svg width="28" height="28" viewBox="0 0 28 28" fill="none"><defs><linearGradient id="lg" x1="0" y1="0" x2="28" y2="28"><stop offset="0%" stopColor="#38BDF8"/><stop offset="100%" stopColor="#A78BFA"/></linearGradient></defs><rect width="28" height="28" rx="8" fill="url(#lg)"/><path d="M8 10h12M8 14h8M8 18h10" stroke="#FFF" strokeWidth="2" strokeLinecap="round" opacity="0.9"/></svg>,
   plus: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 3v12M3 9h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
   edit: <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M11.5 2.5l2 2L5 13H3v-2l8.5-8.5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
   trash: <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
@@ -310,8 +578,9 @@ const I = {
 /* ── Shared styles ── */
 const inp = {
   width: "100%", padding: "10px 14px", background: "#F8FAFC",
-  border: "1px solid #E2E8F0", borderRadius: 8,
+  border: "1px solid #E2E8F0", borderRadius: 10,
   color: "#1E293B", fontSize: 14, outline: "none", boxSizing: "border-box",
+  transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
 };
 
 /* ── Components ── */
@@ -368,20 +637,27 @@ function NameCombo({ value, onChange, placeholder }) {
 }
 
 function SyncStatus() {
-  const [online, setOnline] = useState(serverOnline);
+  const [status, setStatus] = useState("checking");
   useEffect(() => {
-    const iv = setInterval(() => setOnline(serverOnline), 3000);
+    const iv = setInterval(() => {
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) setStatus("realtime");
+      else if (serverOnline) setStatus("polling");
+      else setStatus("offline");
+    }, 2000);
     return () => clearInterval(iv);
   }, []);
+  const cfg = {
+    realtime: { bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.3)", color: "#10B981", dot: "#10B981", text: "⚡ Live", title: "Real-time sync via WebSocket — instant updates" },
+    polling: { bg: "rgba(14,165,233,0.1)", border: "rgba(14,165,233,0.3)", color: "#0EA5E9", dot: "#0EA5E9", text: "Synced", title: "Connected via HTTP polling — updates every 15s" },
+    offline: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", color: "#F59E0B", dot: "#F59E0B", text: "Local", title: "Server offline — data saved locally" },
+    checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", dot: "#94A3B8", text: "...", title: "Checking connection" },
+  }[status];
   return (
-    <div title={online ? "Connected to server — data syncs between all users" : "Server offline — data saved locally only. Run setup.sh on your server to enable sync."}
+    <div title={cfg.title}
       style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, cursor: "default",
-        background: online ? "rgba(16,185,129,0.1)" : "rgba(245,158,11,0.1)",
-        border: `1px solid ${online ? "rgba(16,185,129,0.3)" : "rgba(245,158,11,0.3)"}`,
-        color: online ? "#10B981" : "#F59E0B",
-      }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: online ? "#10B981" : "#F59E0B", display: "inline-block" }} />
-      {online ? "Synced" : "Local"}
+        background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }}>
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: cfg.dot, display: "inline-block", animation: status === "realtime" ? "pulse 2s infinite" : "none" }} />
+      {cfg.text}
     </div>
   );
 }
@@ -392,12 +668,17 @@ function StatusBadge({ status }) {
 }
 
 function Modal({ title, onClose, children }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12 }} onClick={onClose}>
-      <div className="blitz-modal-content" onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 16, border: "1px solid #E2E8F0", padding: 32, width: 540, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 60px rgba(0,0,0,0.12)" }}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12, opacity: show ? 1 : 0, transition: "opacity 0.3s ease" }} onClick={onClose}>
+      <div className="blitz-modal-content" onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 20, border: "1px solid #E2E8F0", padding: 32, width: 540, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,255,255,0.05)", transform: show ? "translateY(0) scale(1)" : "translateY(20px) scale(0.97)", opacity: show ? 1 : 0, transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <h2 style={{ margin: 0, color: "#0F172A", fontSize: 20, fontWeight: 700 }}>{title}</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: 4 }}>{I.close}</button>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: 4, transition: "all 0.15s", borderRadius: 8 }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(100,116,139,0.1)"; e.currentTarget.style.transform = "rotate(90deg)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.transform = "rotate(0)"; }}
+          >{I.close}</button>
         </div>
         {children}
       </div>
@@ -418,7 +699,7 @@ function CopyInput({ label, value, onChange, placeholder, style: extraStyle }) {
   return (
     <Field label={label}>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-        <input style={{ ...inp, flex: 1, fontSize: 13, fontFamily: "'Space Mono',monospace", wordBreak: "break-all", ...extraStyle }} value={value || ""} onChange={onChange} placeholder={placeholder} />
+        <input style={{ ...inp, flex: 1, fontSize: 13, fontFamily: "'JetBrains Mono',monospace", wordBreak: "break-all", ...extraStyle }} value={value || ""} onChange={onChange} placeholder={placeholder} />
         <button type="button" onClick={copy} title="Copy" style={{ flexShrink: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #E2E8F0", background: copied ? "#ECFDF5" : "#F8FAFC", color: copied ? "#10B981" : "#64748B", cursor: value ? "pointer" : "default", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 4, transition: "all 0.15s", whiteSpace: "nowrap", opacity: value ? 1 : 0.4 }}
           onMouseEnter={e => { if (value) e.currentTarget.style.borderColor = "#0EA5E9"; }}
           onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; }}
@@ -466,6 +747,7 @@ function fmtFee(fee, amount) {
 function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, onLogout, accentColor }) {
   const mobile = useMobile();
   const [menuOpen, setMenuOpen] = useState(false);
+  const { dark, toggle: toggleDark } = useTheme();
   const allNavPages = [
     { key: "dashboard", label: "Payments", color: "#0EA5E9" },
     { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
@@ -480,8 +762,8 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
       <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
           {I.logo}
-          {!mobile && <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>}
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>}
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           {!mobile && <>
             <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
             <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -499,6 +781,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
             <div className="desktop-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
               <div style={{ padding: "5px 14px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}12`, border: `1px solid ${accentColor || "#0EA5E9"}33`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+              <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 16, padding: "6px 10px", borderRadius: 8 }}>{dark ? "☀️" : "🌙"}</button>
               <button onClick={onRefresh} title="Refresh" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8 }}>{I.refresh}<span>Refresh</span></button>
               <SyncStatus />
               <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
@@ -508,6 +791,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
           </>}
           {mobile && <>
             <SyncStatus />
+            <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{ display: "flex", background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", padding: "6px 8px", borderRadius: 8, fontSize: 16 }}>{dark ? "☀️" : "🌙"}</button>
             <button onClick={onRefresh} title="Refresh" style={{ display: "flex", background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", padding: "6px 8px", borderRadius: 8 }}>{I.refresh}</button>
             <button className="mobile-menu-btn" onClick={() => setMenuOpen(true)}
               style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #E2E8F0", color: "#334155", cursor: "pointer", padding: "6px 10px", borderRadius: 8, fontSize: 18 }}>☰</button>
@@ -632,10 +916,10 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
           <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span onClick={() => onEdit(p)} style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
                 <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...statusStyle(p.status) }}>{p.status}</span>
               </div>
-              <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: "#64748B", marginBottom: 8 }}>
               {p.paidDate && <span>📅 {new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
@@ -656,7 +940,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
               </div>
             </div>
             {(p.trcAddress || p.ercAddress || p.paymentHash) && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'Space Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
                 {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
                 {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
                 {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
@@ -667,7 +951,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "12px", flexWrap: "wrap" }}>
           {dateRange && <span style={{ padding: "5px 14px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{dateRange}</span>}
           <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} invoices</span>
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         </div>
       </div>
     );
@@ -697,13 +981,20 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
           </tr>
         </thead>
         <tbody>
-          {sorted.map((p, i) => (
+          {sorted.map((p, i) => {
+            // Color-coded row backgrounds
+            const amt = parseFloat(p.amount) || 0;
+            const isHighValue = amt >= 5000;
+            const isOverdue = p.status === "Open" && p.paidDate && new Date(p.paidDate) < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+            const rowBg = isOverdue ? "rgba(239,68,68,0.05)" : isHighValue ? "rgba(14,165,233,0.04)" : "transparent";
+            const rowBorder = isOverdue ? "#FECACA" : isHighValue ? "#BAE6FD" : "#F1F5F9";
+            return (
             <tr key={p.id}
-              style={{ borderBottom: "1px solid #F1F5F9", transition: "background 0.15s" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              style={{ borderBottom: `1px solid ${rowBorder}`, transition: "background 0.15s", background: rowBg, borderLeft: isOverdue ? "3px solid #EF4444" : isHighValue ? "3px solid #0EA5E9" : "3px solid transparent" }}
+              onMouseEnter={e => e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "#F8FAFC"}
+              onMouseLeave={e => e.currentTarget.style.background = rowBg}
             >
-              <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'Space Mono',monospace", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
+              <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderRight: "1px solid #F1F5F9" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
@@ -723,14 +1014,14 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
                   <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, letterSpacing: 0.3, ...statusStyle(p.status) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
@@ -744,7 +1035,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
                 </div>
               </td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
       {/* Footer summary bar */}
@@ -757,7 +1048,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
           <span style={{ padding: "5px 16px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{dateRange}</span>
         )}
         <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{payments.length} invoices</span>
-        <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
     </div>
@@ -770,35 +1061,39 @@ function GroupHeader({ icon, title, count, total, accentColor, defaultOpen, chil
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: 24, animation: "fadeUp 0.4s ease both" }}>
       <button onClick={() => setOpen(!open)} style={{
         display: "flex", alignItems: "center", gap: 10, width: "100%",
-        padding: "16px 22px", background: "#FFFFFF",
-        border: "1px solid #E2E8F0", borderRadius: open ? "14px 14px 0 0" : 14,
+        padding: "18px 24px", background: "#FFFFFF",
+        border: "1px solid #E2E8F0", borderRadius: open ? "16px 16px 0 0" : 16,
         cursor: "pointer", color: "#0F172A", fontSize: 16, fontWeight: 800,
-        transition: "all 0.2s",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
-      }}>
+        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+      }}
+        onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 4px 16px rgba(0,0,0,0.06), 0 0 20px ${accentColor}10`; }}
+        onMouseLeave={e => { e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}
+      >
         <span style={{ color: accentColor, display: "flex", fontSize: 18 }}>{icon}</span>
         <span style={{ color: accentColor }}>{title}</span>
-        <span style={{ background: accentColor, color: "#FFF", borderRadius: 12, padding: "3px 12px", fontSize: 13, fontWeight: 700, marginLeft: 4 }}>{count}</span>
-        <span style={{ marginLeft: "auto", fontFamily: "'Space Mono',monospace", fontSize: 15, fontWeight: 800, color: "#0F172A" }}>{fmt(total)}</span>
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s", marginLeft: 8 }}>
+        <span style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`, color: "#FFF", borderRadius: 20, padding: "3px 14px", fontSize: 13, fontWeight: 700, marginLeft: 4, boxShadow: `0 2px 8px ${accentColor}30` }}>{count}</span>
+        <span style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono',monospace", fontSize: 15, fontWeight: 800, color: "#0F172A", letterSpacing: -0.5 }}>{fmt(total)}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)", marginLeft: 8 }}>
           <path d="M4 6l4 4 4-4" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
-      {open && (
-        <div style={{
-          background: "#FFFFFF",
-          border: "1px solid #E2E8F0",
-          borderTop: "none",
-          borderRadius: "0 0 14px 14px",
-          overflow: "hidden",
-          boxShadow: "0 2px 6px rgba(0,0,0,0.03)",
-        }}>
-          {children}
-        </div>
-      )}
+      <div style={{
+        background: "#FFFFFF",
+        border: "1px solid #E2E8F0",
+        borderTop: "none",
+        borderRadius: "0 0 16px 16px",
+        overflow: "hidden",
+        boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
+        maxHeight: open ? "5000px" : "0px",
+        opacity: open ? 1 : 0,
+        transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+      }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -890,14 +1185,14 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>
+          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#64748B", fontSize: 14 }}>/ Admin</span>
         </div>
         <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8 }}
@@ -932,7 +1227,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                     <span style={{ padding: "2px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.3)", fontSize: 10, fontWeight: 700, color: "#F87171", textTransform: "uppercase", letterSpacing: 0.5 }}>Admin</span>
                   )}
                 </div>
-                <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'Space Mono',monospace" }}>{u.email}</div>
+                <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace" }}>{u.email}</div>
                 <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
                   {ALL_PAGES.map(pg => {
@@ -1010,17 +1305,17 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                       <div style={{ marginBottom: 10 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>TRC</label>
                         <input value={walletForm.trc} onChange={e => setWalletForm(p => ({ ...p, trc: e.target.value }))}
-                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="TRC20 address..." />
+                          style={{ ...inp, marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} placeholder="TRC20 address..." />
                       </div>
                       <div style={{ marginBottom: 10 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>ERC USDT/USDC</label>
                         <input value={walletForm.erc} onChange={e => setWalletForm(p => ({ ...p, erc: e.target.value }))}
-                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="ERC20 address..." />
+                          style={{ ...inp, marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} placeholder="ERC20 address..." />
                       </div>
                       <div style={{ marginBottom: 14 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>BTC</label>
                         <input value={walletForm.btc} onChange={e => setWalletForm(p => ({ ...p, btc: e.target.value }))}
-                          style={{ ...inp, marginTop: 4, fontFamily: "'Space Mono',monospace", fontSize: 12 }} placeholder="BTC address..." />
+                          style={{ ...inp, marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} placeholder="BTC address..." />
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button onClick={() => {
@@ -1049,15 +1344,15 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                         <tbody>
                           <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B", width: 120 }}>TRC:</td>
-                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.trc || "—"}</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.trc || "—"}</td>
                           </tr>
                           <tr style={{ borderBottom: "1px solid #F1F5F9" }}>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>ERC USDT/USDC:</td>
-                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.erc || "—"}</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.erc || "—"}</td>
                           </tr>
                           <tr>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>BTC:</td>
-                            <td style={{ padding: "8px 0", fontFamily: "'Space Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.btc || "—"}</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.btc || "—"}</td>
                           </tr>
                         </tbody>
                       </table>
@@ -1203,8 +1498,8 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
   const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
 
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
@@ -1233,7 +1528,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
           </div>
         </div>
 
-        {/* Summary Cards */}
+        {/* Summary Cards — Bento Glass */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
             { label: "Open Payments", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
@@ -1241,10 +1536,13 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
             { label: "Paid This Month", value: paidPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
             { label: "Paid Total", value: paidTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 16, padding: "22px 24px", position: "relative", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", animation: `stagger-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) ${i * 0.08}s both`, cursor: "default" }}
+              onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px rgba(0,0,0,0.08), 0 0 20px ${c.accent}15`; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}
+            >
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${c.accent}, ${c.accent}88)`, borderRadius: "16px 16px 0 0" }} />
+              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>{c.label}</div>
+              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent, letterSpacing: -1 }}>
                 {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
               </div>
             </div>
@@ -1327,29 +1625,39 @@ function LoginScreen({ onLogin, users }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
-      <div style={{ width: 420, maxWidth: "92vw", background: "#FFFFFF", borderRadius: 20, border: "1px solid #E2E8F0", padding: "48px 40px", boxShadow: "0 25px 60px rgba(0,0,0,0.08)" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <style>{mobileCSS}{darkModeCSS}</style>
+      {/* Ambient glow orbs */}
+      <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 70%)", top: "-10%", right: "-5%", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.06) 0%, transparent 70%)", bottom: "-5%", left: "-3%", pointerEvents: "none" }} />
+      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(22, 29, 49, 0.8)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(56,189,248,0.1)", padding: "48px 40px", boxShadow: "0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(56,189,248,0.04)", animation: "fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
           {I.logo}
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 22, color: "#0F172A" }}>Blitz CRM</span>
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'Space Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 22, color: "#F1F5F9", letterSpacing: -0.5 }}>Blitz CRM</span>
+          <span style={{ fontSize: 10, color: "#38BDF8", fontFamily: "'JetBrains Mono',monospace", background: "rgba(56,189,248,0.1)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(56,189,248,0.15)" }}>v{VERSION}</span>
         </div>
-        <p style={{ color: "#64748B", fontSize: 14, marginBottom: 36, marginTop: 4 }}>CRM Dashboard</p>
+        <p style={{ color: "#64748B", fontSize: 14, marginBottom: 36, marginTop: 4 }}>Deep Space Dashboard</p>
         <form onSubmit={submit} method="post" autoComplete="on">
-          <label htmlFor="login-email" style={{ display: "block", color: "#64748B", fontSize: 12, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Email</label>
+          <label htmlFor="login-email" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Email</label>
           <input id="login-email" name="email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
-            style={{ ...inp, marginBottom: 20 }}
-            onFocus={e => e.target.style.borderColor = "#38BDF8"}
-            onBlur={e => e.target.style.borderColor = "#E2E8F0"} />
-          <label htmlFor="login-password" style={{ display: "block", color: "#64748B", fontSize: 12, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Password</label>
+            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
+            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08), 0 0 20px rgba(56,189,248,0.05)"; }}
+            onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+          <label htmlFor="login-password" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Password</label>
           <input id="login-password" name="password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-            style={{ ...inp, marginBottom: 28 }}
-            onFocus={e => e.target.style.borderColor = "#38BDF8"}
-            onBlur={e => e.target.style.borderColor = "#E2E8F0"} />
-          {error && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 16, padding: "8px 12px", background: "rgba(220,38,38,0.06)", borderRadius: 8 }}>{error}</div>}
-          <button type="submit" disabled={loading} style={{ width: "100%", padding: 13, background: loading ? "#1E3A5F" : "linear-gradient(135deg,#0EA5E9,#38BDF8)", color: "#FFF", border: "none", borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: loading ? "wait" : "pointer", boxShadow: "0 4px 20px rgba(14,165,233,0.3)" }}>
-            {loading ? "Signing in..." : "Sign In"}
+            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 28, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
+            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08), 0 0 20px rgba(56,189,248,0.05)"; }}
+            onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+          {error && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>}
+          <button type="submit" disabled={loading}
+            style={{ width: "100%", padding: 14, background: loading ? "rgba(14,165,233,0.3)" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)", color: "#FFF", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: loading ? "wait" : "pointer", boxShadow: "0 4px 24px rgba(14,165,233,0.3), 0 0 40px rgba(56,189,248,0.1)", transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)", letterSpacing: 0.3 }}
+            onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(14,165,233,0.4), 0 0 60px rgba(56,189,248,0.15)"; } }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(14,165,233,0.3), 0 0 40px rgba(56,189,248,0.1)"; }}
+            onMouseDown={e => { e.currentTarget.style.transform = "scale(0.97)"; }}
+            onMouseUp={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+          >
+            {loading ? "Signing in..." : "Sign In →"}
           </button>
         </form>
       </div>
@@ -1490,10 +1798,10 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
           <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span onClick={() => onEdit(p)} style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
                 <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
               </div>
-              <span style={{ fontFamily: "'Space Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
+              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 12px", fontSize: 12, color: "#64748B", marginBottom: 8 }}>
               {p.paidDate && <span>📅 {new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
@@ -1514,7 +1822,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
               </div>
             </div>
             {(p.trcAddress || p.ercAddress || p.paymentHash) && (
-              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'Space Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
+              <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
                 {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
                 {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
                 {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
@@ -1525,7 +1833,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "12px", flexWrap: "wrap" }}>
           {dateRange && <span style={{ padding: "5px 14px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{dateRange}</span>}
           <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} invoices</span>
-          <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         </div>
       </div>
     );
@@ -1580,14 +1888,14 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
                   <span style={{ display: "inline-block", padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...(CP_STATUS_COLORS[p.status] || { background: "#F1F5F9", color: "#475569" }) }}>{p.status}</span>
                 )}
               </td>
-              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'Space Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
-              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'Space Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#0F172A", borderRight: "1px solid #F1F5F9", whiteSpace: "nowrap" }}>{fmt(p.amount)}</td>
+              <td style={{ padding: "7px 6px", fontSize: 10, color: p.fee ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9", fontFamily: "'JetBrains Mono',monospace" }}>{fmtFee(p.fee, p.amount)}</td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #F1F5F9" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'Space Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.trcAddress || p.instructions || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #F1F5F9" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
                   {onMove && sortMode !== "alpha" && <>
@@ -1607,7 +1915,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 20px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
         {dateRange && <span style={{ padding: "5px 16px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{dateRange}</span>}
         <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{payments.length} invoices</span>
-        <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
     </div>
@@ -1688,8 +1996,8 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
 
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
@@ -1728,7 +2036,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
               <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>
                 {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
               </div>
             </div>
@@ -1972,8 +2280,8 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#F59E0B" />
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
@@ -2021,7 +2329,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
               <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>{c.value}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -2064,15 +2372,15 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
                         <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
                         </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #E6E9EF", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
                         <td style={{ padding: 0, borderRight: "1px solid #E6E9EF", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.madeSale || ""}</span>
                         </td>
                         <td style={{ padding: "0 10px", borderRight: "1px solid #E6E9EF", textAlign: "center" }}>
                           {d.started ? <span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span> : ""}
                         </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
-                        <td style={{ padding: "0 10px", fontFamily: "'Space Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
+                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #E6E9EF", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
                         <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
                         <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #E6E9EF", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
                         <td style={{ padding: "4px 8px" }}>
@@ -2179,7 +2487,7 @@ function DCForm({ entry, onSave, onClose, defaultDate }) {
       </div>
       <div style={{ padding: "12px 16px", background: "#F8FAFC", borderRadius: 10, marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ color: "#64748B", fontSize: 13, fontWeight: 600 }}>Total:</span>
-        <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>{total}</span>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>{total}</span>
       </div>
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
@@ -2352,8 +2660,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
   const grandBrands = filtered.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#8B5CF6" />
 
       <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
@@ -2405,7 +2713,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
               <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: c.accent }}>{c.value}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -2443,9 +2751,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                               onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                             >{d.agent}</span>
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.affiliates || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.brands || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{t || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.affiliates || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #F1F5F9" }}>{d.brands || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>{t || ""}</td>
                           <td style={{ padding: "8px 8px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
                               {dcSort !== "alpha" && <>
@@ -2464,9 +2772,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                   </tbody>
                 </table>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Affiliates:</span> <span style={{ color: "#8B5CF6" }}>{dayAff}</span></span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Brands:</span> <span style={{ color: "#0EA5E9" }}>{dayBrands}</span></span>
-                  <span style={{ fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 14 }}><span style={{ color: "#64748B" }}>Total:</span> {dayTotal}</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Affiliates:</span> <span style={{ color: "#8B5CF6" }}>{dayAff}</span></span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14 }}><span style={{ color: "#64748B" }}>Brands:</span> <span style={{ color: "#0EA5E9" }}>{dayBrands}</span></span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 14 }}><span style={{ color: "#64748B" }}>Total:</span> {dayTotal}</span>
                 </div>
               </div>
             </GroupHeader>
@@ -2645,8 +2953,8 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   })();
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'DM Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#10B981" />
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
@@ -2672,7 +2980,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
           <div style={{ background: "#ECFDF5", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "#10B981" }} />
             <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Total Deals</div>
-            <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'Space Mono',monospace", color: "#10B981" }}>{filtered.length}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#10B981" }}>{filtered.length}</div>
           </div>
         </div>
 
@@ -2735,22 +3043,22 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
                       )}
                     </td>
                     {/* Price — click to edit */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A", borderRight: "1px solid #F1F5F9" }}>
                       {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "price" ? (
                         <input autoFocus type="number" value={d.price || ""} onChange={e => handleInlineChange(d.id, "price", e.target.value)}
                           onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
-                          style={{ ...inp, width: 80, textAlign: "center", fontSize: 14, fontWeight: 800, fontFamily: "'Space Mono',monospace", padding: "4px 6px" }} />
+                          style={{ ...inp, width: 80, textAlign: "center", fontSize: 14, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", padding: "4px 6px" }} />
                       ) : (
                         <span onClick={() => setInlineEdit({ id: d.id, field: "price" })} style={{ cursor: "pointer" }}
                           title="Click to edit">{d.price ? `${parseFloat(d.price).toLocaleString("en-US")}` : "—"}</span>
                       )}
                     </td>
                     {/* CRG — click to edit */}
-                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'Space Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
+                    <td style={{ padding: "12px 14px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, borderRight: "1px solid #F1F5F9" }}>
                       {inlineEdit && inlineEdit.id === d.id && inlineEdit.field === "crg" ? (
                         <input autoFocus type="number" value={d.crg || ""} onChange={e => handleInlineChange(d.id, "crg", e.target.value)}
                           onBlur={() => setInlineEdit(null)} onKeyDown={e => { if (e.key === "Enter" || e.key === "Tab") setInlineEdit(null); }}
-                          style={{ ...inp, width: 60, textAlign: "center", fontSize: 14, fontWeight: 700, fontFamily: "'Space Mono',monospace", padding: "4px 6px" }} />
+                          style={{ ...inp, width: 60, textAlign: "center", fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", padding: "4px 6px" }} />
                       ) : (
                         <span onClick={() => setInlineEdit({ id: d.id, field: "crg" })} style={{ cursor: "pointer" }}
                           title="Click to edit">{d.crg || "—"}</span>
@@ -2854,7 +3162,7 @@ function clearSession() {
   localStorage.removeItem('blitz_session');
 }
 
-export default function App() {
+function AppInner() {
   const [user, setUser] = useState(() => {
     const session = getSession();
     return session ? { email: session.email, name: session.name } : null;
@@ -2987,11 +3295,31 @@ export default function App() {
     })();
   }, []);
 
-  // Poll server every 8 seconds for changes from other users
+  // ── WebSocket Real-Time Sync ──
+  // Primary: WebSocket for instant updates from other users
+  // Fallback: HTTP polling every 15s if WebSocket disconnected
   useEffect(() => {
     if (!loaded) return;
+
+    // Connect WebSocket
+    connectWebSocket();
+
+    // Listen for real-time updates from other users
+    const unsub = onWsUpdate((msg) => {
+      if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data) || msg.data.length === 0) return;
+      skipSave.current = true;
+      const setters = {
+        users: setUsers, payments: setPayments, 'customer-payments': setCpPayments,
+        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData
+      };
+      const setter = setters[msg.table];
+      if (setter) setter(prev => JSON.stringify(prev) !== JSON.stringify(msg.data) ? msg.data : prev);
+      setTimeout(() => { skipSave.current = false; }, 500);
+    });
+
+    // Fallback polling every 15s (only if WebSocket is not connected)
     const poll = async () => {
-      // If server was offline, try to reconnect
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return; // WS is handling it
       if (!serverOnline) {
         try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch(e) {}
       }
@@ -3009,19 +3337,19 @@ export default function App() {
       if (wl !== null && wl.length > 0) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
       setTimeout(() => { skipSave.current = false; }, 500);
     };
-    const interval = setInterval(poll, 8000);
-    return () => clearInterval(interval);
+    const interval = setInterval(poll, 15000);
+    return () => { clearInterval(interval); unsub(); };
   }, [loaded]);
 
-  // Save on every change: localStorage (instant) + API (shared)
+  // Save on every change: localStorage (instant) + API (shared) with user email
   // SAFETY: Never save empty arrays — protects against accidental data wipe
-  useEffect(() => { if (!skipSave.current && loaded && users.length > 0) apiSave('users', users); }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded && payments.length > 0) apiSave('payments', payments); }, [payments]);
-  useEffect(() => { if (!skipSave.current && loaded && cpPayments.length > 0) apiSave('customer-payments', cpPayments); }, [cpPayments]);
-  useEffect(() => { if (!skipSave.current && loaded && crgDeals.length > 0) apiSave('crg-deals', crgDeals); }, [crgDeals]);
-  useEffect(() => { if (!skipSave.current && loaded && dcEntries.length > 0) apiSave('daily-cap', dcEntries); }, [dcEntries]);
-  useEffect(() => { if (!skipSave.current && loaded && dealsData.length > 0) apiSave('deals', dealsData); }, [dealsData]);
-  useEffect(() => { if (!skipSave.current && loaded && walletsData.length > 0) apiSave('wallets', walletsData); }, [walletsData]);
+  useEffect(() => { if (!skipSave.current && loaded && users.length > 0) apiSave('users', users, user?.email); }, [users]);
+  useEffect(() => { if (!skipSave.current && loaded && payments.length > 0) apiSave('payments', payments, user?.email); }, [payments]);
+  useEffect(() => { if (!skipSave.current && loaded && cpPayments.length > 0) apiSave('customer-payments', cpPayments, user?.email); }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded && crgDeals.length > 0) apiSave('crg-deals', crgDeals, user?.email); }, [crgDeals]);
+  useEffect(() => { if (!skipSave.current && loaded && dcEntries.length > 0) apiSave('daily-cap', dcEntries, user?.email); }, [dcEntries]);
+  useEffect(() => { if (!skipSave.current && loaded && dealsData.length > 0) apiSave('deals', dealsData, user?.email); }, [dealsData]);
+  useEffect(() => { if (!skipSave.current && loaded && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
 
@@ -3042,12 +3370,16 @@ export default function App() {
   };
 
   if (!loaded) return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Sans',sans-serif" }}>
-      <style>{mobileCSS}</style>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
+      <style>{mobileCSS}{darkModeCSS}</style>
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 24, fontWeight: 700, color: "#0F172A", marginBottom: 8 }}>Blitz CRM</div>
-        <div style={{ color: "#64748B" }}>Connecting to server...</div>
+      <div style={{ textAlign: "center", animation: "fadeUp 0.5s ease" }}>
+        {I.logo}
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9", marginBottom: 8, marginTop: 16, fontFamily: "'JetBrains Mono',monospace" }}>Blitz CRM</div>
+        <div style={{ color: "#64748B", fontSize: 14 }}>Initializing system...</div>
+        <div style={{ width: 120, height: 2, background: "rgba(56,189,248,0.15)", borderRadius: 2, margin: "20px auto 0", overflow: "hidden", position: "relative" }}>
+          <div style={{ width: "40%", height: "100%", background: "linear-gradient(90deg, transparent, #38BDF8, transparent)", borderRadius: 2, animation: "shimmer 1.5s ease infinite", backgroundSize: "200% 100%" }} />
+        </div>
       </div>
     </div>
   );
@@ -3056,7 +3388,7 @@ export default function App() {
   const SyncBanner = () => {
     return (
       <>
-        <style>{mobileCSS}</style>
+        <style>{mobileCSS}{darkModeCSS}</style>
         {syncBanner && (() => {
           const msgs = {
             pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
@@ -3093,4 +3425,19 @@ export default function App() {
   if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><SyncBanner /><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} onRefresh={handleRefresh} userAccess={userAccess} /></>);
   return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+}
+
+export default function App() {
+  const [dark, setDark] = useState(() => { const stored = localStorage.getItem('blitz_dark'); return stored === null ? true : stored === 'true'; });
+  const toggle = () => setDark(prev => { const n = !prev; localStorage.setItem('blitz_dark', n); return n; });
+
+  return (
+    <ThemeContext.Provider value={{ dark, toggle }}>
+      <ToastProvider>
+        <div className={dark ? "dark-mode" : ""}>
+          <AppInner />
+        </div>
+      </ToastProvider>
+    </ThemeContext.Provider>
+  );
 }
