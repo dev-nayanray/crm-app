@@ -360,12 +360,19 @@ const WS_URL = (() => {
 
 let serverOnline = false;
 
+// ── Session token management (FIX C4: auth on all endpoints) ──
+let sessionToken = null;
+function setSessionToken(token) { sessionToken = token; if (token) localStorage.setItem('blitz_token', token); else localStorage.removeItem('blitz_token'); }
+function getSessionToken() { if (sessionToken) return sessionToken; sessionToken = localStorage.getItem('blitz_token'); return sessionToken; }
+function authHeaders() { const t = getSessionToken(); return t ? { 'Authorization': `Bearer ${t}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }; }
+
 // ── Version tracking per table (for conflict resolution)
 const dataVersions = {};
 
 async function apiGet(endpoint) {
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
+    if (res.status === 401) { setSessionToken(null); serverOnline = false; return null; }
     if (!res.ok) throw new Error('not ok');
     serverOnline = true;
     const json = await res.json();
@@ -382,13 +389,14 @@ async function apiGet(endpoint) {
 async function apiSave(endpoint, data, userEmail) {
   // Optimistic: save to localStorage instantly
   lsSave(endpoint, data);
-  // Then push to server with version info
+  // Then push to server with version info + auth token
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
       signal: AbortSignal.timeout(5000),
     });
+    if (res.status === 401) { setSessionToken(null); serverOnline = false; return false; }
     if (!res.ok) throw new Error('save failed');
     const json = await res.json();
     if (json.version) dataVersions[endpoint] = json.version;
@@ -400,7 +408,7 @@ async function apiSave(endpoint, data, userEmail) {
     try {
       await new Promise(r => setTimeout(r, 2000));
       const res = await fetch(`${API_BASE}/${endpoint}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
         signal: AbortSignal.timeout(5000),
       });
@@ -418,7 +426,7 @@ const wsListeners = new Set();
 function connectWebSocket() {
   if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
   try {
-    wsConnection = new WebSocket(WS_URL);
+    wsConnection = new WebSocket(`${WS_URL}?token=${encodeURIComponent(getSessionToken() || '')}`);
     wsConnection.onopen = () => {
       console.log('🔌 WebSocket connected');
       serverOnline = true;
@@ -467,7 +475,7 @@ function useDebouncedSave(endpoint, data, delay = 500, userEmail) {
 // Telegram API functions
 async function telegramTest() {
   try {
-    const res = await fetch(`${API_BASE}/telegram/test`, { signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${API_BASE}/telegram/test`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
     return await res.json();
   } catch (e) {
     return { status: "error", error: e.message };
@@ -477,7 +485,7 @@ async function telegramTest() {
 async function telegramNotify(message) {
   try {
     const res = await fetch(`${API_BASE}/telegram/notify`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: authHeaders(),
       body: JSON.stringify({ message }), signal: AbortSignal.timeout(4000),
     });
     return await res.json();
@@ -1603,6 +1611,8 @@ function LoginScreen({ onLogin, users }) {
       const data = await res.json();
 
       if (res.ok && data.ok) {
+        // Store session token from server (FIX C4: auth on all endpoints)
+        if (data.token) setSessionToken(data.token);
         onLogin(data.user);
       } else if (res.status === 429 && data.error === "blocked") {
         setBlocked(data.minutes || 15);
@@ -3159,6 +3169,12 @@ function saveSession(user) {
 }
 
 function clearSession() {
+  // Notify server of logout
+  const token = getSessionToken();
+  if (token) {
+    try { fetch(`${API_BASE}/logout`, { method: 'POST', headers: { 'Authorization': `Bearer ${token}` } }).catch(() => {}); } catch {}
+  }
+  setSessionToken(null);
   localStorage.removeItem('blitz_session');
 }
 
