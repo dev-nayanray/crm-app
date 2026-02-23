@@ -1512,7 +1512,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
       setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
-      // telegramNotify(`🆕 New payment #${form.invoice} — ${parseFloat(form.amount).toLocaleString()}$ opened by ${user.name}`);
+      telegramNotify(``);
     }
     setModalOpen(false);
     setEditPay(null);
