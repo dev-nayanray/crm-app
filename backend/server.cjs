@@ -21,7 +21,7 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 const PORT = 3001;
-const VERSION = "3.03";
+const VERSION = "3.06";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
