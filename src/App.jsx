@@ -336,7 +336,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.04";
+const VERSION = "3.05";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1627,9 +1627,16 @@ function LoginScreen({ onLogin, users }) {
         setError("Invalid email or password.");
       }
     } catch {
-      // Server offline — fallback to local validation
-      const u = users.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === hashed);
-      if (u) onLogin(u); else setError("Invalid email or password.");
+      // Server offline — fallback to INITIAL_USERS (always has password hashes)
+      // Note: 'users' from props may have hashes stripped by server sync,
+      // so we ALWAYS check against INITIAL_USERS for offline login
+      const offlineUsers = INITIAL_USERS;
+      const u = offlineUsers.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === hashed);
+      if (u) {
+        onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess });
+      } else {
+        setError("Server offline. Only pre-registered accounts can log in offline.");
+      }
     }
     setLoading(false);
   };
@@ -3161,7 +3168,8 @@ function saveSession(user) {
   const session = {
     email: user.email,
     name: user.name,
-    token: generateSessionToken(),
+    pageAccess: user.pageAccess,
+    token: getSessionToken() || generateSessionToken(), // Use server token if available
     loginTime: Date.now(),
   };
   localStorage.setItem('blitz_session', JSON.stringify(session));
@@ -3181,7 +3189,9 @@ function clearSession() {
 function AppInner() {
   const [user, setUser] = useState(() => {
     const session = getSession();
-    return session ? { email: session.email, name: session.name } : null;
+    // Restore server session token on page reload
+    if (session && session.token) setSessionToken(session.token);
+    return session ? { email: session.email, name: session.name, pageAccess: session.pageAccess } : null;
   });
   const [users, setUsers] = useState(() => lsGet('users', null) || INITIAL_USERS);
   const [payments, setPayments] = useState(() => lsGet('payments', null) || INITIAL);
