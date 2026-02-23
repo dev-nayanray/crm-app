@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.07";
+const VERSION = "3.09";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1594,10 +1594,10 @@ function LoginScreen({ onLogin, users }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [blocked, setBlocked] = useState(0); // minutes remaining
-  const [serverStatus, setServerStatus] = useState("checking"); // "online" | "offline" | "checking"
+  const [blocked, setBlocked] = useState(0);
+  const [serverStatus, setServerStatus] = useState("checking");
+  const [debugData, setDebugData] = useState(null);
 
-  // Check server health on mount
   useEffect(() => {
     (async () => {
       try {
@@ -1610,65 +1610,65 @@ function LoginScreen({ onLogin, users }) {
 
   const submit = async (e) => {
     e.preventDefault();
-    if (blocked > 0) { setError(`IP blocked. Try again in ${blocked} minute${blocked > 1 ? 's' : ''}.`); return; }
-    setLoading(true); setError("");
+    if (blocked > 0) return;
+    setLoading(true); setError(""); setDebugData(null);
 
     const hashed = hashPassword(password);
+    const emailClean = email.toLowerCase().trim();
 
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.toLowerCase().trim(), passwordHash: hashed }),
+        body: JSON.stringify({ email: emailClean, passwordHash: hashed }),
       });
-      const data = await res.json();
+
+      let data;
+      try { data = await res.json(); } catch {
+        setError("Server returned invalid response. Is the new server deployed?");
+        setLoading(false); return;
+      }
 
       if (res.ok && data.ok) {
-        // Store session token from server (FIX C4: auth on all endpoints)
         if (data.token) setSessionToken(data.token);
         onLogin(data.user);
       } else if (res.status === 429 && data.error === "blocked") {
         setBlocked(data.minutes || 15);
-        setError(`Too many failed attempts. Your IP is blocked for ${data.minutes || 15} minutes.`);
-        // Countdown timer
-        const iv = setInterval(() => {
-          setBlocked(prev => { if (prev <= 1) { clearInterval(iv); return 0; } return prev - 1; });
-        }, 60000);
-      } else if (data.remaining !== undefined) {
-        setError(`Invalid email or password. ${data.remaining} attempt${data.remaining > 1 ? 's' : ''} remaining before IP block.`);
-      } else {
+        setError(`IP blocked for ${data.minutes || 15} min. Restart server to clear.`);
+        const iv = setInterval(() => { setBlocked(prev => { if (prev <= 1) { clearInterval(iv); return 0; } return prev - 1; }); }, 60000);
+        if (data.debug) setDebugData(data.debug);
+      } else if (res.status === 401) {
         setError("Invalid email or password.");
-      }
-    } catch {
-      // Server offline — fallback to INITIAL_USERS (always has password hashes)
-      // Note: 'users' from props may have hashes stripped by server sync,
-      // so we ALWAYS check against INITIAL_USERS for offline login
-      const offlineUsers = INITIAL_USERS;
-      const u = offlineUsers.find(u => u.email === email.toLowerCase().trim() && u.passwordHash === hashed);
-      if (u) {
-        onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess });
+        if (data.debug) setDebugData({ ...data.debug, clientHash8: hashed.substring(0, 8), clientHashFull: hashed });
       } else {
-        setError("Server offline. Only pre-registered accounts can log in offline.");
+        setError(`Error: HTTP ${res.status} — ${data.error || 'unknown'}`);
       }
+    } catch (fetchErr) {
+      // Offline fallback
+      const u = INITIAL_USERS.find(u => u.email === emailClean && u.passwordHash === hashed);
+      if (u) { onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess }); }
+      else { setError(`Offline. ${INITIAL_USERS.some(u => u.email === emailClean) ? "Email found but password wrong." : "Email not found."}`); }
     }
     setLoading(false);
   };
+
+  const diagStyle = { background: "rgba(0,0,0,0.6)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 14, marginTop: 12, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: "#F59E0B", lineHeight: 1.8, whiteSpace: "pre-wrap", maxHeight: 300, overflowY: "auto" };
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <style>{mobileCSS}{darkModeCSS}</style>
-      {/* Ambient glow orbs */}
       <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 70%)", top: "-10%", right: "-5%", pointerEvents: "none" }} />
       <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.06) 0%, transparent 70%)", bottom: "-5%", left: "-3%", pointerEvents: "none" }} />
-      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(22, 29, 49, 0.8)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(56,189,248,0.1)", padding: "48px 40px", boxShadow: "0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(56,189,248,0.04)", animation: "fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}>
+      <div style={{ width: 480, maxWidth: "94vw", background: "rgba(22, 29, 49, 0.8)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(56,189,248,0.1)", padding: "48px 40px", boxShadow: "0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(56,189,248,0.04)", animation: "fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
           {I.logo}
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 22, color: "#F1F5F9", letterSpacing: -0.5 }}>Blitz CRM</span>
           <span style={{ fontSize: 10, color: "#38BDF8", fontFamily: "'JetBrains Mono',monospace", background: "rgba(56,189,248,0.1)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(56,189,248,0.15)" }}>v{VERSION}</span>
         </div>
-        <p style={{ color: "#64748B", fontSize: 14, marginBottom: 36, marginTop: 4 }}>Deep Space Dashboard</p>
-        {/* Server connection status */}
+        <p style={{ color: "#64748B", fontSize: 14, marginBottom: 20, marginTop: 4 }}>Deep Space Dashboard</p>
+
+        {/* Server status */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, padding: "8px 14px", borderRadius: 10,
           background: serverStatus === "online" ? "rgba(16,185,129,0.08)" : serverStatus === "offline" ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.08)",
           border: `1px solid ${serverStatus === "online" ? "rgba(16,185,129,0.2)" : serverStatus === "offline" ? "rgba(245,158,11,0.2)" : "rgba(148,163,184,0.2)"}` }}>
@@ -1679,54 +1679,76 @@ function LoginScreen({ onLogin, users }) {
             {serverStatus === "online" ? "Server connected" : serverStatus === "offline" ? "Server offline — offline login available" : "Checking server..."}
           </span>
         </div>
+
         <form onSubmit={submit} method="post" autoComplete="on">
           <label htmlFor="login-email" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Email</label>
           <input id="login-email" name="email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
             style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
-            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08), 0 0 20px rgba(56,189,248,0.05)"; }}
+            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
             onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
           <label htmlFor="login-password" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Password</label>
           <input id="login-password" name="password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 28, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
-            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08), 0 0 20px rgba(56,189,248,0.05)"; }}
+            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
+            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
             onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+
           {error && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>}
-          <button type="submit" disabled={loading}
-            style={{ width: "100%", padding: 14, background: loading ? "rgba(14,165,233,0.3)" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)", color: "#FFF", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: loading ? "wait" : "pointer", boxShadow: "0 4px 24px rgba(14,165,233,0.3), 0 0 40px rgba(56,189,248,0.1)", transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)", letterSpacing: 0.3 }}
-            onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 8px 32px rgba(14,165,233,0.4), 0 0 60px rgba(56,189,248,0.15)"; } }}
-            onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 24px rgba(14,165,233,0.3), 0 0 40px rgba(56,189,248,0.1)"; }}
-            onMouseDown={e => { e.currentTarget.style.transform = "scale(0.97)"; }}
-            onMouseUp={e => { e.currentTarget.style.transform = "translateY(-1px)"; }}
+
+          {/* DEBUG PANEL — shows server diagnostic data */}
+          {debugData && (
+            <div style={diagStyle}>
+              <div style={{ color: "#F59E0B", fontWeight: 700, marginBottom: 8 }}>🔍 DEBUG DIAGNOSTIC (v{VERSION})</div>
+              <div>Server version: {debugData.v || "unknown (old server?)"}</div>
+              <div>Data dir: {debugData.dataDir || "?"}</div>
+              <div>users.json exists: {debugData.fileExists ? "✅ YES" : "❌ NO"}</div>
+              <div>─────────────────────────</div>
+              <div>Users in file: {debugData.fileUsersCount ?? "?"}</div>
+              <div style={{ color: debugData.fileUsersWithHash === debugData.fileUsersCount ? "#10B981" : "#EF4444" }}>
+                With passwordHash: {debugData.fileUsersWithHash ?? "?"} / {debugData.fileUsersCount ?? "?"}
+              </div>
+              {debugData.fileUsersNoHash && debugData.fileUsersNoHash.length > 0 && (
+                <div style={{ color: "#EF4444" }}>⚠️ MISSING HASH: {debugData.fileUsersNoHash.join(", ")}</div>
+              )}
+              <div>─────────────────────────</div>
+              <div>Email in file: {debugData.emailInFile ? "✅" : "❌"}</div>
+              <div>Email in seed: {debugData.emailInSeed ? "✅" : "❌"}</div>
+              <div>File has hash: {debugData.fileHasHash ? "✅" : "❌ ← PROBLEM"}</div>
+              <div>Seed has hash: {debugData.seedHasHash ? "✅" : "❌"}</div>
+              <div style={{ color: debugData.hashMatchFile || debugData.hashMatchSeed ? "#10B981" : "#EF4444" }}>
+                Hash match (file): {debugData.hashMatchFile ? "✅ MATCH" : "❌ NO MATCH"}
+              </div>
+              <div style={{ color: debugData.hashMatchSeed ? "#10B981" : "#EF4444" }}>
+                Hash match (seed): {debugData.hashMatchSeed ? "✅ MATCH" : "❌ NO MATCH"}
+              </div>
+              <div>─────────────────────────</div>
+              <div>Server hash (file): {debugData.serverHash8 || "NONE"}</div>
+              <div>Server hash (seed): {debugData.seedHash8 || "NONE"}</div>
+              <div>Client hash: {debugData.clientHash8 || "?"}</div>
+              {debugData.clientHashFull && <div>Client full: {debugData.clientHashFull}</div>}
+            </div>
+          )}
+
+          <button type="submit" disabled={loading || blocked > 0}
+            style={{ width: "100%", padding: 14, background: loading ? "rgba(14,165,233,0.3)" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)", color: "#FFF", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: loading ? "wait" : "pointer", boxShadow: "0 4px 24px rgba(14,165,233,0.3)", transition: "all 0.2s", letterSpacing: 0.3, marginTop: 8 }}
           >
             {loading ? "Signing in..." : "Sign In →"}
           </button>
         </form>
-        {/* Open in App button (PWA / mobile) */}
+
+        {/* Open in App */}
         <div style={{ textAlign: "center", marginTop: 20 }}>
           <a href={window.location.href}
             onClick={(e) => {
               e.preventDefault();
-              // Try to open as standalone PWA
-              if (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches) {
-                return; // Already in app mode
-              }
-              // For mobile: prompt to add to home screen
               if (/iPhone|iPad|Android/i.test(navigator.userAgent)) {
-                alert("To open as an app:\n\n📱 iPhone/iPad: Tap Share → Add to Home Screen\n🤖 Android: Tap ⋮ menu → Add to Home Screen");
+                alert("To open as app:\n\niPhone/iPad: Tap Share → Add to Home Screen\nAndroid: Tap ⋮ → Add to Home Screen");
               } else {
-                // Desktop: try to trigger install prompt
-                if (window.deferredPrompt) {
-                  window.deferredPrompt.prompt();
-                } else {
-                  window.open(window.location.href, '_blank', 'toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=420,height=800');
-                }
+                window.open(window.location.href, '_blank', 'toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=420,height=800');
               }
             }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.15)", borderRadius: 12, color: "#38BDF8", fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", transition: "all 0.2s ease" }}
-            onMouseEnter={e => { e.currentTarget.style.background = "rgba(56,189,248,0.12)"; e.currentTarget.style.borderColor = "rgba(56,189,248,0.3)"; }}
-            onMouseLeave={e => { e.currentTarget.style.background = "rgba(56,189,248,0.06)"; e.currentTarget.style.borderColor = "rgba(56,189,248,0.15)"; }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.15)", borderRadius: 12, color: "#38BDF8", fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
             Open in App
           </a>
         </div>
