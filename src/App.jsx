@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.21";
+const VERSION = "3.24";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -345,7 +345,21 @@ const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-pa
 const LS_VERSIONS_KEY = 'blitz_data_versions';
 
 function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
-function lsSave(key, data) { try { localStorage.setItem(LS_KEYS[key], JSON.stringify(data)); } catch(e) {} }
+function lsSave(key, data) {
+  try {
+    localStorage.setItem(LS_KEYS[key], JSON.stringify(data));
+  } catch(e) {
+    // FIX C8: localStorage full — warn user, don't silently lose data
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      console.error("❌ localStorage FULL — data NOT cached locally for:", key);
+      // Try to free space by removing oldest non-essential cache
+      try {
+        ['crg-deals', 'daily-cap', 'deals'].forEach(k => { if (k !== key) localStorage.removeItem(LS_KEYS[k]); });
+        localStorage.setItem(LS_KEYS[key], JSON.stringify(data)); // retry
+      } catch {}
+    }
+  }
+}
 
 // Load persisted data versions from localStorage (survives page refresh)
 function loadPersistedVersions() {
@@ -435,6 +449,7 @@ async function apiGet(endpoint) {
 
 // ── Pending saves queue: retry failed saves when server comes back ──
 const pendingSaves = new Map(); // key: endpoint, value: { data, userEmail, retries }
+let lastSaveTimestamps = {}; // FIX C1: Track when each table was last saved to prevent echo saves
 
 async function flushPendingSaves() {
   if (pendingSaves.size === 0) return;
@@ -452,6 +467,10 @@ async function flushPendingSaves() {
         if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
         pendingSaves.delete(endpoint);
         console.log(`✅ Flushed pending save: ${endpoint}`);
+      } else if (res.status === 409) {
+        // Conflict — our pending data is stale, discard it
+        pendingSaves.delete(endpoint);
+        console.log(`⚠️ Discarded stale pending save for ${endpoint}`);
       }
     } catch {}
   }
@@ -460,6 +479,13 @@ async function flushPendingSaves() {
 setInterval(flushPendingSaves, 30000);
 
 async function apiSave(endpoint, data, userEmail) {
+  // FIX C1: Debounce — don't save same table within 1 second
+  const now = Date.now();
+  if (lastSaveTimestamps[endpoint] && now - lastSaveTimestamps[endpoint] < 1000) {
+    return true; // Skip, too soon after last save
+  }
+  lastSaveTimestamps[endpoint] = now;
+
   // ALWAYS save to localStorage first — this is the safety net
   lsSave(endpoint, data);
   // Then push to server with version info + auth token
@@ -475,8 +501,19 @@ async function apiSave(endpoint, data, userEmail) {
         localStorage.removeItem('blitz_session');
         sessionExpiredFlag = true;
       }
-      // Still queue it for retry
       pendingSaves.set(endpoint, { data, userEmail });
+      return false;
+    }
+    if (res.status === 409) {
+      // FIX C3: Server rejected — our version is stale. Accept server's data.
+      try {
+        const conflict = await res.json();
+        if (conflict.serverData && Array.isArray(conflict.serverData)) {
+          lsSave(endpoint, conflict.serverData);
+          if (conflict.serverVersion) { dataVersions[endpoint] = conflict.serverVersion; savePersistedVersions(dataVersions); }
+          console.log(`🔄 Conflict on ${endpoint} — accepted server version v${conflict.serverVersion}`);
+        }
+      } catch {}
       return false;
     }
     if (!res.ok) throw new Error('save failed');
@@ -486,7 +523,7 @@ async function apiSave(endpoint, data, userEmail) {
       savePersistedVersions(dataVersions);
     }
     serverOnline = true;
-    pendingSaves.delete(endpoint); // Clear any pending for this endpoint
+    pendingSaves.delete(endpoint);
     return true;
   } catch (e) {
     serverOnline = false;
@@ -3442,6 +3479,7 @@ function AppInner() {
 
       // Step 1: Fetch ALL data from server (only if authenticated)
       let u = null, p = null, cp = null, crg = null, dc = null, dl = null, wl = null;
+      let serverFetchSucceeded = false; // Track if we actually got real data
       if (hasToken && serverOnline) {
         [u, p, cp, crg, dc, dl, wl] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
@@ -3454,6 +3492,18 @@ function AppInner() {
           setLoaded(true);
           return;
         }
+        // CRITICAL FIX: Check if we ACTUALLY got data from the server.
+        // If ALL tables returned null (e.g., 401 during grace period), 
+        // the server fetch FAILED — do NOT treat as "server is empty".
+        const anyDataFromServer = [u, p, cp, crg, dc, dl, wl].some(d => d !== null);
+        serverFetchSucceeded = anyDataFromServer;
+
+        if (!anyDataFromServer && justLoggedIn) {
+          // ALL 7 calls returned null during login grace — this is the 401 race.
+          // SAFE FALLBACK: Treat server as offline, use localStorage, don't push anything.
+          console.log("⚠️ All server fetches returned null during login grace — using localStorage only");
+          serverOnline = false; // Force offline path — NEVER push stale data to server
+        }
       }
 
       // Step 2: Get localStorage data (backup/offline cache)
@@ -3465,8 +3515,8 @@ function AppInner() {
       const ldl = lsGet('deals', null);
       const lwl = lsGet('wallets', null);
 
-      if (serverOnline) {
-        // ── SERVER IS ONLINE: it is the source of truth ──
+      if (serverOnline && serverFetchSucceeded) {
+        // ── SERVER IS ONLINE AND RETURNED DATA: it is the source of truth ──
         const pushTasks = [];
 
         // USERS — special handling: MERGE + UPDATE
@@ -3505,30 +3555,35 @@ function AppInner() {
           pushTasks.push(apiSave('users', INITIAL_USERS));
         }
 
-        // PAYMENTS
+        // PAYMENTS — Only push localStorage if server returned EMPTY ARRAY [], not null (null = fetch failed)
         if (p !== null && p.length > 0) { setPayments(p); }
-        else if (lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
-        else { pushTasks.push(apiSave('payments', INITIAL)); }
+        else if (p !== null && p.length === 0 && lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
+        else if (p === null && lp && lp.length > 0) { setPayments(lp); /* Server fetch failed — use local but DON'T push */ }
+        else { setPayments(INITIAL); }
 
         // CUSTOMER PAYMENTS
         if (cp !== null && cp.length > 0) { setCpPayments(cp); }
-        else if (lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
-        else { pushTasks.push(apiSave('customer-payments', CP_INITIAL)); }
+        else if (cp !== null && cp.length === 0 && lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
+        else if (cp === null && lcp && lcp.length > 0) { setCpPayments(lcp); }
+        else { setCpPayments(CP_INITIAL); }
 
         // CRG DEALS
         if (crg !== null && crg.length > 0) { setCrgDeals(crg); }
-        else if (lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
-        else { pushTasks.push(apiSave('crg-deals', CRG_INITIAL)); }
+        else if (crg !== null && crg.length === 0 && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
+        else if (crg === null && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); }
+        else { setCrgDeals(CRG_INITIAL); }
 
         // DAILY CAP
         if (dc !== null && dc.length > 0) { setDcEntries(dc); }
-        else if (ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
-        else { pushTasks.push(apiSave('daily-cap', DC_INITIAL)); }
+        else if (dc !== null && dc.length === 0 && ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
+        else if (dc === null && ldc && ldc.length > 0) { setDcEntries(ldc); }
+        else { setDcEntries(DC_INITIAL); }
 
         // DEALS
         if (dl !== null && dl.length > 0) { setDealsData(dl); }
-        else if (ldl && ldl.length > 0) { setDealsData(ldl); pushTasks.push(apiSave('deals', ldl)); }
-        else { setDealsData(DEALS_INITIAL); pushTasks.push(apiSave('deals', DEALS_INITIAL)); }
+        else if (dl !== null && dl.length === 0 && ldl && ldl.length > 0) { setDealsData(ldl); pushTasks.push(apiSave('deals', ldl)); }
+        else if (dl === null && ldl && ldl.length > 0) { setDealsData(ldl); }
+        else { setDealsData(DEALS_INITIAL); }
 
         // WALLETS
         if (wl !== null && wl.length > 0) { setWalletsData(wl); }
@@ -3578,7 +3633,7 @@ function AppInner() {
       };
       const setter = setters[msg.table];
       if (setter) setter(prev => JSON.stringify(prev) !== JSON.stringify(msg.data) ? msg.data : prev);
-      setTimeout(() => { skipSave.current = false; }, 500);
+      setTimeout(() => { skipSave.current = false; }, 2000); // FIX C6: 2s to let React flush
     });
 
     // Fallback polling every 15s (only if WebSocket is not connected)
@@ -3599,7 +3654,7 @@ function AppInner() {
       if (dc !== null && dc.length > 0) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
       if (dl !== null && dl.length > 0) setDealsData(prev => JSON.stringify(prev) !== JSON.stringify(dl) ? dl : prev);
       if (wl !== null && wl.length > 0) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
-      setTimeout(() => { skipSave.current = false; }, 500);
+      setTimeout(() => { skipSave.current = false; }, 2000);
     };
     const interval = setInterval(poll, 15000);
     return () => { clearInterval(interval); unsub(); };
@@ -3637,7 +3692,7 @@ function AppInner() {
     if (dc !== null && dc.length > 0) setDcEntries(dc);
     if (dl !== null && dl.length > 0) setDealsData(dl);
     if (wl !== null && wl.length > 0) setWalletsData(wl);
-    setTimeout(() => { skipSave.current = false; }, 500);
+    setTimeout(() => { skipSave.current = false; }, 2000);
   };
 
   if (!loaded) return (
