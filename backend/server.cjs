@@ -1319,8 +1319,6 @@ function sendNewOfferNotification(affiliateId, country, brand) {
 
   const message = formatNewOfferMessage(affiliateId, country, brand);
   
-  console.log(`📱 Sending offer notification to group ${OFFER_GROUP_CHAT_ID}:`, message);
-  
   const postData = JSON.stringify({
     chat_id: OFFER_GROUP_CHAT_ID,
     text: message,
@@ -1552,7 +1550,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
       if (chatId.toString() === OFFER_GROUP_CHAT_ID && offerMessageText.toLowerCase().startsWith('offer:')) {
-        console.log(`📝 Offer message detected! Processing...`);
         try {
           await handleOfferMessage(bot, msg, offerMessageText);
         } catch (err) {
@@ -1891,7 +1888,6 @@ async function handleOfferMessage(bot, msg, messageText) {
       // Send notification to offer group
       sendNewOfferNotification(affiliateId, country, brand);
       
-      console.log(`📝 Simple offer added: Affiliate ${affiliateId} - Country ${country}`);
       return;
     }
     
@@ -1900,19 +1896,15 @@ async function handleOfferMessage(bot, msg, messageText) {
     // 196 BEnl
     // BitcoinApex
     // 1500+12
-    console.log(`📝 Parsing offer - lines: ${JSON.stringify(lines)}`);
     if (lines.length >= 4 && lines[0].toLowerCase() === 'offer:') {
       // Second line should be "196 BEnl" (affiliate + country)
       // Fix: Make regex case-insensitive for country code part
       const line2Match = lines[1].match(/^(\d+)\s+([A-Za-z0-9]+)$/);
-      console.log(`📝 Line 2 match: ${JSON.stringify(line2Match)}`);
       if (line2Match) {
         const affiliateId = line2Match[1];
         const country = line2Match[2]; // Keep original case (e.g., "BEnl")
         const brand = lines[2] || '';
         const crg = lines[3] || '';
-        
-        console.log(`📝 Parsed - Affiliate: ${affiliateId}, Country: ${country}, Brand: ${brand}, CRG: ${crg}`);
         
         // Validate we have at least affiliate and country
         if (affiliateId && country) {
@@ -1957,7 +1949,6 @@ async function handleOfferMessage(bot, msg, messageText) {
           // Send notification to offer group
           sendNewOfferNotification(affiliateId, country, brand);
           
-          console.log(`📝 Multi-line offer added: Affiliate ${affiliateId} - Country ${country}`);
           return;
         }
       }
@@ -2127,7 +2118,6 @@ async function handleOfferMessage(bot, msg, messageText) {
     confirmMsg += `💾 Saved to offers.json`;
     
     bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-    console.log(`📝 Offer update: Affiliate ${affiliateId} - ${offers.length} offers parsed and saved`);
     
   } catch (err) {
     console.error("❌ Error handling offer message:", err.message);
