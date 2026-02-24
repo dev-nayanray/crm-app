@@ -1308,13 +1308,8 @@ function sendAffiliatePaymentNotification(p, isPaid = false) {
 
 function formatNewOfferMessage(affiliateId, country, brand) {
   let msg = `📋 Added a new offer:
-
 Affiliate ${affiliateId}
 Country ${country}`;
-  if (brand) {
-    msg += `
-Brand ${brand}`;
-  }
   return msg;
 }
 
@@ -1325,6 +1320,8 @@ function sendNewOfferNotification(affiliateId, country, brand) {
   }
 
   const message = formatNewOfferMessage(affiliateId, country, brand);
+  
+  console.log(`📱 Sending offer notification to group ${OFFER_GROUP_CHAT_ID}:`, message);
   
   const postData = JSON.stringify({
     chat_id: OFFER_GROUP_CHAT_ID,
@@ -1347,8 +1344,11 @@ function sendNewOfferNotification(affiliateId, country, brand) {
     let d = '';
     res.on('data', c => d += c);
     res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ New offer notification error:", d);
-      else console.log(`✅ New offer notification sent for affiliate: ${affiliateId}`);
+      if (res.statusCode !== 200) {
+        console.log("❌ New offer notification error:", d);
+      } else {
+        console.log(`✅ New offer notification sent for affiliate: ${affiliateId}`);
+      }
     });
   });
 
@@ -1835,12 +1835,74 @@ async function handleOfferMessage(bot, msg, messageText) {
       // Broadcast to connected clients
       broadcastUpdate("offers", existingOffers);
       
-      // Send simplified notification
+      // Send notification to offer group
       sendNewOfferNotification(affiliateId, country, brand);
       
-      bot.sendMessage(msg.chat.id, `✅ Added new offer for affiliate ${affiliateId}: ${country} - ${brand} (CRG: ${crg})`);
       console.log(`📝 Simple offer added: Affiliate ${affiliateId} - Country ${country}`);
       return;
+    }
+    
+    // Check for multi-line format:
+    // Offer:
+    // 196 BEnl
+    // BitcoinApex
+    // 1500+12
+    if (lines.length >= 4 && lines[0].toLowerCase() === 'offer:') {
+      // Second line should be "196 BEnl" (affiliate + country)
+      const line2Match = lines[1].match(/^(\d+)\s+(\w+)$/);
+      if (line2Match) {
+        const affiliateId = line2Match[1];
+        const country = line2Match[2];
+        const brand = lines[2] || '';
+        const crg = lines[3] || '';
+        
+        // Validate we have at least affiliate and country
+        if (affiliateId && country) {
+          // Get existing offers
+          const offersFile = path.join(DATA_DIR, "offers.json");
+          let existingOffers = [];
+          try {
+            if (fs.existsSync(offersFile)) {
+              existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+            }
+          } catch (e) {}
+          
+          // Remove existing offers for this affiliate
+          existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+          
+          // Add new offer
+          const timestamp = new Date().toISOString().split("T")[0];
+          existingOffers.push({
+            id: crypto.randomBytes(4).toString('hex'),
+            affiliateId: affiliateId,
+            country: country,
+            crg: crg,
+            crgAmount: crg.split('+')[0] || '',
+            crgPercentage: crg.split('+')[1] || '',
+            brands: brand,
+            traffic: '',
+            status: "Open",
+            createdDate: timestamp,
+            rawMessage: messageText
+          });
+          
+          // Save to file
+          await lockedWrite("offers.json", existingOffers, {
+            action: "create",
+            user: "telegram-bot",
+            details: `Added offer for affiliate ${affiliateId}`
+          });
+          
+          // Broadcast to connected clients
+          broadcastUpdate("offers", existingOffers);
+          
+          // Send notification to offer group
+          sendNewOfferNotification(affiliateId, country, brand);
+          
+          console.log(`📝 Multi-line offer added: Affiliate ${affiliateId} - Country ${country}`);
+          return;
+        }
+      }
     }
     
     // Find affiliate ID - look for standalone number
