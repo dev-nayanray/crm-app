@@ -36,7 +36,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "3.33";
+const VERSION = "3.35";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -684,7 +684,7 @@ endpoints.forEach(ep => {
 
 // POST — atomic save with conflict detection, audit log, broadcast
 app.post("/api/payments", requireAuth, async (req, res) => {
-  const { data: newPayments, version: clientVersion, user: userEmail } = req.body;
+  const { data: newPayments, version: clientVersion, user: userEmail, deleted: deletedIDs } = req.body;
   // Support legacy format (raw array)
   const payments = Array.isArray(req.body) ? req.body : newPayments;
   if (!Array.isArray(payments)) return res.status(400).json({ error: "Invalid data format" });
@@ -743,38 +743,56 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
   });
 
-  // Conflict detection — REJECT stale writes (FIX C3)
-  const serverVersion = getVersion("payments");
-  if (clientVersion && clientVersion > 0 && clientVersion < serverVersion) {
-    const serverData = readJSON("payments.json", []);
-    writeAuditLog("payments", "conflict_rejected", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}. Rejected.`);
-    console.log(`⚠️ CONFLICT REJECTED on payments: client v${clientVersion} < server v${serverVersion}`);
-    return res.status(409).json({
-      error: "conflict",
-      message: "Your data is stale. Refresh to get latest.",
-      serverVersion,
-      serverData,
-    });
+  // ═══════════════════════════════════════════════════════════
+  // SERVER-SIDE MERGE — NEVER blindly replace the file
+  // ═══════════════════════════════════════════════════════════
+  const serverData = readJSON("payments.json", []);
+  const mergedMap = new Map();
+  serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
+  
+  let clientNew = 0, clientUpdated = 0;
+  const clientIDs = new Set();
+  payments.forEach(r => {
+    if (!r || !r.id) return;
+    clientIDs.add(r.id);
+    const srv = mergedMap.get(r.id);
+    if (!srv) { mergedMap.set(r.id, r); clientNew++; }
+    else { mergedMap.set(r.id, r); clientUpdated++; }
+  });
+  
+  const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
+  
+  // Remove explicitly deleted records
+  const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+  if (deleteSet.size > 0) {
+    deleteSet.forEach(id => mergedMap.delete(id));
+    console.log(`🗑️ [payments]: ${deleteSet.size} record(s) explicitly deleted`);
+  }
+  
+  const merged = Array.from(mergedMap.values());
+  
+  if (clientNew > 0 || serverOnly.length > 0) {
+    console.log(`🔀 MERGE [payments]: client_sent=${payments.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, preserved=${serverOnly.length})`);
   }
 
   // Atomic write
-  const success = await lockedWrite("payments.json", payments, {
-    action: "update", user: userEmail || "unknown", details: `${payments.length} records`
+  const success = await lockedWrite("payments.json", merged, {
+    action: "update", user: userEmail || "unknown", details: `${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
   });
 
   if (success) {
-    broadcastUpdate("payments", payments);
-    res.json({ ok: true, count: payments.length, version: getVersion("payments") });
+    broadcastUpdate("payments", merged);
+    res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true });
   } else {
     res.status(500).json({ error: "Write failed — data not saved" });
   }
 });
 
-// Generic POST for other tables
+// Generic POST for other tables — SERVER-SIDE MERGE (never destructive replace)
 ["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers"].forEach(ep => {
   const file = ep + ".json";
   app.post(`/api/${ep}`, requireAuth, async (req, res) => {
-    const { data: newData, version: clientVersion, user: userEmail } = req.body;
+    const { data: newData, version: clientVersion, user: userEmail, deleted: deletedIDs } = req.body;
     const records = Array.isArray(req.body) ? req.body : newData;
     if (!Array.isArray(records)) return res.status(400).json({ error: "Invalid data format" });
     if (records.length > 10000) return res.status(400).json({ error: "Too many records" });
@@ -793,35 +811,67 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       const oldMap = new Map(oldRecords.map(p => [p.id, p]));
       records.forEach(cp => {
         const oldCp = oldMap.get(cp.id);
-        // New customer payment - notify based on status
         if (!oldCp) {
-          if (cp.status === "Received") {
-            sendBrandPaymentNotification(cp, true);
-          }
+          if (cp.status === "Received") sendBrandPaymentNotification(cp, true);
         } else if (oldCp.status !== cp.status) {
-          // Status changed to Received - notify brands group
-          if (cp.status === "Received" && oldCp.status !== "Received") {
-            sendBrandPaymentNotification(cp, true);
-          }
+          if (cp.status === "Received" && oldCp.status !== "Received") sendBrandPaymentNotification(cp, true);
         }
       });
     }
 
-    // Conflict detection — REJECT stale writes (FIX C3)
-    const serverVersion = getVersion(ep);
-    if (clientVersion && clientVersion > 0 && clientVersion < serverVersion) {
-      const serverData = readJSON(file, []);
-      writeAuditLog(ep, "conflict_rejected", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}`);
-      return res.status(409).json({ error: "conflict", serverVersion, serverData });
+    // ═══════════════════════════════════════════════════════════
+    // SERVER-SIDE MERGE — NEVER blindly replace the file
+    // ═══════════════════════════════════════════════════════════
+    // Read current server data
+    const serverData = readJSON(file, []);
+    
+    // Build merged result: start with all server records, layer client on top
+    const mergedMap = new Map();
+    serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
+    
+    let clientNew = 0, clientUpdated = 0, clientDeleted = 0;
+    const clientIDs = new Set();
+    records.forEach(r => {
+      if (!r || !r.id) return;
+      clientIDs.add(r.id);
+      const srv = mergedMap.get(r.id);
+      if (!srv) {
+        // New record from client — KEEP
+        mergedMap.set(r.id, r);
+        clientNew++;
+      } else {
+        // Both have it — client version wins (last-write-wins)
+        mergedMap.set(r.id, r);
+        clientUpdated++;
+      }
+    });
+    
+    // Records on server but NOT in client payload:
+    // These could be records added by OTHER users that this client hasn't seen yet.
+    // KEEP THEM — never delete other users' work.
+    const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
+    // Note: serverOnly records are already in mergedMap from the initial forEach above.
+    
+    // Remove explicitly deleted records
+    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+    if (deleteSet.size > 0) {
+      deleteSet.forEach(id => mergedMap.delete(id));
+      console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted`);
+    }
+    
+    const merged = Array.from(mergedMap.values());
+    
+    if (clientNew > 0 || serverOnly.length > 0) {
+      console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length})`);
     }
 
-    const success = await lockedWrite(file, records, {
-      action: "update", user: userEmail || "unknown", details: `${records.length} records`
+    const success = await lockedWrite(file, merged, {
+      action: "update", user: userEmail || "unknown", details: `${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
     });
 
     if (success) {
-      broadcastUpdate(ep, records);
-      res.json({ ok: true, count: records.length, version: getVersion(ep) });
+      broadcastUpdate(ep, merged);
+      res.json({ ok: true, count: merged.length, version: getVersion(ep), merged: true });
     } else {
       res.status(500).json({ error: "Write failed" });
     }
