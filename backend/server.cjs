@@ -1950,7 +1950,7 @@ async function handleOfferMessage(bot, msg, messageText) {
       return;
     }
     
-    // Check for multi-line format:
+// Check for multi-line format:
     // Offer:
     // 196 BEnl
     // BitcoinApex
@@ -2011,9 +2011,107 @@ async function handleOfferMessage(bot, msg, messageText) {
           return;
         }
       }
+      
+      // NEW FORMAT: Check for format like:
+      // Offer:
+      // 80
+      // HR native Quantumcroatia 1250+11%
+      // deduction 10%
+      
+      // Line 2 is affiliate ID only (just a number)
+      const line2NumberOnly = lines[1].match(/^(\d+)$/);
+      if (line2NumberOnly) {
+        const affiliateId = line2NumberOnly[1];
+        
+        // Line 3 contains: country brand crg (e.g., "HR native Quantumcroatia 1250+11%")
+        const line3 = lines[2] || '';
+        
+        // Parse line3: first 2 chars is country code, rest is brand and CRG
+        // Format: "HR native Quantumcroatia 1250+11%"
+        let country = '';
+        let brand = '';
+        let crg = '';
+        
+        // Try to extract country code (first 2 letters)
+        const countryMatch = line3.match(/^([A-Za-z]{2})\s+(.+)$/);
+        if (countryMatch) {
+          country = countryMatch[1].toUpperCase();
+          const rest = countryMatch[2];
+          // Try to extract CRG from rest (e.g., "1250+11%" or "1250+11")
+          const crgMatch = rest.match(/(\d+[\+\%]\d+%)/);
+          if (crgMatch) {
+            crg = crgMatch[1];
+            brand = rest.replace(crgMatch[0], '').trim();
+          } else {
+            brand = rest;
+          }
+        }
+        
+        // Parse deduction from line 4 (e.g., "deduction 10%")
+        let deduction = '';
+        if (lines[3]) {
+          const deductionMatch = lines[3].match(/deduction\s+(\d+%)/i);
+          if (deductionMatch) {
+            deduction = deductionMatch[1];
+          }
+        }
+        
+        if (affiliateId && country) {
+          // Get existing offers
+          const offersFile = path.join(DATA_DIR, "offers.json");
+          let existingOffers = [];
+          try {
+            if (fs.existsSync(offersFile)) {
+              existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+            }
+          } catch (e) {}
+          
+          // Remove existing offers for this affiliate
+          existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+          
+          // Add new offer
+          const timestamp = new Date().toISOString().split("T")[0];
+          existingOffers.push({
+            id: crypto.randomBytes(4).toString('hex'),
+            affiliateId: affiliateId,
+            country: country,
+            crg: crg,
+            crgAmount: crg ? crg.split('+')[0] : '',
+            crgPercentage: crg ? (crg.split('+')[1] || '') : '',
+            brands: brand,
+            traffic: '',
+            deduction: deduction,
+            status: "Open",
+            createdDate: timestamp,
+            rawMessage: messageText
+          });
+          
+          // Save to file
+          await lockedWrite("offers.json", existingOffers, {
+            action: "create",
+            user: "telegram-bot",
+            details: `Added offer for affiliate ${affiliateId}`
+          });
+          
+          // Broadcast to connected clients
+          broadcastUpdate("offers", existingOffers);
+          
+          // Send confirmation to offer group
+          let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
+          confirmMsg += `🌍 Country: <b>${country}</b>\n`;
+          confirmMsg += `🏷️ Brand: <b>${brand}</b>\n`;
+          if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
+          if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
+          confirmMsg += `\n💾 Saved to offers.json`;
+          
+          bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+          
+          return;
+        }
+      }
     }
     
-    // Find affiliate ID - look for standalone number
+    // Find affiliate ID
     let affiliateId = null;
     let startIndex = 0;
     
@@ -2305,7 +2403,7 @@ function gracefulShutdown(signal) {
   writeAuditLog("system", "shutdown", "system", `${signal} — uptime: ${Math.round(process.uptime())}s, heap: ${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`);
   setTimeout(() => process.exit(0), 2000);
 }
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));https://etherscan.io/tx/0x206175cd46e79d6f3510a5b1e57d6a135d05144fc61c4ee281f8b11e12e807e5
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ═══════════════════════════════════════════════════════════════
