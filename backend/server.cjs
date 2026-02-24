@@ -36,7 +36,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "3.22";
+const VERSION = "3.24";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -146,10 +146,32 @@ function readJSON(filename, fallback) {
   const filepath = path.join(DATA_DIR, filename);
   try {
     if (fs.existsSync(filepath)) {
-      return JSON.parse(fs.readFileSync(filepath, "utf8"));
+      const raw = fs.readFileSync(filepath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+      console.error(`⚠️ ${filename} is not an array — treating as corrupted`);
     }
   } catch (err) {
     console.error(`❌ Error reading ${filename}:`, err.message);
+  }
+  // FIX C4: Try to recover from most recent backup before returning empty fallback
+  try {
+    const backupDirs = fs.readdirSync(BACKUP_DIR).sort().reverse();
+    for (const dir of backupDirs) {
+      const backupFile = path.join(BACKUP_DIR, dir, filename);
+      if (fs.existsSync(backupFile)) {
+        const backupRaw = fs.readFileSync(backupFile, "utf8");
+        const backupData = JSON.parse(backupRaw);
+        if (Array.isArray(backupData) && backupData.length > 0) {
+          console.log(`🔧 AUTO-RECOVERED ${filename} from backup ${dir} (${backupData.length} records)`);
+          // Restore the file from backup
+          fs.writeFileSync(filepath, backupRaw, "utf8");
+          return backupData;
+        }
+      }
+    }
+  } catch (recoveryErr) {
+    console.error(`⚠️ Backup recovery failed for ${filename}:`, recoveryErr.message);
   }
   return fallback;
 }
@@ -184,11 +206,19 @@ function writeJSONAtomic(filename, data) {
 }
 
 // Locked write — prevents concurrent writes to same table
+// FIX C2: Added 10-second timeout to prevent deadlocks
 async function lockedWrite(filename, data, meta) {
   const key = filename.replace('.json', '');
 
-  // Simple mutex: wait if another write is in progress
+  // Mutex with timeout — never wait forever
+  const maxWait = 10000; // 10 seconds
+  const start = Date.now();
   while (dataLocks.has(key)) {
+    if (Date.now() - start > maxWait) {
+      console.error(`💥 LOCK TIMEOUT on ${key} — forcing unlock (was held ${maxWait}ms)`);
+      dataLocks.delete(key); // Force unlock to prevent deadlock
+      break;
+    }
     await new Promise(r => setTimeout(r, 10));
   }
 
@@ -407,7 +437,9 @@ function persistSessions() {
   try {
     const obj = Object.fromEntries(activeSessions);
     fs.writeFileSync(SESSION_FILE, JSON.stringify(obj), "utf8");
-  } catch {}
+  } catch (err) {
+    console.error("❌ Failed to persist sessions:", err.message);
+  }
 }
 
 function generateSessionToken() {
@@ -681,11 +713,18 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
   });
 
-  // Conflict detection
+  // Conflict detection — REJECT stale writes (FIX C3)
   const serverVersion = getVersion("payments");
-  if (clientVersion && clientVersion < serverVersion) {
-    writeAuditLog("payments", "conflict_lww", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}. Last-writer-wins applied.`);
-    console.log(`⚠️ Conflict on payments: client v${clientVersion} < server v${serverVersion} — LWW applied`);
+  if (clientVersion && clientVersion > 0 && clientVersion < serverVersion) {
+    const serverData = readJSON("payments.json", []);
+    writeAuditLog("payments", "conflict_rejected", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}. Rejected.`);
+    console.log(`⚠️ CONFLICT REJECTED on payments: client v${clientVersion} < server v${serverVersion}`);
+    return res.status(409).json({
+      error: "conflict",
+      message: "Your data is stale. Refresh to get latest.",
+      serverVersion,
+      serverData,
+    });
   }
 
   // Atomic write
@@ -718,10 +757,12 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       }
     }
 
+    // Conflict detection — REJECT stale writes (FIX C3)
     const serverVersion = getVersion(ep);
-    if (clientVersion && clientVersion < serverVersion) {
-      writeAuditLog(ep, "conflict_lww", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}`);
-      console.log(`⚠️ Conflict on ${ep}: client v${clientVersion} < server v${serverVersion} — LWW applied`);
+    if (clientVersion && clientVersion > 0 && clientVersion < serverVersion) {
+      const serverData = readJSON(file, []);
+      writeAuditLog(ep, "conflict_rejected", userEmail || "unknown", `Client v${clientVersion} < Server v${serverVersion}`);
+      return res.status(409).json({ error: "conflict", serverVersion, serverData });
     }
 
     const success = await lockedWrite(file, records, {
