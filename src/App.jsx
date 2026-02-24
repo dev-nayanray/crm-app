@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.24";
+const VERSION = "3.26";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -784,23 +784,26 @@ function SyncStatus() {
   const [status, setStatus] = useState("checking");
   useEffect(() => {
     const iv = setInterval(() => {
-      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) setStatus("realtime");
-      else if (serverOnline) setStatus("polling");
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) setStatus("live");
+      else if (serverOnline) setStatus("live");
       else setStatus("offline");
     }, 2000);
     return () => clearInterval(iv);
   }, []);
+  const isOk = status === "live";
+  const isBad = status === "offline";
   const cfg = {
-    realtime: { bg: "rgba(16,185,129,0.1)", border: "rgba(16,185,129,0.3)", color: "#10B981", dot: "#10B981", text: "⚡ Live", title: "Real-time sync via WebSocket — instant updates" },
-    polling: { bg: "rgba(14,165,233,0.1)", border: "rgba(14,165,233,0.3)", color: "#0EA5E9", dot: "#0EA5E9", text: "Synced", title: "Connected via HTTP polling — updates every 15s" },
-    offline: { bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", color: "#F59E0B", dot: "#F59E0B", text: "Local", title: "Server offline — data saved locally" },
-    checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", dot: "#94A3B8", text: "...", title: "Checking connection" },
-  }[status];
+    live: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)", color: "#10B981", icon: "\u2713", text: "Connected", glow: "0 0 6px rgba(16,185,129,0.4)" },
+    offline: { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.35)", color: "#EF4444", icon: "\u2715", text: "Local Only", glow: "0 0 6px rgba(239,68,68,0.4)" },
+    checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", icon: "\u2022", text: "...", glow: "none" },
+  }[status] || { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", icon: "\u2022", text: "...", glow: "none" };
   return (
-    <div title={cfg.title}
-      style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 600, cursor: "default",
-        background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: cfg.dot, display: "inline-block", animation: status === "realtime" ? "pulse 2s infinite" : "none" }} />
+    <div title={isOk ? "Connected to production server" : isBad ? "Server offline \u2014 data saved locally only" : "Checking..."}
+      style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700, cursor: "default",
+        background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, fontFamily: "'JetBrains Mono',monospace" }}>
+      <span style={{ width: 16, height: 16, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#FFF",
+        background: isOk ? "linear-gradient(135deg, #10B981, #34D399)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : cfg.color,
+        boxShadow: cfg.glow }}>{cfg.icon}</span>
       {cfg.text}
     </div>
   );
@@ -926,7 +929,6 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
               {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
               <div style={{ padding: "5px 14px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}12`, border: `1px solid ${accentColor || "#0EA5E9"}33`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 500 }}>{user.name}</div>
               <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 16, padding: "6px 10px", borderRadius: 8 }}>{dark ? "☀️" : "🌙"}</button>
-              <button onClick={onRefresh} title="Refresh" style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 10px", borderRadius: 8 }}>{I.refresh}<span>Refresh</span></button>
               <SyncStatus />
               <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
                 onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -935,8 +937,6 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
           </>}
           {mobile && <>
             <SyncStatus />
-            <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{ display: "flex", background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", padding: "6px 8px", borderRadius: 8, fontSize: 16 }}>{dark ? "☀️" : "🌙"}</button>
-            <button onClick={onRefresh} title="Refresh" style={{ display: "flex", background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", padding: "6px 8px", borderRadius: 8 }}>{I.refresh}</button>
             <button className="mobile-menu-btn" onClick={() => setMenuOpen(true)}
               style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "1px solid #E2E8F0", color: "#334155", cursor: "pointer", padding: "6px 10px", borderRadius: 8, fontSize: 18 }}>☰</button>
           </>}
@@ -1592,7 +1592,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // Notification sent by server - removed duplicate from frontend
+        telegramNotify(`💰 Payment #${p.invoice} marked as PAID — ${parseFloat(p.amount).toLocaleString()}$ by ${user.name}`);
       } else {
         telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
       }
@@ -3455,36 +3455,111 @@ function AppInner() {
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || [{ id: genId(), date: "2026-02-19", trc: "TAXupFc6A9Svhy22bJn7QQzPaLtZ6tGQ15", erc: "0xbF7178Bd7526C25387df412cbe12927b593E31E5", btc: "bc1qqhtk4fhlnkf7sv768jdss5da7ce0wnpue6ltwd" }]);
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
-  const [syncBanner, setSyncBanner] = useState(null); // null | "pushing" | "synced" | "offline"
   const skipSave = useRef(true);
 
-  // ── SYNC ENGINE: Server-Active methodology ──
-  // RULE 1: If server has data for a table → USE IT (never overwrite with local/defaults)
-  // RULE 2: If server is empty for a table → check localStorage → push localStorage up
-  // RULE 3: If BOTH server AND localStorage are empty → push hardcoded defaults (first-time only)
-  // RULE 4: Hardcoded INITIAL data is ONLY used on truly fresh installs (no server, no localStorage)
-  // RULE 5: On every state change → save to BOTH localStorage AND server simultaneously
+  // ═══════════════════════════════════════════════════════════════
+  // SYNC ENGINE v3.25 — LOCAL-FIRST WITH ID-BASED MERGE
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // THE OLD BUG: Server has 50 records, localStorage has 80 (30 new).
+  //   Old code: setCrgDeals(serverData) → 30 local records DELETED.
+  //
+  // THE FIX: Merge by record ID. Records in local but not server = NEW,
+  //   keep them. Records in server but not local = added by others, keep them.
+  //   Records in both = keep most recently updated version.
+  //
+  // GOLDEN RULE: NEVER replace local state with server data.
+  //              ALWAYS merge. A record is only deleted if a user explicitly deletes it.
+  // ═══════════════════════════════════════════════════════════════
+
+  const [syncStatus, setSyncStatus] = useState("checking"); // "live" | "offline" | "checking" | "merging" | "error"
+  const syncStatusRef = useRef("checking");
+  const updateSyncStatus = (s) => { syncStatusRef.current = s; setSyncStatus(s); };
+
+  // ── ID-based merge: combines two arrays, keeps ALL unique records ──
+  function mergeByID(localArr, serverArr, tableName) {
+    if (!serverArr || serverArr.length === 0) return localArr || [];
+    if (!localArr || localArr.length === 0) return serverArr;
+
+    const merged = new Map();
+
+    // Start with ALL server records
+    serverArr.forEach(r => { if (r && r.id) merged.set(r.id, { ...r, _src: 'server' }); });
+
+    let added = 0, updated = 0;
+    // Layer local records on top
+    localArr.forEach(r => {
+      if (!r || !r.id) return;
+      const srv = merged.get(r.id);
+      if (!srv) {
+        // NEW local record — not on server yet. THIS IS THE KEY FIX.
+        merged.set(r.id, r);
+        added++;
+      } else {
+        // Both have this record — keep the most recently edited version
+        const lt = r.updatedAt || r.lastModified || 0;
+        const st = srv.updatedAt || srv.lastModified || 0;
+        if (lt > st) {
+          merged.set(r.id, r);
+          updated++;
+        }
+        // else: keep server version (it's newer)
+      }
+    });
+
+    // Clean _src markers
+    const result = Array.from(merged.values()).map(r => { const { _src, ...clean } = r; return clean; });
+
+    if (added > 0 || updated > 0) {
+      console.log(`🔀 MERGE [${tableName}]: server=${serverArr.length} + local_new=${added} + local_updated=${updated} → total=${result.length}`);
+    }
+    return result;
+  }
+
+  // ── Main sync effect ──
   useEffect(() => {
     (async () => {
       skipSave.current = true;
+      updateSyncStatus("checking");
 
-      // Step 0: Check if server is reachable (health endpoint needs no auth)
+      // Step 0: Check server health (no auth needed)
       try {
         const healthRes = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
         if (healthRes.ok) serverOnline = true;
       } catch { serverOnline = false; }
 
-      // Only fetch from server if we have an auth token (i.e., user is logged in)
       const hasToken = !!getSessionToken();
 
-      // Step 1: Fetch ALL data from server (only if authenticated)
-      let u = null, p = null, cp = null, crg = null, dc = null, dl = null, wl = null;
-      let serverFetchSucceeded = false; // Track if we actually got real data
+      // Step 1: ALWAYS read localStorage FIRST — this is the user's local truth
+      const local = {
+        users: lsGet('users', null),
+        payments: lsGet('payments', null),
+        'customer-payments': lsGet('customer-payments', null),
+        'crg-deals': lsGet('crg-deals', null),
+        'daily-cap': lsGet('daily-cap', null),
+        deals: lsGet('deals', null),
+        wallets: lsGet('wallets', null),
+      };
+
+      // Apply localStorage immediately (instant paint, no waiting for server)
+      if (local.users && local.users.length > 0) setUsers(local.users);
+      if (local.payments && local.payments.length > 0) setPayments(local.payments);
+      if (local['customer-payments'] && local['customer-payments'].length > 0) setCpPayments(local['customer-payments']);
+      if (local['crg-deals'] && local['crg-deals'].length > 0) setCrgDeals(local['crg-deals']);
+      if (local['daily-cap'] && local['daily-cap'].length > 0) setDcEntries(local['daily-cap']);
+      if (local.deals && local.deals.length > 0) setDealsData(local.deals);
+      if (local.wallets && local.wallets.length > 0) setWalletsData(local.wallets);
+
+      // Step 2: If server is reachable + we have auth, fetch + MERGE
       if (hasToken && serverOnline) {
-        [u, p, cp, crg, dc, dl, wl] = await Promise.all([
-          apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
+        updateSyncStatus("merging");
+
+        const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
+          apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
+          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
         ]);
-        // If any API call got 401 → session expired, force logout
+
+        // Auth failure check
         if (sessionExpiredFlag) {
           sessionExpiredFlag = false;
           setUser(null);
@@ -3492,135 +3567,96 @@ function AppInner() {
           setLoaded(true);
           return;
         }
-        // CRITICAL FIX: Check if we ACTUALLY got data from the server.
-        // If ALL tables returned null (e.g., 401 during grace period), 
-        // the server fetch FAILED — do NOT treat as "server is empty".
-        const anyDataFromServer = [u, p, cp, crg, dc, dl, wl].some(d => d !== null);
-        serverFetchSucceeded = anyDataFromServer;
 
-        if (!anyDataFromServer && justLoggedIn) {
-          // ALL 7 calls returned null during login grace — this is the 401 race.
-          // SAFE FALLBACK: Treat server as offline, use localStorage, don't push anything.
-          console.log("⚠️ All server fetches returned null during login grace — using localStorage only");
-          serverOnline = false; // Force offline path — NEVER push stale data to server
+        // If ALL fetches returned null during login grace → 401 race, stay offline
+        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl].some(d => d !== null);
+        if (!anySuccess && justLoggedIn) {
+          console.log("⚠️ All fetches failed during login — using local data");
+          updateSyncStatus("offline");
+          setLoaded(true);
+          setTimeout(() => { skipSave.current = false; }, 2000);
+          return;
         }
-      }
 
-      // Step 2: Get localStorage data (backup/offline cache)
-      const lu = lsGet('users', null);
-      const lp = lsGet('payments', null);
-      const lcp = lsGet('customer-payments', null);
-      const lcrg = lsGet('crg-deals', null);
-      const ldc = lsGet('daily-cap', null);
-      const ldl = lsGet('deals', null);
-      const lwl = lsGet('wallets', null);
+        if (anySuccess) {
+          // ══ MERGE PHASE — the core of v3.25 ══
+          const pushTasks = [];
+          const serverData = { users: su, payments: sp, 'customer-payments': scp, 'crg-deals': scrg, 'daily-cap': sdc, deals: sdl, wallets: swl };
 
-      if (serverOnline && serverFetchSucceeded) {
-        // ── SERVER IS ONLINE AND RETURNED DATA: it is the source of truth ──
-        const pushTasks = [];
-
-        // USERS — special handling: MERGE + UPDATE
-        // Adds new users from INITIAL_USERS, updates passwords if changed in code
-        if (u !== null && u.length > 0) {
-          const serverMap = new Map(u.map(x => [x.email, x]));
-          let changed = false;
-          // Add missing users
-          const newUsers = INITIAL_USERS.filter(x => !serverMap.has(x.email));
-          if (newUsers.length > 0) changed = true;
-          // Update passwords for existing users if hash differs in INITIAL_USERS
-          const updated = u.map(su => {
-            const iu = INITIAL_USERS.find(x => x.email === su.email);
-            if (iu && iu.passwordHash && iu.passwordHash !== su.passwordHash) {
-              changed = true;
-              return { ...su, passwordHash: iu.passwordHash };
+          // USERS — merge + ensure INITIAL_USERS present + restore hashes
+          const usersMerged = mergeByID(local.users || INITIAL_USERS, su || [], 'users');
+          const seedMap = new Map(INITIAL_USERS.map(x => [x.email, x]));
+          // Add any missing seed users
+          const mergedEmails = new Set(usersMerged.map(x => x.email));
+          const missingSeed = INITIAL_USERS.filter(x => !mergedEmails.has(x.email));
+          const usersWithSeed = [...usersMerged, ...missingSeed];
+          // Restore hashes stripped by client
+          const usersFinal = usersWithSeed.map(u => {
+            if (!u.passwordHash) {
+              const seed = seedMap.get(u.email);
+              if (seed) return { ...u, passwordHash: seed.passwordHash };
             }
-            return su;
+            return u;
           });
-          const merged = [...updated, ...newUsers];
-          if (changed) {
-            setUsers(merged);
-            pushTasks.push(apiSave('users', merged));
-          } else {
-            setUsers(u);
+          setUsers(usersFinal);
+          if (su !== null && JSON.stringify(usersFinal) !== JSON.stringify(su)) {
+            pushTasks.push(apiSave('users', usersFinal, user?.email));
           }
-        } else if (lu && lu.length > 0) {
-          // Server empty, localStorage has users — merge with INITIAL too
-          const lsEmails = new Set(lu.map(x => x.email));
-          const newUsers = INITIAL_USERS.filter(x => !lsEmails.has(x.email));
-          const merged = newUsers.length > 0 ? [...lu, ...newUsers] : lu;
-          setUsers(merged);
-          pushTasks.push(apiSave('users', merged));
+
+          // ALL DATA TABLES — merge by ID, push back if local had new records
+          const dataTables = [
+            { key: 'payments', srv: sp, setter: setPayments, fallback: INITIAL },
+            { key: 'customer-payments', srv: scp, setter: setCpPayments, fallback: CP_INITIAL },
+            { key: 'crg-deals', srv: scrg, setter: setCrgDeals, fallback: CRG_INITIAL },
+            { key: 'daily-cap', srv: sdc, setter: setDcEntries, fallback: DC_INITIAL },
+            { key: 'deals', srv: sdl, setter: setDealsData, fallback: DEALS_INITIAL },
+            { key: 'wallets', srv: swl, setter: setWalletsData, fallback: null },
+          ];
+
+          for (const t of dataTables) {
+            const localData = local[t.key];
+            if (t.srv !== null) {
+              // Server returned data → MERGE with local
+              const merged = mergeByID(localData, t.srv, t.key);
+              t.setter(merged);
+              lsSave(t.key, merged);
+              // If merged has MORE records than server → local had new records → push merged up
+              if (merged.length > t.srv.length) {
+                pushTasks.push(apiSave(t.key, merged, user?.email));
+              }
+            } else if (localData && localData.length > 0) {
+              // Server fetch FAILED (null) — keep local, try to push
+              t.setter(localData);
+              pushTasks.push(apiSave(t.key, localData, user?.email));
+            } else if (t.fallback && t.fallback.length > 0) {
+              // Nothing anywhere — use hardcoded defaults (local only, don't push)
+              t.setter(t.fallback);
+            }
+          }
+
+          if (pushTasks.length > 0) {
+            console.log(`⬆️ Pushing ${pushTasks.length} merged tables to server...`);
+            await Promise.all(pushTasks);
+          }
+
+          updateSyncStatus("live");
         } else {
-          setUsers(INITIAL_USERS);
-          pushTasks.push(apiSave('users', INITIAL_USERS));
-        }
-
-        // PAYMENTS — Only push localStorage if server returned EMPTY ARRAY [], not null (null = fetch failed)
-        if (p !== null && p.length > 0) { setPayments(p); }
-        else if (p !== null && p.length === 0 && lp && lp.length > 0) { setPayments(lp); pushTasks.push(apiSave('payments', lp)); }
-        else if (p === null && lp && lp.length > 0) { setPayments(lp); /* Server fetch failed — use local but DON'T push */ }
-        else { setPayments(INITIAL); }
-
-        // CUSTOMER PAYMENTS
-        if (cp !== null && cp.length > 0) { setCpPayments(cp); }
-        else if (cp !== null && cp.length === 0 && lcp && lcp.length > 0) { setCpPayments(lcp); pushTasks.push(apiSave('customer-payments', lcp)); }
-        else if (cp === null && lcp && lcp.length > 0) { setCpPayments(lcp); }
-        else { setCpPayments(CP_INITIAL); }
-
-        // CRG DEALS
-        if (crg !== null && crg.length > 0) { setCrgDeals(crg); }
-        else if (crg !== null && crg.length === 0 && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); pushTasks.push(apiSave('crg-deals', lcrg)); }
-        else if (crg === null && lcrg && lcrg.length > 0) { setCrgDeals(lcrg); }
-        else { setCrgDeals(CRG_INITIAL); }
-
-        // DAILY CAP
-        if (dc !== null && dc.length > 0) { setDcEntries(dc); }
-        else if (dc !== null && dc.length === 0 && ldc && ldc.length > 0) { setDcEntries(ldc); pushTasks.push(apiSave('daily-cap', ldc)); }
-        else if (dc === null && ldc && ldc.length > 0) { setDcEntries(ldc); }
-        else { setDcEntries(DC_INITIAL); }
-
-        // DEALS
-        if (dl !== null && dl.length > 0) { setDealsData(dl); }
-        else if (dl !== null && dl.length === 0 && ldl && ldl.length > 0) { setDealsData(ldl); pushTasks.push(apiSave('deals', ldl)); }
-        else if (dl === null && ldl && ldl.length > 0) { setDealsData(ldl); }
-        else { setDealsData(DEALS_INITIAL); }
-
-        // WALLETS
-        if (wl !== null && wl.length > 0) { setWalletsData(wl); }
-        else if (lwl && lwl.length > 0) { setWalletsData(lwl); pushTasks.push(apiSave('wallets', lwl)); }
-        // no default push for wallets — already has initial state
-
-        if (pushTasks.length > 0) {
-          setSyncBanner("pushing");
-          await Promise.all(pushTasks);
+          updateSyncStatus("offline");
         }
       } else {
-        // ── SERVER OFFLINE or NOT AUTHENTICATED: use localStorage as fallback ──
-        if (lu && lu.length > 0) setUsers(lu);
-        if (lp && lp.length > 0) setPayments(lp);
-        if (lcp && lcp.length > 0) setCpPayments(lcp);
-        if (lcrg && lcrg.length > 0) setCrgDeals(lcrg);
-        if (ldc && ldc.length > 0) setDcEntries(ldc);
-        if (ldl && ldl.length > 0) setDealsData(ldl);
-        if (lwl && lwl.length > 0) setWalletsData(lwl);
-        // Only show offline banner if user is logged in but server is down
-        // Don't scare users on the login screen
-        if (hasToken && !serverOnline) setSyncBanner("offline");
+        // Server offline or no auth — local data already applied above
+        updateSyncStatus(hasToken ? "offline" : "checking");
       }
 
       setLoaded(true);
-      setTimeout(() => { skipSave.current = false; }, 2000); // 2s safety margin
-      setTimeout(() => setSyncBanner(null), 5000);
+      setTimeout(() => { skipSave.current = false; }, 2000);
     })();
-  }, [user]); // Re-run when user logs in (gets session token)
+  }, [user]); // Re-run when user logs in
 
-  // ── WebSocket Real-Time Sync ──
-  // Primary: WebSocket for instant updates from other users
-  // Fallback: HTTP polling every 15s if WebSocket disconnected
+  // ── WebSocket Real-Time Sync — MERGE, never replace ──
   useEffect(() => {
     if (!loaded || !getSessionToken()) return;
 
-    // Connect WebSocket
     connectWebSocket();
 
     // Listen for real-time updates from other users
@@ -3632,37 +3668,60 @@ function AppInner() {
         'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData
       };
       const setter = setters[msg.table];
-      if (setter) setter(prev => JSON.stringify(prev) !== JSON.stringify(msg.data) ? msg.data : prev);
-      setTimeout(() => { skipSave.current = false; }, 2000); // FIX C6: 2s to let React flush
+      if (setter) {
+        // MERGE incoming WS data with current state — never replace
+        setter(prev => {
+          const merged = mergeByID(prev, msg.data, msg.table);
+          // Only update if actually different
+          if (JSON.stringify(merged) !== JSON.stringify(prev)) {
+            lsSave(msg.table, merged); // Keep localStorage in sync
+            return merged;
+          }
+          return prev;
+        });
+      }
+      setTimeout(() => { skipSave.current = false; }, 2000);
     });
 
-    // Fallback polling every 15s (only if WebSocket is not connected)
+    // Fallback polling every 15s — MERGE, never replace
     const poll = async () => {
-      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return; // WS is handling it
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
       if (!serverOnline) {
-        try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch(e) {}
+        try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; updateSyncStatus("live"); } catch(e) {}
       }
       if (!serverOnline) return;
-      const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+      const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
       ]);
       skipSave.current = true;
-      if (u !== null && u.length > 0) setUsers(prev => JSON.stringify(prev) !== JSON.stringify(u) ? u : prev);
-      if (p !== null && p.length > 0) setPayments(prev => JSON.stringify(prev) !== JSON.stringify(p) ? p : prev);
-      if (cp !== null && cp.length > 0) setCpPayments(prev => JSON.stringify(prev) !== JSON.stringify(cp) ? cp : prev);
-      if (crg !== null && crg.length > 0) setCrgDeals(prev => JSON.stringify(prev) !== JSON.stringify(crg) ? crg : prev);
-      if (dc !== null && dc.length > 0) setDcEntries(prev => JSON.stringify(prev) !== JSON.stringify(dc) ? dc : prev);
-      if (dl !== null && dl.length > 0) setDealsData(prev => JSON.stringify(prev) !== JSON.stringify(dl) ? dl : prev);
-      if (wl !== null && wl.length > 0) setWalletsData(prev => JSON.stringify(prev) !== JSON.stringify(wl) ? wl : prev);
+      const tables = [
+        { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
+        { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
+        { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
+        { d: swl, s: setWalletsData, k: 'wallets' },
+      ];
+      for (const t of tables) {
+        if (t.d !== null && t.d.length > 0) {
+          t.s(prev => {
+            const merged = mergeByID(prev, t.d, t.k);
+            if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(t.k, merged); return merged; }
+            return prev;
+          });
+        }
+      }
       setTimeout(() => { skipSave.current = false; }, 2000);
     };
     const interval = setInterval(poll, 15000);
-    return () => { clearInterval(interval); unsub(); };
+
+    // When server comes back online, flush pending saves
+    const reconnectFlush = setInterval(() => {
+      if (serverOnline && pendingSaves.size > 0) flushPendingSaves();
+    }, 10000);
+
+    return () => { clearInterval(interval); clearInterval(reconnectFlush); unsub(); };
   }, [loaded]);
 
-  // Save on every change: localStorage (instant) + API (shared) with user email
-  // SAFETY: Never save empty arrays — protects against accidental data wipe
-  // ── Auto-save hooks: only save REAL user changes, never initial/default data ──
+  // ── Auto-save hooks — localStorage ALWAYS, server when online ──
   const initialPaymentsRef = useRef(JSON.stringify(INITIAL));
   const initialCpRef = useRef(JSON.stringify(CP_INITIAL));
   const initialCrgRef = useRef(JSON.stringify(CRG_INITIAL));
@@ -3681,17 +3740,29 @@ function AppInner() {
 
   const handleRefresh = async () => {
     skipSave.current = true;
-    serverOnline = false; // force re-check
-    const [u, p, cp, crg, dc, dl, wl] = await Promise.all([
+    serverOnline = false;
+    updateSyncStatus("merging");
+    const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
       apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
     ]);
-    if (u !== null && u.length > 0) setUsers(u);
-    if (p !== null && p.length > 0) setPayments(p);
-    if (cp !== null && cp.length > 0) setCpPayments(cp);
-    if (crg !== null && crg.length > 0) setCrgDeals(crg);
-    if (dc !== null && dc.length > 0) setDcEntries(dc);
-    if (dl !== null && dl.length > 0) setDealsData(dl);
-    if (wl !== null && wl.length > 0) setWalletsData(wl);
+    // MERGE — never replace
+    const tables = [
+      { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
+      { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
+      { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
+      { d: swl, s: setWalletsData, k: 'wallets' },
+    ];
+    let anyMerged = false;
+    for (const t of tables) {
+      if (t.d !== null && t.d.length > 0) {
+        t.s(prev => {
+          const merged = mergeByID(prev, t.d, t.k);
+          if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(t.k, merged); anyMerged = true; return merged; }
+          return prev;
+        });
+      }
+    }
+    updateSyncStatus(serverOnline ? "live" : "offline");
     setTimeout(() => { skipSave.current = false; }, 2000);
   };
 
@@ -3710,25 +3781,28 @@ function AppInner() {
     </div>
   );
 
-  // Sync banner component
+  // ── Sync Status Indicator — always visible ──
   const SyncBanner = () => {
+    const indicators = {
+      live: { dot: "#10B981", text: "Connected", icon: "✓", bg: "rgba(16,185,129,0.12)", border: "#10B98155", glow: "0 0 8px rgba(16,185,129,0.5)" },
+      merging: { dot: "#F59E0B", text: "Syncing", icon: "⟳", bg: "rgba(245,158,11,0.12)", border: "#F59E0B55", glow: "none" },
+      offline: { dot: "#EF4444", text: "Local Only", icon: "✕", bg: "rgba(239,68,68,0.12)", border: "#EF444455", glow: "0 0 8px rgba(239,68,68,0.4)" },
+      checking: { dot: "#64748B", text: "...", icon: "•", bg: "rgba(100,116,139,0.1)", border: "#64748B44", glow: "none" },
+      error: { dot: "#EF4444", text: "Error", icon: "⚠", bg: "rgba(239,68,68,0.15)", border: "#EF444466", glow: "0 0 8px rgba(239,68,68,0.4)" },
+    };
+    const ind = indicators[syncStatus] || indicators.checking;
+    const isOk = syncStatus === "live";
+    const isBad = syncStatus === "offline" || syncStatus === "error";
     return (
       <>
         <style>{mobileCSS}{darkModeCSS}</style>
-        {syncBanner && (() => {
-          const msgs = {
-            pushing: { bg: "#FEF3C7", border: "#F59E0B", color: "#92400E", text: "⬆️ Uploading local data to server..." },
-            offline: { bg: "#FEF2F2", border: "#EF4444", color: "#991B1B", text: "⚠️ Server offline — data saved locally only." },
-          };
-          const m = msgs[syncBanner];
-          if (!m) return null;
-          return (
-            <div style={{ position: "fixed", top: 0, left: 0, right: 0, padding: "8px 16px", background: m.bg, borderBottom: `2px solid ${m.border}`, color: m.color, fontSize: 12, fontWeight: 600, textAlign: "center", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              {m.text}
-              <button onClick={() => setSyncBanner(null)} style={{ background: "none", border: "none", color: m.color, cursor: "pointer", fontSize: 16, fontWeight: 700, marginLeft: 12 }}>×</button>
-            </div>
-          );
-        })()}
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: ind.bg, border: `1px solid ${ind.border}`, borderRadius: 20, fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3, cursor: "default" }}>
+          <div style={{ width: 18, height: 18, borderRadius: "50%", background: isOk ? "linear-gradient(135deg, #10B981, #34D399)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : ind.dot, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#FFF", fontWeight: 900, boxShadow: ind.glow, animation: syncStatus === "merging" ? "pulse 1s infinite" : "none" }}>
+            {ind.icon}
+          </div>
+          <span style={{ color: ind.dot }}>{ind.text}</span>
+          {pendingSaves.size > 0 && <span style={{ color: "#F59E0B", fontSize: 10 }}>⬆{pendingSaves.size}</span>}
+        </div>
       </>
     );
   };
