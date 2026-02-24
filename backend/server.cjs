@@ -103,6 +103,7 @@ seedUsers();
 // Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
+const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044";
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
 const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
@@ -772,6 +773,26 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       }
     }
 
+    // SPECIAL HANDLING: customer-payments status change notifications
+    if (ep === "customer-payments") {
+      const oldRecords = readJSON("customer-payments.json", []);
+      const oldMap = new Map(oldRecords.map(p => [p.id, p]));
+      records.forEach(cp => {
+        const oldCp = oldMap.get(cp.id);
+        // New customer payment - notify based on status
+        if (!oldCp) {
+          if (cp.status === "Received") {
+            sendBrandPaymentNotification(cp, true);
+          }
+        } else if (oldCp.status !== cp.status) {
+          // Status changed to Received - notify brands group
+          if (cp.status === "Received" && oldCp.status !== "Received") {
+            sendBrandPaymentNotification(cp, true);
+          }
+        }
+      });
+    }
+
     // Conflict detection — REJECT stale writes (FIX C3)
     const serverVersion = getVersion(ep);
     if (clientVersion && clientVersion > 0 && clientVersion < serverVersion) {
@@ -1271,10 +1292,15 @@ function sendAffiliatePaymentNotification(p, isPaid = false) {
 // ═══════════════════════════════════════════════════════════════
 
 function formatNewOfferMessage(affiliateId, country, brand) {
-  return `📋 Added a new offer:
+  let msg = `📋 Added a new offer:
 
 Affiliate ${affiliateId}
 Country ${country}`;
+  if (brand) {
+    msg += `
+Brand ${brand}`;
+  }
+  return msg;
 }
 
 function sendNewOfferNotification(affiliateId, country, brand) {
@@ -1475,8 +1501,79 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         return;
       }
 
+      // USDT hash detection (Brands group: -1002796530029)
+      // This handles payments in the Finance | Brands group
+      const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID || chatId.toString() === CUSTOMER_PAYMENT_GROUP_CHAT_ID;
+      const isFinanceGroup = chatId.toString() === FINANCE_GROUP_CHAT_ID;
+      
+      // Handle payment messages from Brands group with payment links
+      if (isBrandsGroup) {
+        const messageText = msg.text || '';
+        
+        // Try to extract brand name from message (look for brand name patterns)
+        const brandMatch = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
+        const extractedBrand = brandMatch ? brandMatch[1] : null;
+        
+        // Extract any payment hashes (erc/trc/btc)
+        const hashes = extractAllUsdtHashes(messageText);
+        const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20' || h.type === 'BTC');
+        
+        if (txHashes.length > 0) {
+          // Process payment hashes from Brands group
+          const amounts = [];
+          const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
+          let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+          const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
+          while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+
+          const wallets = readJSON("wallets.json", []);
+
+          for (let i = 0; i < txHashes.length; i++) {
+            const { hash, type } = txHashes[i];
+            let txResult = { success: false };
+            if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
+            else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
+            // BTC doesn't have verification yet, just record it
+
+            const amount = (amounts[i] || txResult.amount || "0").toString();
+            const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
+            const status = walletVerify.matched ? "Received" : "Pending";
+            const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
+
+            const newPayment = {
+              id: crypto.randomBytes(5).toString('hex'),
+              invoice, amount, fee: "", status, type: "Customer Payment",
+              openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
+              paymentHash: hash, 
+              trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
+              ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+              brand: extractedBrand || "",  // Store extracted brand name
+              month: new Date().getMonth(), year: new Date().getFullYear()
+            };
+
+            const cp = readJSON("customer-payments.json", []);
+            cp.unshift(newPayment);
+            await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash (Brands group)` });
+            broadcastUpdate("customer-payments", cp);
+
+            // Send notification to both groups
+            let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
+            if (extractedBrand) confirmMsg += `🏷️ Brand: <b>${extractedBrand}</b>\n`;
+            confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
+            confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
+            confirmMsg += `\n📊 Status: <b>${status}</b>`;
+            
+            bot.sendMessage(BRANDS_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+            bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+            
+            console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
+          }
+          return;
+        }
+      }
+      
       // USDT hash detection (finance group only)
-      if (chatId.toString() !== FINANCE_GROUP_CHAT_ID) return;
+      if (isFinanceGroup) {
       const messageText = msg.text || '';
       const hashes = extractAllUsdtHashes(messageText);
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
@@ -1699,7 +1796,33 @@ async function handleOfferMessage(bot, msg, messageText) {
         offers.push({
           brand: `${countryCode} ${brand}`,
           amount: amount,
-          percentage: percentage
+          percentage: percentage,
+          country: countryCode  // Store country separately
+        });
+      }
+    }
+    
+    // NEW: Try multi-line format (lines after first contain brand info)
+    // Format:
+    // Offer:
+    // 196 BEnl
+    // BitcoinApex
+    // 1500+12
+    if (offers.length === 0 && lines.length > 1) {
+      // Try to parse from remaining lines
+      const allText = lines.slice(1).join(' ').replace(/\n/g, ' ');
+      const multiLineRegex = /([A-Za-z]{2,})\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(\d+)\+(\d+(?:%|%?))/gi;
+      let multiMatch;
+      while ((multiMatch = multiLineRegex.exec(allText)) !== null) {
+        const countryCode = multiMatch[1].trim();
+        const brand = multiMatch[2].trim();
+        const amount = multiMatch[3].trim();
+        const percentage = multiMatch[4].trim();
+        offers.push({
+          brand: brand,
+          amount: amount,
+          percentage: percentage,
+          country: countryCode
         });
       }
     }
