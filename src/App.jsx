@@ -1592,7 +1592,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        telegramNotify(`💰 Payment #${p.invoice} marked as PAID — ${parseFloat(p.amount).toLocaleString()}$ by ${user.name}`);
+        // Notification sent by server - removed duplicate from frontend
       } else {
         telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
       }

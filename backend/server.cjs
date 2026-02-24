@@ -702,14 +702,29 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (!oldP) {
       // New payment - notify based on status
       if (p.status === "Paid") {
-        sendTelegramNotification(formatPaidPaymentMessage(p));
+        // Send to Customer Payment group (Brands) -1002796530029
+        sendTelegramNotification(formatPaidPaymentMessage(p), CUSTOMER_PAYMENT_GROUP_CHAT_ID);
+        // Send to Affiliate group -1002830517753
+        sendAffiliatePaymentNotification(p, true);
       } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
+        // Send to Affiliate group (Open payments)
         sendOpenPaymentNotification(p);
+        // Also send to Customer Payment group (Brands)
+        sendBrandPaymentNotification(p, false);
       }
     } else if (oldP.status !== p.status) {
-      if (p.status === "Paid" && oldP.status !== "Paid") sendTelegramNotification(formatPaidPaymentMessage(p));
+      if (p.status === "Paid" && oldP.status !== "Paid") {
+        // Send to Customer Payment group (Brands) -1002796530029
+        sendTelegramNotification(formatPaidPaymentMessage(p), CUSTOMER_PAYMENT_GROUP_CHAT_ID);
+        // Send to Affiliate group -1002830517753
+        sendAffiliatePaymentNotification(p, true);
+      }
       // Re-opening a previously paid payment notification
-      else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") sendOpenPaymentNotification(p);
+      else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") {
+        sendOpenPaymentNotification(p);
+        // Also notify brands group
+        sendBrandPaymentNotification(p, false);
+      }
     }
   });
 
@@ -1024,14 +1039,14 @@ app.get("/api/health", (req, res) => {
 // 13. TELEGRAM BOT (preserved from v2.03)
 // ═══════════════════════════════════════════════════════════════
 
-function sendTelegramNotification(message) {
+function sendTelegramNotification(message, chatId = FINANCE_GROUP_CHAT_ID) {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
     console.log("📱 Telegram notification skipped (no token configured)");
     return;
   }
 
   const postData = JSON.stringify({
-    chat_id: FINANCE_GROUP_CHAT_ID,
+    chat_id: chatId,
     text: message
   });
 
@@ -1120,6 +1135,185 @@ function formatPaidPaymentMessage(p) {
 💵 Amount: $${amount}
 👤 Paid by: ${p.openBy || "Unknown"}
 Payment Hash: ${p.paymentHash || "N/A"}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FINANCE | BRANDS GROUP NOTIFICATIONS (-1002796530029)
+// ═══════════════════════════════════════════════════════════════
+
+function formatBrandNewPaymentMessage(p) {
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `💰 NEW CUSTOMER PAYMENT 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+🏷️ Brand: ${p.brand || "N/A"}
+👤 Opened by: ${p.openBy || "Unknown"}
+📅 Date: ${p.openDate || "N/A"}
+🔖 Status: ${p.status || "Open"}`;
+}
+
+function formatBrandPaymentReceivedMessage(p) {
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `✅ PAYMENT RECEIVED ✅
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+🏷️ Brand: ${p.brand || "N/A"}
+👤 Paid by: ${p.openBy || "Unknown"}
+🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
+}
+
+function sendBrandPaymentNotification(p, isReceived = false) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Brand payment notification skipped (no token configured)");
+    return;
+  }
+
+  const message = isReceived ? formatBrandPaymentReceivedMessage(p) : formatBrandNewPaymentMessage(p);
+  
+  const postData = JSON.stringify({
+    chat_id: CUSTOMER_PAYMENT_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ Brand payment notification error:", d);
+      else console.log(`✅ Brand payment notification sent for invoice: ${p.invoice} (${isReceived ? 'received' : 'new'})`);
+    });
+  });
+
+  req.on('error', err => console.error("❌ Brand payment notification error:", err.message));
+  req.write(postData);
+  req.end();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FINANCE | AFFILIATE GROUP NOTIFICATIONS (-1002830517753)
+// ═══════════════════════════════════════════════════════════════
+
+function formatAffiliateNewPaymentMessage(p) {
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `🆕 NEW PAYMENT ADDED 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+👤 Opened by: ${p.openBy || "Unknown"}
+Status: ${p.status || "Open"}`;
+}
+
+function formatAffiliatePaidPaymentMessage(p) {
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `💰 PAYMENT ${p.invoice} marked as PAID 💰
+
+📋 Invoice: #${p.invoice}
+💵 Amount: $${amount}
+👤 Paid by: ${p.openBy || "Unknown"}
+Payment Hash: ${p.paymentHash || "N/A"}`;
+}
+
+function sendAffiliatePaymentNotification(p, isPaid = false) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Affiliate payment notification skipped (no token configured)");
+    return;
+  }
+
+  const message = isPaid ? formatAffiliatePaidPaymentMessage(p) : formatAffiliateNewPaymentMessage(p);
+  
+  const postData = JSON.stringify({
+    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ Affiliate payment notification error:", d);
+      else console.log(`✅ Affiliate payment notification sent for invoice: ${p.invoice} (${isPaid ? 'paid' : 'new'})`);
+    });
+  });
+
+  req.on('error', err => console.error("❌ Affiliate payment notification error:", err.message));
+  req.write(postData);
+  req.end();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OFFERS BLITZ GROUP NOTIFICATIONS (-1002183891044)
+// ═══════════════════════════════════════════════════════════════
+
+function formatNewOfferMessage(affiliateId, country, brand) {
+  return `📋 Added a new offer:
+
+Affiliate ${affiliateId}
+Country ${country}`;
+}
+
+function sendNewOfferNotification(affiliateId, country, brand) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 New offer notification skipped (no token configured)");
+    return;
+  }
+
+  const message = formatNewOfferMessage(affiliateId, country, brand);
+  
+  const postData = JSON.stringify({
+    chat_id: OFFER_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ New offer notification error:", d);
+      else console.log(`✅ New offer notification sent for affiliate: ${affiliateId}`);
+    });
+  });
+
+  req.on('error', err => console.error("❌ New offer notification error:", err.message));
+  req.write(postData);
+  req.end();
 }
 
 // ── Telegram Bot Commands & Hash Detection ──
@@ -1487,6 +1681,25 @@ async function handleOfferMessage(bot, msg, messageText) {
           brand: match[2].trim(),
           amount: match[1].trim(),
           percentage: ''
+        });
+      }
+    }
+    
+    // NEW: Try to parse new format like "BEnl BitcoinApex 1500+12"
+    // This format has: COUNTRY_CODE BRAND AMOUNT+PERCENTAGE
+    if (offers.length === 0) {
+      // Match patterns like: BEnl BitcoinApex 1500+12 or BEnl BitcoinApex 1500+12%
+      const newFormatRegex = /([A-Za-z]{2,})\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(\d+)\+(\d+(?:%|%?))/gi;
+      let newMatch;
+      while ((newMatch = newFormatRegex.exec(remainingText)) !== null) {
+        const countryCode = newMatch[1].trim();
+        const brand = newMatch[2].trim();
+        const amount = newMatch[3].trim();
+        const percentage = newMatch[4].trim();
+        offers.push({
+          brand: `${countryCode} ${brand}`,
+          amount: amount,
+          percentage: percentage
         });
       }
     }
