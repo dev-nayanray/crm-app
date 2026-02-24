@@ -1619,6 +1619,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
         bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
+      }
     });
 
     console.log("✅ USDT hash detection enabled");
@@ -1752,7 +1753,17 @@ async function handleOfferMessage(bot, msg, messageText) {
     
     // Extract affiliate ID (first number in the message)
     const idMatch = firstLine.match(/^(\d+)/);
-    const affiliateId = idMatch ? idMatch[1] : null;
+    let affiliateId = idMatch ? idMatch[1] : null;
+    
+    // If no affiliate ID found on first line, check second line (multi-line format)
+    // Format: "Offer:\n51\nFR Polynesia..."
+    if (!affiliateId && lines.length > 1) {
+      const secondLine = lines[1].trim();
+      const secondIdMatch = secondLine.match(/^(\d+)/);
+      if (secondIdMatch) {
+        affiliateId = secondIdMatch[1];
+      }
+    }
     
     // Parse offer details
     const remainingText = affiliateId ? firstLine.substring(affiliateId.length).trim() : firstLine;
