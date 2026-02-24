@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.34";
+const VERSION = "3.35";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -504,6 +504,18 @@ async function flushPendingSaves() {
 // Try to flush pending saves every 30 seconds
 setInterval(flushPendingSaves, 30000);
 
+// ── Track explicit deletes per table so server-side merge can honor them ──
+const deletedIDs = {}; // { 'payments': Set(['id1','id2']), ... }
+function trackDelete(table, id) {
+  if (!deletedIDs[table]) deletedIDs[table] = new Set();
+  deletedIDs[table].add(id);
+}
+function getAndClearDeletes(table) {
+  const ids = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
+  if (deletedIDs[table]) deletedIDs[table].clear();
+  return ids;
+}
+
 async function apiSave(endpoint, data, userEmail) {
   // FIX C1: Debounce — don't save same table within 1 second
   const now = Date.now();
@@ -512,13 +524,16 @@ async function apiSave(endpoint, data, userEmail) {
   }
   lastSaveTimestamps[endpoint] = now;
 
+  // Collect any explicit deletes for this table
+  const deleted = getAndClearDeletes(endpoint);
+
   // ALWAYS save to localStorage first — this is the safety net
   lsSave(endpoint, data);
-  // Then push to server with version info + auth token
+  // Then push to server with version info + auth token + deleted IDs
   try {
     const res = await fetch(`${API_BASE}/${endpoint}`, {
       method: 'POST', headers: authHeaders(),
-      body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
+      body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown', deleted }),
       signal: AbortSignal.timeout(5000),
     });
     if (res.status === 401) {
@@ -1510,7 +1525,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                         <div style={{ display: "flex", gap: 6 }}>
                           <button onClick={() => { setEditingWallet(w.id); setWalletForm({ date: w.date || "", trc: w.trc || "", erc: w.erc || "", btc: w.btc || "" }); }}
                             style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                          <button onClick={() => setWallets(prev => prev.filter(ww => ww.id !== w.id))}
+                          <button onClick={() => { trackDelete('wallets', w.id); setWallets(prev => prev.filter(ww => ww.id !== w.id)); }}
                             style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                         </div>
                       </div>
@@ -1767,7 +1782,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
     setEditPay(null); 
   };
 
-  const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
@@ -2373,7 +2388,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
     setEditPay(null);
   };
 
-  const handleDelete = id => { setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   const handleCpStatusChange = (id, newStatus) => {
     setPayments(prev => prev.map(p => {
@@ -2659,7 +2674,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   // Summary totals — TODAY ONLY
   const todayDeals = filtered.filter(d => d.date === today);
@@ -3068,7 +3083,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   const todayEntries = filtered.filter(d => d.date === today);
   const grandAff = todayEntries.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
@@ -3336,7 +3351,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
     setEditDeal(null);
   };
 
-  const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
