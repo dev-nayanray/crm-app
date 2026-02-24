@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.35";
+const VERSION = "3.36";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2676,6 +2676,16 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
 
   const handleDelete = id => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
+  const handleDuplicate = deal => {
+    const dup = { ...deal, id: genId() };
+    setDeals(prev => {
+      const idx = prev.findIndex(d => d.id === deal.id);
+      const arr = [...prev];
+      arr.splice(idx + 1, 0, dup);
+      return arr;
+    });
+  };
+
   // Summary totals — TODAY ONLY
   const todayDeals = filtered.filter(d => d.date === today);
   const totalCap = todayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
@@ -2798,6 +2808,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
                               <button onClick={() => handleMove(d.id, "down")} title="Move down" disabled={rowIdx === sortedItems.length - 1}
                                 style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === sortedItems.length - 1 ? "default" : "pointer", color: rowIdx === sortedItems.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
                             </>}
+                            <button onClick={() => handleDuplicate(d)} title="Duplicate" style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6, padding: 5, cursor: "pointer", color: "#16A34A", display: "flex", fontSize: 12 }}>⧉</button>
                             <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                             <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                           </div>
