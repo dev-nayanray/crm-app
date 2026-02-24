@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.30";
+const VERSION = "3.32";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2633,11 +2633,11 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
 
   const handleDelete = id => { setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
-  // Summary totals
-  const totalCap = filtered.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-  const totalCapRec = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
-  const totalFtd = filtered.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-  const startedCount = filtered.filter(d => d.started).length;
+  // Summary totals — TODAY ONLY
+  const todayDeals = filtered.filter(d => d.date === today);
+  const totalCap = todayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const totalCapRec = todayDeals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+  const startedCount = todayDeals.filter(d => d.started).length;
 
   const personBadge = (name) => {
     if (!name) return <span style={{ color: "#CBD5E1", fontSize: 13 }}>—</span>;
@@ -2683,13 +2683,12 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
           >{crgSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
         </div>
 
-        {/* Summary cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
+        {/* Summary cards — Today only */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
-            { label: "Total Affiliates", value: filtered.length, accent: "#F59E0B", bg: "#FFFBEB" },
-            { label: "CAP Sum", value: totalCap, accent: "#6366F1", bg: "#EEF2FF" },
-            { label: "Started", value: `${startedCount} / ${filtered.length}`, accent: "#10B981", bg: "#ECFDF5" },
-            { label: "FTD Sum", value: totalFtd, accent: "#EC4899", bg: "#FDF2F8" },
+            { label: "Total Deals Today", value: todayDeals.length, accent: "#F59E0B", bg: "#FFFBEB" },
+            { label: "CAP Sum Today", value: totalCap, accent: "#6366F1", bg: "#EEF2FF" },
+            { label: "Started Today", value: `${startedCount} / ${todayDeals.length}`, accent: "#10B981", bg: "#ECFDF5" },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
@@ -2890,44 +2889,66 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
       // manageAff → affiliates
       const mAff = (deal.manageAff || "").trim();
       if (mAff) {
-        if (!capMap[date][mAff]) capMap[date][mAff] = { affiliates: 0, brands: 0 };
-        capMap[date][mAff].affiliates += capVal;
+        const normAff = mAff.charAt(0).toUpperCase() + mAff.slice(1).toLowerCase();
+        if (!capMap[date][normAff]) capMap[date][normAff] = { affiliates: 0, brands: 0 };
+        capMap[date][normAff].affiliates += capVal;
       }
 
       // madeSale → brands
       const mSale = (deal.madeSale || "").trim();
       if (mSale) {
-        if (!capMap[date][mSale]) capMap[date][mSale] = { affiliates: 0, brands: 0 };
-        capMap[date][mSale].brands += capVal;
+        const normSale = mSale.charAt(0).toUpperCase() + mSale.slice(1).toLowerCase();
+        if (!capMap[date][normSale]) capMap[date][normSale] = { affiliates: 0, brands: 0 };
+        capMap[date][normSale].brands += capVal;
       }
     });
 
-    // Now update/create entries
+    // Now update/create entries (case-insensitive dedup)
     setEntries(prev => {
       const updated = [...prev];
       const existingMap = {};
       updated.forEach((e, i) => {
-        const key = `${e.date}__${(e.agent || "").trim()}`;
-        existingMap[key] = i;
+        const key = `${e.date}__${(e.agent || "").trim().toLowerCase()}`;
+        if (existingMap[key] === undefined) {
+          existingMap[key] = i;
+        } else {
+          // Duplicate found! Merge into the first occurrence
+          const firstIdx = existingMap[key];
+          const first = updated[firstIdx];
+          updated[firstIdx] = {
+            ...first,
+            affiliates: String((parseInt(first.affiliates) || 0) + (parseInt(e.affiliates) || 0)),
+            brands: String((parseInt(first.brands) || 0) + (parseInt(e.brands) || 0)),
+          };
+          updated[i] = null; // Mark for removal
+        }
+      });
+
+      // Remove nulls (merged duplicates)
+      const cleaned = updated.filter(Boolean);
+
+      // Rebuild existingMap after cleanup
+      const cleanMap = {};
+      cleaned.forEach((e, i) => {
+        const key = `${e.date}__${(e.agent || "").trim().toLowerCase()}`;
+        cleanMap[key] = i;
       });
 
       Object.keys(capMap).forEach(date => {
         Object.keys(capMap[date]).forEach(agent => {
           const { affiliates, brands } = capMap[date][agent];
-          const key = `${date}__${agent}`;
-          if (existingMap[key] !== undefined) {
-            // Update existing
-            const idx = existingMap[key];
-            updated[idx] = { ...updated[idx], affiliates: String(affiliates), brands: String(brands) };
+          const key = `${date}__${agent.toLowerCase()}`;
+          if (cleanMap[key] !== undefined) {
+            const idx = cleanMap[key];
+            cleaned[idx] = { ...cleaned[idx], agent, affiliates: String(affiliates), brands: String(brands) };
           } else {
-            // Create new
-            updated.push({ id: genId(), agent, affiliates: String(affiliates), brands: String(brands), date });
-            existingMap[key] = updated.length - 1;
+            cleaned.push({ id: genId(), agent, affiliates: String(affiliates), brands: String(brands), date });
+            cleanMap[key] = cleaned.length - 1;
           }
         });
       });
 
-      return updated;
+      return cleaned;
     });
   };
 
@@ -3021,8 +3042,10 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 
   const handleDelete = id => { setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
-  const grandAff = filtered.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
-  const grandBrands = filtered.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+  const todayEntries = filtered.filter(d => d.date === today);
+  const grandAff = todayEntries.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
+  const grandBrands = todayEntries.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+  const activeAgents = todayEntries.length;
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
@@ -3068,12 +3091,12 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
           >{dcSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
         </div>
 
-        {/* Summary cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
+        {/* Summary cards — Today only */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
-            { label: "Affiliates", value: grandAff, accent: "#8B5CF6", bg: "#F5F3FF" },
-            { label: "Brands", value: grandBrands, accent: "#0EA5E9", bg: "#EFF6FF" },
-            { label: "Total", value: grandAff + grandBrands, accent: "#10B981", bg: "#ECFDF5" },
+            { label: "Affiliate CAP Today", value: grandAff, accent: "#8B5CF6", bg: "#F5F3FF" },
+            { label: "Brands CAP Today", value: grandBrands, accent: "#0EA5E9", bg: "#EFF6FF" },
+            { label: "Active Agents", value: activeAgents, accent: "#10B981", bg: "#ECFDF5" },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
@@ -3104,8 +3127,14 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedItems.map((d, rowIdx) => {
+                    {(() => {
+                      // Find highest affiliate and brands cap for this day
+                      const maxAff = Math.max(...sortedItems.map(d => parseInt(d.affiliates) || 0));
+                      const maxBrands = Math.max(...sortedItems.map(d => parseInt(d.brands) || 0));
+                      return sortedItems.map((d, rowIdx) => {
                       const t = (parseInt(d.affiliates) || 0) + (parseInt(d.brands) || 0);
+                      const isTopAff = maxAff > 0 && (parseInt(d.affiliates) || 0) === maxAff;
+                      const isTopBrands = maxBrands > 0 && (parseInt(d.brands) || 0) === maxBrands;
                       return (
                         <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
                           onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
@@ -3116,8 +3145,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                               onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                             >{d.agent}</span>
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.affiliates || ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.brands || ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.affiliates || ""}{isTopAff ? " 👍" : ""}</td>
+                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.brands || ""}{isTopBrands ? " 👍" : ""}</td>
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #CBD5E1" }}>{t || ""}</td>
                           <td style={{ padding: "8px 8px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
@@ -3133,7 +3162,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                           </td>
                         </tr>
                       );
-                    })}
+                    });
+                    })()}
                   </tbody>
                 </table>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
