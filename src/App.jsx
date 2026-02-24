@@ -3673,6 +3673,7 @@ function AppInner() {
   }, []);
 
   const [page, setPage] = useState("dashboard");
+  const [user, setUser] = useState(() => {
     const session = getSession();
     // Restore server session token on page reload
     if (session && session.token) setSessionToken(session.token);
@@ -3685,7 +3686,6 @@ function AppInner() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
-  const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
   const serverFetchDone = useRef(false); // CRITICAL: block saves until first server fetch completes
