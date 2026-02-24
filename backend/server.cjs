@@ -18,6 +18,11 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
+const puppeteer = require("puppeteer");
+
+// Screenshot configuration
+const CRM_BASE_URL = process.env.CRM_URL || "http://localhost:5173";
+const SCREENSHOT_DIR = path.join(__dirname, "screenshots");
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -46,7 +51,7 @@ const AUDIT_DIR = path.join(__dirname, "audit");
 // ═══════════════════════════════════════════════════════════════
 
 // Ensure directories
-[DATA_DIR, BACKUP_DIR, AUDIT_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+[DATA_DIR, BACKUP_DIR, AUDIT_DIR, SCREENSHOT_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
 
 // ── Server-side user seed data (source of truth for passwords) ──
 const INITIAL_USERS = [
@@ -104,9 +109,14 @@ seedUsers();
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
-const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-2183891044";
+const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044";
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
 const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
+const SCREENSHOT_GROUP_CHAT_ID = process.env.SCREENSHOT_CHAT_ID || "-1002832299846"; // Target group for screenshots
+
+// Working hours for automated screenshots
+const WORK_START_HOUR = 10;
+const WORK_END_HOUR = 22;
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -1506,6 +1516,103 @@ function sendNewOfferNotification(affiliateId, country, brand) {
   req.end();
 }
 
+// ═══════════════════════════════════════════════════════════════
+// SCREENSHOT FUNCTIONALITY
+// ═══════════════════════════════════════════════════════════════
+
+// Take screenshot of CRM and send to Telegram group
+async function takeScreenshot(pagePath = '/') {
+  let browser;
+  try {
+    console.log("📸 Starting screenshot capture...");
+    
+    // First check if CRM is accessible
+    const testUrl = CRM_BASE_URL;
+    const httpModule = testUrl.startsWith('https') ? https : http;
+    
+    await new Promise((resolve, reject) => {
+      const req = httpModule.get(testUrl, (res) => {
+        resolve();
+      });
+      req.on('error', (err) => {
+        reject(new Error(`CRM not accessible at ${testUrl}. Is the frontend running?`));
+      });
+      req.setTimeout(5000, () => {
+        req.destroy();
+        reject(new Error(`CRM connection timeout at ${testUrl}`));
+      });
+    });
+    
+    console.log("📸 CRM is accessible, launching browser...");
+    
+    browser = await puppeteer.launch({
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    });
+    
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    const url = `${CRM_BASE_URL}${pagePath}`;
+    console.log(`📸 Navigating to: ${url}`);
+    
+    await page.goto(url, { waitUntil: 'networkidle0', timeout: 30000 });
+    
+    // Wait for dynamic content to load
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `screenshot-${timestamp}.png`;
+    const filepath = path.join(SCREENSHOT_DIR, filename);
+    
+    await page.screenshot({ 
+      path: filepath, 
+      fullPage: false,
+      type: 'png'
+    });
+    
+    console.log(`📸 Screenshot saved: ${filepath}`);
+    
+    // Send to Telegram group
+    if (bot && SCREENSHOT_GROUP_CHAT_ID) {
+      await bot.sendPhoto(SCREENSHOT_GROUP_CHAT_ID, filepath, {
+        caption: `📸 CRM Screenshot - ${new Date().toLocaleString()}`
+      });
+      console.log("📸 Screenshot sent to Telegram group");
+    }
+    
+    await browser.close();
+    return { success: true, filepath };
+    
+  } catch (error) {
+    console.error("📸 Screenshot error:", error.message);
+    if (browser) await browser.close();
+    return { success: false, error: error.message };
+  }
+}
+
+// Automated screenshot during work hours
+function scheduleScreenshots() {
+  setInterval(() => {
+    const now = new Date();
+    const hour = now.getHours();
+    
+    // Only take screenshots during work hours
+    if (hour >= WORK_START_HOUR && hour < WORK_END_HOUR) {
+      const minute = now.getMinutes();
+      // Take screenshots at half past each hour during work hours
+      if (minute === 30) {
+        console.log("📸 Scheduled screenshot time...");
+        takeScreenshot('/').catch(err => console.error("📸 Scheduled screenshot failed:", err.message));
+      }
+    }
+  }, 60000); // Check every minute
+}
+
+// Start screenshot scheduler
+scheduleScreenshots();
+console.log("📸 Screenshot scheduler started (work hours: " + WORK_START_HOUR + ":00 - " + WORK_END_HOUR + ":00)");
+
 // ── Telegram Bot Commands & Hash Detection ──
 let bot;
 const userStates = {};
@@ -1608,6 +1715,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       { command:"/todaycrgcap", description:"Today's CRG cap summary" },
       { command:"/todayagentscap", description:"Today's agents cap" },
       { command:"/payments", description:"Open payments summary" },
+      { command:"/screenshot", description:"Take CRM screenshot" },
     ]).catch(e => console.log("⚠️ Register commands:", e.message));
 
     bot.onText(/\/start|\/help/, (msg) => {
@@ -1659,7 +1767,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
 
     // /todaycrgcap
-    bot.onText(/\/todaycrgcap/, (msg) => {
+    bot.onText(/\/todaycrgcap/, async (msg) => {
       const all = readJSON("crg-deals.json", []); const dates = [...new Set(all.map(d => d.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
       const td = all.filter(d => d.date === ld); if (!td.length) { bot.sendMessage(msg.chat.id, "📭 No CRG cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
       const tCap = td.reduce((s, d) => s + (parseInt(d.cap) || 0), 0), tRec = td.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0), tFTD = td.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
@@ -1671,7 +1779,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
 
     // /todayagentscap
-    bot.onText(/\/todayagentscap/, (msg) => {
+    bot.onText(/\/todayagentscap/, async (msg) => {
       const all = readJSON("daily-cap.json", []); const dates = [...new Set(all.map(c => c.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
       const tc = all.filter(c => c.date === ld); if (!tc.length) { bot.sendMessage(msg.chat.id, "📭 No agents cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
       const tAff = tc.reduce((s, c) => s + (parseInt(c.affiliates) || 0), 0), tBr = tc.reduce((s, c) => s + (parseInt(c.brands) || 0), 0);
@@ -1679,6 +1787,34 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       tc.forEach(c => { t += `${(c.agent || "").padEnd(10).substring(0, 10)}| ${(c.affiliates || "0").padStart(3)} | ${(c.brands || "0").padStart(6)}\n`; });
       t += `-----------|-----|-------\nTOTAL      | ${String(tAff).padStart(3)} | ${String(tBr).padStart(6)}</code>\n\nAgents: ${tc.length} | Aff: ${tAff} | Brands: ${tBr}`;
       bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+      
+      // Take and send screenshot to monitoring group
+      if (SCREENSHOT_GROUP_CHAT_ID) {
+        bot.sendMessage(msg.chat.id, "📸 Taking screenshot for monitoring group...").catch(() => {});
+        const screenshotResult = await takeScreenshot('/');
+        if (screenshotResult.success) {
+          bot.sendMessage(msg.chat.id, "✅ Screenshot sent to monitoring group!", { parse_mode: "HTML" });
+        } else {
+          bot.sendMessage(msg.chat.id, `⚠️ Screenshot failed: ${screenshotResult.error}`, { parse_mode: "HTML" });
+        }
+      }
+    });
+
+    // /screenshot
+    bot.onText(/\/screenshot/, async (msg) => {
+      bot.sendMessage(msg.chat.id, "📸 Taking screenshot of CRM... This may take a few seconds.").catch(() => {});
+      
+      try {
+        const result = await takeScreenshot('/');
+        
+        if (result.success) {
+          bot.sendMessage(msg.chat.id, `✅ Screenshot captured and sent to monitoring group!\n\nFile: ${path.basename(result.filepath)}`, { parse_mode: "HTML" });
+        } else {
+          bot.sendMessage(msg.chat.id, `❌ Screenshot failed: ${result.error}`, { parse_mode: "HTML" });
+        }
+      } catch (err) {
+        bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`, { parse_mode: "HTML" });
+      }
     });
 
     // ── Inline keyboard callback handler ──
