@@ -1780,110 +1780,115 @@ app.get("/api/telegram/test", (req, res) => {
 
 async function handleOfferMessage(bot, msg, messageText) {
   try {
-    // Parse the message - extract affiliate ID and offers
-    // Format examples:
-    // Offer: 71 GR Quantex 1000 10% BR Seguro Tradex GPT 650 5%
-    // Offer: 80 NO NL 1550+15% Tradeapp GG 5% deductions
-    
-    const lines = messageText.split('\n').filter(l => l.trim());
-    
-    // First line is "Offer:" followed by optional affiliate ID
-    const firstLine = lines[0].replace(/^Offer:\s*/i, '').trim();
-    
-    // Extract affiliate ID (first number in the message)
-    const idMatch = firstLine.match(/^(\d+)/);
-    let affiliateId = idMatch ? idMatch[1] : null;
-    
-    // If no affiliate ID found on first line, check second line (multi-line format)
-    // Format: "Offer:\n51\nFR Polynesia..."
-    if (!affiliateId && lines.length > 1) {
-      const secondLine = lines[1].trim();
-      const secondIdMatch = secondLine.match(/^(\d+)/);
-      if (secondIdMatch) {
-        affiliateId = secondIdMatch[1];
-      }
-    }
-    
-    // Parse offer details
-    const remainingText = affiliateId ? firstLine.substring(affiliateId.length).trim() : firstLine;
-    
-    // Try to parse offers in format: BRAND AMOUNT PERCENTAGE%
-    const offers = [];
-    const offerRegex = /([A-Za-z\s]+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?%)/g;
-    let match;
-    while ((match = offerRegex.exec(remainingText)) !== null) {
-      offers.push({
-        brand: match[1].trim(),
-        amount: match[2].trim(),
-        percentage: match[3].trim()
-      });
-    }
-    
-    // If no offers parsed from regex, try alternative format
-    // Format like: 1550+15% Tradeapp GG 5% deductions
-    if (offers.length === 0) {
-      const altRegex = /(\d+[+%]\d*%?)\s+([A-Za-z]+)/g;
-      while ((match = altRegex.exec(remainingText)) !== null) {
-        offers.push({
-          brand: match[2].trim(),
-          amount: match[1].trim(),
-          percentage: ''
-        });
-      }
-    }
-    
-    // NEW: Try to parse new format like "BEnl BitcoinApex 1500+12"
-    // This format has: COUNTRY_CODE BRAND AMOUNT+PERCENTAGE
-    if (offers.length === 0) {
-      // Match patterns like: BEnl BitcoinApex 1500+12 or BEnl BitcoinApex 1500+12%
-      const newFormatRegex = /([A-Za-z]{2,})\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(\d+)\+(\d+(?:%|%?))/gi;
-      let newMatch;
-      while ((newMatch = newFormatRegex.exec(remainingText)) !== null) {
-        const countryCode = newMatch[1].trim();
-        const brand = newMatch[2].trim();
-        const amount = newMatch[3].trim();
-        const percentage = newMatch[4].trim();
-        offers.push({
-          brand: `${countryCode} ${brand}`,
-          amount: amount,
-          percentage: percentage,
-          country: countryCode  // Store country separately
-        });
-      }
-    }
-    
-    // NEW: Try multi-line format (lines after first contain brand info)
-    // Format:
+    // Parse the BLITZ offer format:
     // Offer:
-    // 196 BEnl
-    // BitcoinApex
-    // 1500+12
-    if (offers.length === 0 && lines.length > 1) {
-      // Try to parse from remaining lines
-      const allText = lines.slice(1).join(' ').replace(/\n/g, ' ');
-      const multiLineRegex = /([A-Za-z]{2,})\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(\d+)\+(\d+(?:%|%?))/gi;
-      let multiMatch;
-      while ((multiMatch = multiLineRegex.exec(allText)) !== null) {
-        const countryCode = multiMatch[1].trim();
-        const brand = multiMatch[2].trim();
-        const amount = multiMatch[3].trim();
-        const percentage = multiMatch[4].trim();
-        offers.push({
-          brand: brand,
-          amount: amount,
-          percentage: percentage,
-          country: countryCode
-        });
+    // 51
+    // FR Polynesia 
+    // Crg 900$+8%
+    // Finzeratix, Plantorixio
+    // Gg/Fb
+    
+    const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
+    
+    // Find affiliate ID - look for standalone number
+    let affiliateId = null;
+    let startIndex = 0;
+    
+    // Skip "Offer:" header
+    if (lines[0] && lines[0].toLowerCase().startsWith('offer:')) {
+      startIndex = 1;
+    }
+    
+    // Find affiliate ID (standalone number)
+    for (let i = startIndex; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^\d+$/.test(line)) {
+        affiliateId = line;
+        startIndex = i + 1;
+        break;
       }
     }
     
     if (!affiliateId) {
-      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in message. Format: Offer: 71 GR Quantex 1000 10%");
+      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID. Format: Offer:\\n51\\nFR\\nCrg 900$+8%");
       return;
     }
     
+    // Parse country blocks
+    const offers = [];
+    let currentCountry = '';
+    let currentCRG = '';
+    let currentBrands = '';
+    let currentTraffic = '';
+    
+    for (let i = startIndex; i < lines.length; i++) {
+      const line = lines[i];
+      const lowerLine = line.toLowerCase();
+      
+      // Empty line separates country blocks
+      if (!line) {
+        if (currentCountry && currentCRG) {
+          offers.push({
+            country: currentCountry,
+            crg: currentCRG,
+            brands: currentBrands,
+            traffic: currentTraffic
+          });
+        }
+        currentCountry = '';
+        currentCRG = '';
+        currentBrands = '';
+        currentTraffic = '';
+        continue;
+      }
+      
+      // Check if CRG line
+      if (lowerLine.startsWith('crg ') || /^\$?\d+[\+\$]/.test(line)) {
+        currentCRG = line;
+        continue;
+      }
+      
+      // Check if traffic line (contains /, fb, gg)
+      if (line.includes('/') || lowerLine.includes('fb') || lowerLine.includes('gg')) {
+        currentTraffic = line;
+        continue;
+      }
+      
+      // Check if country line
+      if (/^[A-Z]{2}[\s]/.test(line) || /^[A-Z]{2}$/.test(line) || 
+          lowerLine.includes('polynesia') || lowerLine.includes('native') || 
+          lowerLine.includes('mix')) {
+        if (currentCountry && currentCRG) {
+          offers.push({
+            country: currentCountry,
+            crg: currentCRG,
+            brands: currentBrands,
+            traffic: currentTraffic
+          });
+        }
+        currentCountry = line;
+        currentCRG = '';
+        currentBrands = '';
+        currentTraffic = '';
+        continue;
+      }
+      
+      // Otherwise, it's brands
+      currentBrands = line;
+    }
+    
+    // Don't forget last offer
+    if (currentCountry && currentCRG) {
+      offers.push({
+        country: currentCountry,
+        crg: currentCRG,
+        brands: currentBrands,
+        traffic: currentTraffic
+      });
+    }
+    
     if (offers.length === 0) {
-      bot.sendMessage(msg.chat.id, "❌ Could not parse any offers. Format: Offer: 71 BRAND AMOUNT PERCENTAGE%");
+      bot.sendMessage(msg.chat.id, "❌ Could not parse any offers.");
       return;
     }
     
@@ -1896,18 +1901,30 @@ async function handleOfferMessage(bot, msg, messageText) {
       }
     } catch (e) {}
     
-    // Remove any existing offers for this affiliate
+    // Remove existing offers for this affiliate
     existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
     
     // Add new offers
     const timestamp = new Date().toISOString().split("T")[0];
     offers.forEach(o => {
+      // Parse CRG amount and percentage
+      let crgAmount = '';
+      let crgPercentage = '';
+      const crgMatch = o.crg.match(/(\d+)\$?\+(\d+)/);
+      if (crgMatch) {
+        crgAmount = crgMatch[1];
+        crgPercentage = crgMatch[2] + '%';
+      }
+      
       existingOffers.push({
         id: crypto.randomBytes(4).toString('hex'),
         affiliateId: affiliateId,
-        brand: o.brand,
-        amount: o.amount,
-        percentage: o.percentage,
+        country: o.country,
+        crg: o.crg,
+        crgAmount: crgAmount,
+        crgPercentage: crgPercentage,
+        brands: o.brands,
+        traffic: o.traffic,
         status: "Open",
         createdDate: timestamp,
         rawMessage: messageText
@@ -1924,13 +1941,17 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Broadcast to connected clients
     broadcastUpdate("offers", existingOffers);
     
-    // Send confirmation to the group
-    let confirmMsg = `✅ Updated new offer for affiliate ${affiliateId}\n\n`;
-    confirmMsg += `📝 Parsed ${offers.length} offer(s):\n`;
+    // Send confirmation
+    let confirmMsg = `✅ <b>Updated offer for affiliate ${affiliateId}</b>\n\n`;
+    confirmMsg += `📝 Parsed ${offers.length} offer(s):\n\n`;
     offers.forEach((o, i) => {
-      confirmMsg += `${i + 1}. ${o.brand} - $${o.amount} (${o.percentage})\n`;
+      confirmMsg += `${i + 1}. <b>${o.country}</b>\n`;
+      confirmMsg += `   💰 CRG: ${o.crg}\n`;
+      if (o.brands) confirmMsg += `   🏷️ Brands: ${o.brands}\n`;
+      if (o.traffic) confirmMsg += `   📊 Traffic: ${o.traffic}\n`;
+      confirmMsg += '\n';
     });
-    confirmMsg += `\n💾 Saved to offers.json`;
+    confirmMsg += `💾 Saved to offers.json`;
     
     bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
     console.log(`📝 Offer update: Affiliate ${affiliateId} - ${offers.length} offers parsed and saved`);
@@ -1940,6 +1961,8 @@ async function handleOfferMessage(bot, msg, messageText) {
     bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
   }
 }
+
+
 
 // ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
