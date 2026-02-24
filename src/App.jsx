@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.2";
+const VERSION = "3.21";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -433,8 +433,34 @@ async function apiGet(endpoint) {
   } catch (e) { serverOnline = false; return null; }
 }
 
+// ── Pending saves queue: retry failed saves when server comes back ──
+const pendingSaves = new Map(); // key: endpoint, value: { data, userEmail, retries }
+
+async function flushPendingSaves() {
+  if (pendingSaves.size === 0) return;
+  const token = getSessionToken();
+  if (!token) return;
+  for (const [endpoint, save] of pendingSaves) {
+    try {
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
+        method: 'POST', headers: authHeaders(),
+        body: JSON.stringify({ data: save.data, version: dataVersions[endpoint] || 0, user: save.userEmail || 'unknown' }),
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
+        pendingSaves.delete(endpoint);
+        console.log(`✅ Flushed pending save: ${endpoint}`);
+      }
+    } catch {}
+  }
+}
+// Try to flush pending saves every 30 seconds
+setInterval(flushPendingSaves, 30000);
+
 async function apiSave(endpoint, data, userEmail) {
-  // Optimistic: save to localStorage instantly
+  // ALWAYS save to localStorage first — this is the safety net
   lsSave(endpoint, data);
   // Then push to server with version info + auth token
   try {
@@ -444,12 +470,13 @@ async function apiSave(endpoint, data, userEmail) {
       signal: AbortSignal.timeout(5000),
     });
     if (res.status === 401) {
-      // Don't kill session during login grace period
       if (!justLoggedIn) {
         setSessionToken(null);
         localStorage.removeItem('blitz_session');
         sessionExpiredFlag = true;
       }
+      // Still queue it for retry
+      pendingSaves.set(endpoint, { data, userEmail });
       return false;
     }
     if (!res.ok) throw new Error('save failed');
@@ -459,6 +486,7 @@ async function apiSave(endpoint, data, userEmail) {
       savePersistedVersions(dataVersions);
     }
     serverOnline = true;
+    pendingSaves.delete(endpoint); // Clear any pending for this endpoint
     return true;
   } catch (e) {
     serverOnline = false;
@@ -476,10 +504,14 @@ async function apiSave(endpoint, data, userEmail) {
           dataVersions[endpoint] = json.version;
           savePersistedVersions(dataVersions);
         }
-        serverOnline = true; 
+        serverOnline = true;
+        pendingSaves.delete(endpoint);
         return true; 
       }
     } catch (e2) {}
+    // Both attempts failed — queue for later retry
+    pendingSaves.set(endpoint, { data, userEmail });
+    console.log(`⚠️ Queued pending save: ${endpoint} (will retry in 30s)`);
     return false;
   }
 }
@@ -496,6 +528,7 @@ function connectWebSocket() {
     wsConnection.onopen = () => {
       console.log('🔌 WebSocket connected');
       serverOnline = true;
+      flushPendingSaves(); // Push any queued saves now that server is back
     };
     wsConnection.onmessage = (event) => {
       try {
@@ -1522,9 +1555,9 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // Notification is sent by backend - do not duplicate here
+        telegramNotify(`💰 Payment #${p.invoice} marked as PAID — ${parseFloat(p.amount).toLocaleString()}$ by ${user.name}`);
       } else {
-        // Notification for non-Paid status changes - sent by backend
+        telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
       }
       return updated;
     }));
@@ -1687,38 +1720,66 @@ function LoginScreen({ onLogin, users }) {
     const hashed = hashPassword(password);
     const emailClean = email.toLowerCase().trim();
 
+    // ── TRY 1: Server login ──
+    let serverWorked = false;
     try {
       const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: emailClean, passwordHash: hashed }),
+        signal: AbortSignal.timeout(8000),
       });
 
+      // Try to parse JSON — server might return HTML (Nginx 502/504)
+      const text = await res.text();
       let data;
-      try { data = await res.json(); } catch {
-        setError("Server returned invalid response. Is the new server deployed?");
-        setLoading(false); return;
+      try { data = JSON.parse(text); } catch {
+        // Server returned non-JSON (HTML error page from Nginx)
+        console.log("⚠️ Server returned non-JSON:", text.substring(0, 200));
+        // Fall through to offline login below
+        throw new Error("non-json");
       }
+
+      serverWorked = true;
 
       if (res.ok && data.ok) {
         if (data.token) setSessionToken(data.token);
         onLogin(data.user);
+        setLoading(false);
+        return;
       } else if (res.status === 429 && data.error === "blocked") {
         setBlocked(data.minutes || 15);
-        setError(`IP blocked for ${data.minutes || 15} min. Restart server to clear.`);
+        setError(`IP blocked for ${data.minutes || 15} min.`);
         const iv = setInterval(() => { setBlocked(prev => { if (prev <= 1) { clearInterval(iv); return 0; } return prev - 1; }); }, 60000);
         if (data.debug) setDebugData(data.debug);
+        setLoading(false);
+        return;
       } else if (res.status === 401) {
+        // Server says wrong password — don't fall through to offline
         setError("Invalid email or password.");
         if (data.debug) setDebugData({ ...data.debug, clientHash8: hashed.substring(0, 8), clientHashFull: hashed });
+        setLoading(false);
+        return;
       } else {
-        setError(`Error: HTTP ${res.status} — ${data.error || 'unknown'}`);
+        // Other server error — fall through to offline login
+        throw new Error(`HTTP ${res.status}`);
       }
     } catch (fetchErr) {
-      // Offline fallback
+      // ── TRY 2: Offline login using INITIAL_USERS ──
+      // This works even if server is down, crashed, returning HTML, etc.
       const u = INITIAL_USERS.find(u => u.email === emailClean && u.passwordHash === hashed);
-      if (u) { onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess }); }
-      else { setError(`Offline. ${INITIAL_USERS.some(u => u.email === emailClean) ? "Email found but password wrong." : "Email not found."}`); }
+      if (u) {
+        console.log("✅ Offline login success for:", emailClean);
+        onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess });
+      } else {
+        // Check if email exists but password is wrong
+        const emailExists = INITIAL_USERS.some(u => u.email === emailClean);
+        if (emailExists) {
+          setError(serverWorked ? "Invalid email or password." : "Server unreachable. Password doesn't match offline records.");
+        } else {
+          setError(serverWorked ? "Invalid email or password." : "Server unreachable. This account requires server access to login.");
+        }
+      }
     }
     setLoading(false);
   };
