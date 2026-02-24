@@ -104,7 +104,7 @@ seedUsers();
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
-const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044";
+const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-2183891044";
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
 const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
 
@@ -1428,6 +1428,19 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
     console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
     
+    // Test bot access to offer group on startup
+    setTimeout(() => {
+      bot.sendMessage(OFFER_GROUP_CHAT_ID, "✅ Bot is online and monitoring for Offer: messages")
+        .then(() => console.log("✅ Bot has access to offer group"))
+        .catch(err => {
+          console.log("❌ Bot cannot access offer group:", err.message);
+          console.log("⚠️ Please check:");
+          console.log("   1. Bot is an admin in the group");
+          console.log("   2. Bot has permission to read messages");
+          console.log("   3. Group is not a private supergroup");
+        });
+    }, 5000); // Wait 5 seconds after startup
+    
     let pollingErrorCount = 0;
     let lastPollingRestart = 0;
     const POLLING_RESTART_COOLDOWN = 30000; // 30 seconds between restarts
@@ -1608,7 +1621,18 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
       const offerLower = offerMessageText.toLowerCase();
-      if (chatId.toString() === OFFER_GROUP_CHAT_ID && (offerLower.startsWith('offer:') || offerLower.startsWith('offers:'))) {
+      const chatIdStr = chatId.toString();
+      
+      // Debug: show chat ID
+      console.log("💬 Message from chat ID:", chatIdStr, "| OFFER_GROUP_CHAT_ID:", OFFER_GROUP_CHAT_ID);
+      
+      // Check if message is from offer group (handle both -100 prefix and without)
+      const isOfferGroup = chatIdStr === OFFER_GROUP_CHAT_ID || 
+                          chatIdStr === OFFER_GROUP_CHAT_ID.replace('-100', '-') ||
+                          chatIdStr === OFFER_GROUP_CHAT_ID.replace('-', '-100');
+      
+      if (isOfferGroup && (offerLower.startsWith('offer:') || offerLower.startsWith('offers:'))) {
+        console.log("✅ Detected offer message in group!");
         try {
           await handleOfferMessage(bot, msg, offerMessageText);
         } catch (err) {
@@ -1888,6 +1912,8 @@ app.get("/api/telegram/test", (req, res) => {
 
 async function handleOfferMessage(bot, msg, messageText) {
   try {
+    console.log("📝 Received offer message:", messageText);
+    
     // Parse the BLITZ offer format:
     // Offer:
     // 51
