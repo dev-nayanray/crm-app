@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.37";
+const VERSION = "4.00";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1650,6 +1650,18 @@ function ServerDiagnostics() {
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={fetchDiag} style={{ padding: "6px 14px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#475569", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Refresh</button>
           <button onClick={downloadLogs} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(14,165,233,0.3)" }}>Download Full Logs</button>
+          <button onClick={async () => {
+            if (!confirm("Remove duplicate CRG deals and Daily Cap entries? (Keeps the record with more data)")) return;
+            try {
+              const res = await fetch(`${API_BASE}/admin/dedup`, { method: "POST", headers: authHeaders() });
+              const data = await res.json();
+              if (data.ok) {
+                const r = data.results;
+                alert(`Dedup complete!\n\nCRG Deals: ${r["crg-deals"]?.removed || 0} duplicates removed\nDaily Cap: ${r["daily-cap"]?.removed || 0} duplicates removed`);
+                fetchDiag();
+              }
+            } catch (e) { alert("Dedup failed: " + e.message); }
+          }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(245,158,11,0.3)" }}>🧹 Dedup Data</button>
         </div>
       </div>
 
@@ -2580,10 +2592,20 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
   const handleCopyPrevDay = (targetDate) => {
     const prevDayEntries = deals.filter(d => d.date === latestDate);
     if (prevDayEntries.length === 0) return;
-    const newEntries = prevDayEntries.map(d => ({
-      ...d, id: genId(), date: targetDate,
-      started: false, capReceived: "", ftd: "", funnel: "",
-    }));
+    // CHECK: if target date already has records, don't duplicate
+    const existingForDate = deals.filter(d => d.date === targetDate);
+    if (existingForDate.length > 0) {
+      if (!confirm(`${targetDate} already has ${existingForDate.length} entries. Copy anyway? (existing entries will be kept)`)) return;
+    }
+    // Only copy entries whose affiliate doesn't already exist on target date
+    const existingAffiliates = new Set(existingForDate.map(d => (d.affiliate || "").trim().toLowerCase()));
+    const newEntries = prevDayEntries
+      .filter(d => !existingAffiliates.has((d.affiliate || "").trim().toLowerCase()))
+      .map(d => ({
+        ...d, id: genId(), date: targetDate,
+        started: false, capReceived: "", ftd: "", funnel: "",
+      }));
+    if (newEntries.length === 0) return;
     setDeals(prev => [...prev, ...newEntries]);
   };
 
@@ -3019,10 +3041,20 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
   const handleCopyPrevDay = (targetDate) => {
     const prevDayEntries = entries.filter(d => d.date === latestDate);
     if (prevDayEntries.length === 0) return;
-    const newEntries = prevDayEntries.map(d => ({
-      ...d, id: genId(), date: targetDate,
-      affiliates: "", brands: "",
-    }));
+    // CHECK: if target date already has records, don't duplicate
+    const existingForDate = entries.filter(d => d.date === targetDate);
+    if (existingForDate.length > 0) {
+      if (!confirm(`${targetDate} already has ${existingForDate.length} entries. Copy anyway? (existing entries will be kept)`)) return;
+    }
+    // Only copy agents that don't already exist on target date
+    const existingAgents = new Set(existingForDate.map(d => (d.agent || "").trim().toLowerCase()));
+    const newEntries = prevDayEntries
+      .filter(d => !existingAgents.has((d.agent || "").trim().toLowerCase()))
+      .map(d => ({
+        ...d, id: genId(), date: targetDate,
+        affiliates: "", brands: "",
+      }));
+    if (newEntries.length === 0) return;
     setEntries(prev => [...prev, ...newEntries]);
   };
 
