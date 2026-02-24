@@ -3652,6 +3652,27 @@ function clearSession() {
 
 function AppInner() {
   const [user, setUser] = useState(() => {
+    // Check URL hash on load for deep linking (for screenshot functionality)
+    const hash = window.location.hash.slice(1);
+    if (hash && ['dashboard', 'customers', 'crg', 'dailycap', 'deals', 'admin'].includes(hash)) {
+      return hash;
+    }
+    return null;
+  });
+
+  // Listen for hash changes to update page
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.slice(1);
+      if (hash && ['dashboard', 'customers', 'crg', 'dailycap', 'deals', 'admin'].includes(hash)) {
+        setPage(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const [page, setPage] = useState("dashboard");
     const session = getSession();
     // Restore server session token on page reload
     if (session && session.token) setSessionToken(session.token);
