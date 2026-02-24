@@ -21,8 +21,22 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
+
+// ═══════════════════════════════════════════════════════════════
+// CRASH PROTECTION — Keep server alive no matter what
+// ═══════════════════════════════════════════════════════════════
+process.on('uncaughtException', (err) => {
+  console.error('💥 UNCAUGHT EXCEPTION (server stays alive):', err.message);
+  console.error(err.stack);
+  // Don't process.exit() — let the server keep running
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 UNHANDLED REJECTION (server stays alive):', reason);
+  // Don't process.exit() — let the server keep running
+});
 const PORT = 3001;
-const VERSION = "3.2";
+const VERSION = "3.22";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -88,14 +102,10 @@ seedUsers();
 // SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
 // Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
- 
-const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002183891044";
- 
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044";
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
 const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
- 
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -282,7 +292,7 @@ function createBackup(label) {
   const backupPath = path.join(BACKUP_DIR, ts);
   if (!fs.existsSync(backupPath)) fs.mkdirSync(backupPath, { recursive: true });
 
-  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets"];
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
@@ -364,6 +374,14 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: "10mb" }));
+
+// Catch JSON parse errors (malformed body) — return proper JSON, not HTML
+app.use((err, req, res, next) => {
+  if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({ error: "Invalid JSON in request body" });
+  }
+  next(err);
+});
 
 // ── FIX C4/C5: Session token authentication ──
 // On login success, server issues a random session token.
@@ -584,8 +602,8 @@ app.post("/api/login", (req, res) => {
     console.log("❌ Login FAILED:", emailClean, "| debug:", JSON.stringify(debug));
     writeAuditLog("auth", "login_failed", emailClean, "IP: " + ip);
 
-    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15, debug });
-    else res.status(401).json({ error: "invalid", remaining, debug });
+    if (remaining <= 0) res.status(429).json({ error: "blocked", minutes: 15 });
+    else res.status(401).json({ error: "invalid", remaining });
   }
 });
 
@@ -938,25 +956,6 @@ app.post("/api/backup", requireAdmin, (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // ── TEMPORARY DEBUG ENDPOINT — remove after login is fixed! ──
-app.get("/api/debug/users", (req, res) => {
-  const users = readJSON("users.json", []);
-  const safe = users.map(u => ({
-    email: u.email,
-    name: u.name,
-    hasPasswordHash: !!u.passwordHash,
-    hashLength: u.passwordHash ? u.passwordHash.length : 0,
-    hashPrefix: u.passwordHash ? u.passwordHash.substring(0, 12) + "..." : "MISSING",
-    pageAccess: u.pageAccess,
-  }));
-  res.json({
-    totalUsers: users.length,
-    withHash: users.filter(u => !!u.passwordHash).length,
-    withoutHash: users.filter(u => !u.passwordHash).length,
-    seedRanOnStartup: true,
-    users: safe,
-  });
-});
-
 app.get("/api/health", (req, res) => {
   // Public: basic status only. No sensitive info.
   const basic = { status: "ok", version: VERSION, time: new Date().toISOString() };
@@ -980,18 +979,6 @@ app.get("/api/health", (req, res) => {
 });
 
 // ── Debug: check users.json state (no passwords exposed, just diagnostic info) ──
-app.get("/api/debug/users", (req, res) => {
-  const users = readJSON("users.json", []);
-  const diag = users.map(u => ({
-    email: u.email,
-    name: u.name || "?",
-    hasPasswordHash: !!u.passwordHash,
-    hashPrefix: u.passwordHash ? u.passwordHash.substring(0, 8) + "..." : "MISSING",
-    hasPageAccess: !!u.pageAccess,
-  }));
-  res.json({ count: users.length, users: diag, seedCount: INITIAL_USERS.length });
-});
-
 // ═══════════════════════════════════════════════════════════════
 // 13. TELEGRAM BOT (preserved from v2.03)
 // ═══════════════════════════════════════════════════════════════
@@ -1088,7 +1075,7 @@ function formatPaidPaymentMessage(p) {
 
   return `💰 PAYMENT ${p.invoice} marked as PAID 💰
 
-
+📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
 👤 Paid by: ${p.openBy || "Unknown"}
 Payment Hash: ${p.paymentHash || "N/A"}`;
@@ -1112,7 +1099,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       { command:"/todaycrgcap", description:"Today's CRG cap summary" },
       { command:"/todayagentscap", description:"Today's agents cap" },
       { command:"/payments", description:"Open payments summary" },
-      { command:"/offer", description:"Current offers summary" },
     ]).catch(e => console.log("⚠️ Register commands:", e.message));
 
     bot.onText(/\/start|\/help/, (msg) => {
@@ -1186,39 +1172,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
     });
 
-    // /offer
-    bot.onText(/\/offer/, (msg) => {
-      const offers = readJSON("offers.json", []);
-      if (!offers.length) { 
-        bot.sendMessage(msg.chat.id, "📭 No offers found.", { parse_mode: "HTML" }); 
-        return; 
-      }
-      
-      const totalAmount = offers.reduce((s, o) => s + (parseFloat(o.amount) || 0), 0);
-      const openOffers = offers.filter(o => o.status === "Open");
-      const acceptedOffers = offers.filter(o => o.status === "Accepted");
-      const rejectedOffers = offers.filter(o => o.status === "Rejected");
-      
-      let t = `🎯 <b>Current Offers</b>\n\n📊 <b>Summary:</b>\nTotal Offers: ${offers.length}\nOpen: ${openOffers.length} | Accepted: ${acceptedOffers.length} | Rejected: ${rejectedOffers.length}\n💰 Total Amount: $${totalAmount.toLocaleString("en-US")}\n\n`;
-      
-      offers.slice(0, 20).forEach((o, i) => {
-        t += `<b>${i + 1}. ${o.customerName || "N/A"}</b>\n`;
-        t += `   💵 Amount: $${(parseFloat(o.amount) || 0).toLocaleString("en-US")} ${o.currency || "USD"}\n`;
-        t += `   📌 Status: ${o.status || "N/A"}\n`;
-        t += `   📅 Date: ${o.createdDate || "N/A"}\n`;
-        if (o.notes) t += `   📝 Notes: ${o.notes}\n`;
-        t += `\n`;
-      });
-      
-      if (offers.length > 20) t += `... and ${offers.length - 20} more offers`;
-      
-      // Send to the offer group chat
-      bot.sendMessage(OFFER_GROUP_CHAT_ID, t, { parse_mode: "HTML" });
-      
-      // Also confirm to the user
-      bot.sendMessage(msg.chat.id, `✅ Offers sent to group!\n\n${t}`, { parse_mode: "HTML" });
-    });
-
     // ── Inline keyboard callback handler ──
     bot.on("callback_query", async (cq) => {
       const chatId = cq.message.chat.id; bot.answerCallbackQuery(cq.id);
@@ -1289,28 +1242,16 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
       // USDT hash detection (finance group only)
       if (chatId.toString() !== FINANCE_GROUP_CHAT_ID) return;
-      const hashText = msg.text || '';
-      const hashes = extractAllUsdtHashes(hashText);
+      const messageText = msg.text || '';
+      const hashes = extractAllUsdtHashes(messageText);
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
       if (txHashes.length === 0) return;
 
-      // Improved amount detection - look for any number in the message
       const amounts = [];
-      // Match $ amounts: $12, $12.50, $1,200
       const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-      let m; while ((m = p1.exec(hashText)) !== null) amounts.push(m[1].replace(/,/g, ''));
-      // Match amounts with $ at end: 12$, 12.50$
+      let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
       const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
-      while ((m = p2.exec(hashText)) !== null) amounts.push(m[1].replace(/,/g, ''));
-      // Match plain numbers (fallback) - look for larger numbers that could be amounts
-      const p3 = /\b(\d{2,7}(?:,\d{3})*(?:\.\d{2})?)\b/g;
-      while ((m = p3.exec(hashText)) !== null) {
-        const num = m[1].replace(/,/g, '');
-        // Only add if it's a reasonable payment amount (between 10 and 100000)
-        if (num >= 10 && num <= 100000 && !amounts.includes(num)) {
-          amounts.push(num);
-        }
-      }
+      while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
 
       const wallets = readJSON("wallets.json", []);
 
@@ -1344,7 +1285,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
         confirmMsg += `\n📊 Status: <b>${status}</b>`;
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-        // Also send to Customer Payment group
         bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
     });
@@ -1402,146 +1342,23 @@ async function checkTRC20Transaction(txHash) {
 async function checkERC20Transaction(txHash) {
   try {
     const CHAIN_ID = "1";
-    console.log(`🔍 Checking ERC20 transaction: ${txHash}`);
-
-    // Try Etherscan API V2 first - use correct endpoint format
+    const receiptData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
     let txResult = null;
-    let errorMsg = "";
-
-    try {
-      // Try V2 API with gettxlist action - more reliable endpoint
-      const txUrl = `${ETHERSCAN_API}?module=account&action=tokentx&contractaddress=${ERC20_USDT_CONTRACT}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-      console.log(`🔍 V2 Token TX URL: ${txUrl}`);
-      const txData = JSON.parse(await httpRequest(txUrl));
-      console.log(`🔍 V2 Token TX Response:`, JSON.stringify(txData).substring(0, 500));
-
-      if (txData.status === "1" && txData.result && Array.isArray(txData.result) && txData.result.length > 0) {
-        const tx = txData.result[0];
-        txResult = {
-          from: tx.from,
-          to: tx.to,
-          value: tx.value,
-          input: "",
-          hash: tx.hash
-        };
-        console.log(`🔍 Parsed token tx: from=${txResult.from}, to=${txResult.to}, value=${tx.value}`);
-      } else {
-        errorMsg = txData.message || "No token transfer data";
-        console.log(`🔍 V2 Token TX failed: ${errorMsg}`);
-      }
-    } catch (e) {
-      errorMsg = e.message;
-      console.log(`🔍 V2 Token TX Error: ${e.message}`);
-    }
-
-    // Try get_transaction action if token tx failed
+    const txData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+    if (txData.status === "1" && txData.message === "OK" && txData.result) txResult = txData.result;
     if (!txResult) {
-      try {
-        const txUrl = `${ETHERSCAN_API}?module=transaction&action=gettxinfo&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-        console.log(`🔍 get_txinfo URL: ${txUrl}`);
-        const txData = JSON.parse(await httpRequest(txUrl));
-        console.log(`🔍 get_txinfo Response:`, JSON.stringify(txData).substring(0, 500));
-
-        if (txData.status === "1" && txData.result) {
-          txResult = txData.result;
-        } else {
-          errorMsg = txData.message || "No transaction data";
-        }
-      } catch (e) {
-        console.log(`🔍 get_txinfo Error: ${e.message}`);
-      }
+      console.log("⚠️ V2 failed, trying V1...");
+      const v1 = JSON.parse(await httpRequest(`${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
+      if (v1.result && typeof v1.result === "object") txResult = v1.result;
     }
-
-    // Try V1 proxy fallback if previous attempts failed
-    if (!txResult) {
-      console.log("⚠️ Previous methods failed, trying V1 proxy...");
-      const v1Url = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-      console.log(`🔍 V1 URL: ${v1Url}`);
-      const v1 = JSON.parse(await httpRequest(v1Url));
-      console.log(`🔍 V1 Response:`, JSON.stringify(v1).substring(0, 500));
-      if (v1.result && typeof v1.result === "object") {
-        txResult = v1.result;
-      } else {
-        errorMsg = "V1 also failed";
-      }
-    }
-
-    if (!txResult) {
-      console.log(`❌ All APIs failed: ${errorMsg}`);
-      return { success: false, error: errorMsg || "Could not fetch from Etherscan" };
-    }
-
-    console.log(`🔍 txResult:`, JSON.stringify(txResult).substring(0, 300));
-
-    // Parse the transaction data
-    let amount = "0";
-    let fromAddress = "";
-    let toAddress = "";
-
-    // First try to get from/to from direct fields
-    fromAddress = txResult.from || "";
-    toAddress = txResult.to || "";
-
-    // Handle different response formats
-    if (txResult.input && typeof txResult.input === 'string' && txResult.input.length > 2) {
-      // ERC20 transfer (USDT): 0xa9059cbb + to address (64 chars) + amount (64 chars)
-      if (txResult.input.startsWith("0xa9059cbb") && txResult.input.length >= 138) {
-        const extractedToAddress = "0x" + txResult.input.slice(34, 74);
-        if (extractedToAddress !== "0x") {
-          toAddress = extractedToAddress;
-        }
-        const amountHex = txResult.input.slice(74, 138);
-        if (amountHex && amountHex !== "0000000000000000000000000000000000000000000000000000000000000000") {
-          amount = (parseInt(amountHex, 16) / 1e6).toString(); // USDT has 6 decimals
-        }
-        console.log(`🔍 Parsed from input: toAddress=${toAddress}, amount=${amount}`);
-      }
-      // ETH transfer: value in wei
-      else if (txResult.value && txResult.value !== "0x0" && txResult.value !== "0x") {
-        amount = (parseInt(txResult.value, 16) / 1e18).toString();
-      }
-    } 
-    
-    // Try value field directly if amount still 0
-    if (amount === "0" && txResult.value && txResult.value !== "0x0" && txResult.value !== "0x") {
-      amount = (parseInt(txResult.value, 16) / 1e18).toString();
-    }
-
-    // Try token_value field if available (from tokentx endpoint)
-    if (amount === "0" && txResult.tokenValue) {
-      amount = (parseInt(txResult.tokenValue, 10) / 1e6).toString(); // USDT has 6 decimals
-    }
-    
-    // Try valueDecimal if available
-    if (amount === "0" && txResult.valueDecimal) {
-      amount = (parseFloat(txResult.valueDecimal) / 1).toString();
-    }
-
-    console.log(`🔍 Final parsed: amount=${amount}, toAddress=${toAddress}, fromAddress=${fromAddress}`);
-
-    // Get receipt status for confirmation
-    let confirmed = false;
-    try {
-      const receiptUrl = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-      const receiptData = JSON.parse(await httpRequest(receiptUrl));
-      confirmed = receiptData.status === "1" && receiptData.result && receiptData.result.status === "1";
-    } catch (e) {
-      // Receipt check failed, continue anyway
-      console.log(`🔍 Receipt check failed: ${e.message}`);
-    }
-
-    return {
-      success: true,
-      amount,
-      toAddress,
-      fromAddress,
-      confirmed,
-      hash: txHash
-    };
-  } catch (err) {
-    console.log(`❌ checkERC20Transaction error: ${err.message}`);
-    return { success: false, error: err.message };
-  }
+    if (!txResult) return { success:false, error:"Could not fetch from Etherscan" };
+    const input = txResult.input || "";
+    let amount="0", fromAddress=txResult.from||"", toAddress=txResult.to||"";
+    if (input.startsWith("0xa9059cbb") && input.length >= 74) { amount=(parseInt("0x"+input.slice(-64),16)/1e6).toString(); toAddress="0x"+input.slice(34,74); }
+    else if (txResult.value && txResult.value !== "0x0") { amount=(parseInt(txResult.value,16)/1e18).toString(); }
+    const confirmed = receiptData.status==="1" && receiptData.result && receiptData.result.status==="1";
+    return { success:true, amount, toAddress, fromAddress, confirmed, hash:txHash };
+  } catch (err) { return { success:false, error:err.message }; }
 }
 
 function verifyWalletAddress(address, wallets) {
@@ -1556,6 +1373,35 @@ function verifyWalletAddress(address, wallets) {
   return { matched: false, error: "Address not in our wallets" };
 }
 
+// Sync endpoints
+app.post("/api/sync", requireAdmin, async (req, res) => { const r = await syncExternalData(); res.json({ ok: true, results: r }); });
+app.get("/api/sync/status", (req, res) => {
+  const crg = readJSON("crg-deals.json", []), dc = readJSON("daily-cap.json", []);
+  res.json({ crgDeals: { count: crg.length, latestDates: [...new Set(crg.map(d => d.date))].sort().reverse().slice(0, 5) }, dailyCap: { count: dc.length, latestDates: [...new Set(dc.map(d => d.date))].sort().reverse().slice(0, 5) }, lastCheck: new Date().toISOString() });
+});
+
+// ── Telegram test endpoint
+app.post("/api/telegram/notify", (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: "Message required" });
+  sendTelegramNotification(message);
+  res.json({ ok: true });
+});
+
+app.get("/api/telegram/test", (req, res) => {
+  if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE") return res.json({ status: "no_token" });
+  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/getMe`, method: 'GET' };
+  const r = https.request(options, (response) => {
+    let d = ''; response.on('data', c => d += c);
+    response.on('end', () => {
+      if (response.statusCode === 200) { const info = JSON.parse(d).result; res.json({ status: "connected", bot: info.username, name: info.first_name }); }
+      else res.json({ status: "error", error: d });
+    });
+  });
+  r.on('error', err => { console.error("TG test error:", err.message); res.json({ status: "error", error: "Connection failed" }); });
+  r.end();
+});
+
 // ═══════════════════════════════════════════════════════════════
 // OFFER MESSAGE PARSER — Handles "Offer:" messages from Telegram
 // ═══════════════════════════════════════════════════════════════
@@ -1568,29 +1414,21 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Offer: 80 NO NL 1550+15% Tradeapp GG 5% deductions
     
     const lines = messageText.split('\n').filter(l => l.trim());
-    if (lines.length < 1) return;
     
     // First line is "Offer:" followed by optional affiliate ID
     const firstLine = lines[0].replace(/^Offer:\s*/i, '').trim();
     
-    // Check if first token is an affiliate ID (number like "71", "80")
-    let affiliateId = '';
-    let remainingText = firstLine;
+    // Extract affiliate ID (first number in the message)
+    const idMatch = firstLine.match(/^(\d+)/);
+    const affiliateId = idMatch ? idMatch[1] : null;
     
-    // Try to match a number at the start as affiliate ID
-    const idMatch = firstLine.match(/^(\d+)\s+(.*)/);
-    if (idMatch) {
-      affiliateId = idMatch[1];
-      remainingText = idMatch[2];
-    }
+    // Parse offer details
+    const remainingText = affiliateId ? firstLine.substring(affiliateId.length).trim() : firstLine;
     
-    // Parse individual offers from the remaining text
-    // Each offer format: BRAND AMOUNT PERCENTAGE%
-    // Example: GR Quantex 1000 10%
-    const offerRegex = /([A-Za-z]+(?:\s+[A-Za-z]+)?)\s+(\d+)\s+(\d+(?:\+\d+)?%?)/g;
+    // Try to parse offers in format: BRAND AMOUNT PERCENTAGE%
     const offers = [];
+    const offerRegex = /([A-Za-z\s]+?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?%)/g;
     let match;
-    
     while ((match = offerRegex.exec(remainingText)) !== null) {
       offers.push({
         brand: match[1].trim(),
@@ -1676,33 +1514,14 @@ async function handleOfferMessage(bot, msg, messageText) {
   }
 }
 
-// Sync endpoints
-app.post("/api/sync", requireAdmin, async (req, res) => { const r = await syncExternalData(); res.json({ ok: true, results: r }); });
-app.get("/api/sync/status", (req, res) => {
-  const crg = readJSON("crg-deals.json", []), dc = readJSON("daily-cap.json", []);
-  res.json({ crgDeals: { count: crg.length, latestDates: [...new Set(crg.map(d => d.date))].sort().reverse().slice(0, 5) }, dailyCap: { count: dc.length, latestDates: [...new Set(dc.map(d => d.date))].sort().reverse().slice(0, 5) }, lastCheck: new Date().toISOString() });
-});
-
-// ── Telegram test endpoint
-app.post("/api/telegram/notify", (req, res) => {
-  const { message } = req.body;
-  if (!message) return res.status(400).json({ error: "Message required" });
-  sendTelegramNotification(message);
-  res.json({ ok: true });
-});
-
-app.get("/api/telegram/test", (req, res) => {
-  if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE") return res.json({ status: "no_token" });
-  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/getMe`, method: 'GET' };
-  const r = https.request(options, (response) => {
-    let d = ''; response.on('data', c => d += c);
-    response.on('end', () => {
-      if (response.statusCode === 200) { const info = JSON.parse(d).result; res.json({ status: "connected", bot: info.username, name: info.first_name }); }
-      else res.json({ status: "error", error: d });
-    });
-  });
-  r.on('error', err => { console.error("TG test error:", err.message); res.json({ status: "error", error: "Connection failed" }); });
-  r.end();
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL ERROR HANDLER — catch-all, always returns JSON
+// ═══════════════════════════════════════════════════════════════
+app.use((err, req, res, next) => {
+  console.error('💥 Express error:', err.message);
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
