@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.36";
+const VERSION = "3.37";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -3625,16 +3625,17 @@ function AppInner() {
     if (session && session.token) setSessionToken(session.token);
     return session ? { email: session.email, name: session.name, pageAccess: session.pageAccess } : null;
   });
-  const [users, setUsers] = useState(() => lsGet('users', null) || INITIAL_USERS);
-  const [payments, setPayments] = useState(() => lsGet('payments', null) || INITIAL);
-  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', null) || CP_INITIAL);
-  const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', null) || CRG_INITIAL);
-  const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || DC_INITIAL);
-  const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || DEALS_INITIAL);
-  const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || [{ id: genId(), date: "2026-02-19", trc: "TAXupFc6A9Svhy22bJn7QQzPaLtZ6tGQ15", erc: "0xbF7178Bd7526C25387df412cbe12927b593E31E5", btc: "bc1qqhtk4fhlnkf7sv768jdss5da7ce0wnpue6ltwd" }]);
+  const [users, setUsers] = useState(() => lsGet('users', null) || []);
+  const [payments, setPayments] = useState(() => lsGet('payments', null) || []);
+  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', null) || []);
+  const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', null) || []);
+  const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
+  const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
+  const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
   const [page, setPage] = useState("dashboard");
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
+  const serverFetchDone = useRef(false); // CRITICAL: block saves until first server fetch completes
 
   // ═══════════════════════════════════════════════════════════════
   // SYNC ENGINE v3.26 — LOCAL-FIRST WITH ID-BASED MERGE
@@ -3713,12 +3714,12 @@ function AppInner() {
           apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
         ]);
         if (sessionExpiredFlag) {
-          sessionExpiredFlag = false; setUser(null); skipSave.current = false; setLoaded(true); return;
+          sessionExpiredFlag = false; setUser(null); skipSave.current = false; serverFetchDone.current = false; setLoaded(true); return;
         }
         const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
-          setLoaded(true); setTimeout(() => { skipSave.current = false; }, 2000); return;
+          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 2000); return;
         }
 
         if (anySuccess) {
@@ -3767,6 +3768,7 @@ function AppInner() {
       }
 
       setLoaded(true);
+      serverFetchDone.current = true;
       setTimeout(() => { skipSave.current = false; }, 2000);
     })();
   }, [user]); // Re-run when user logs in
@@ -3825,19 +3827,19 @@ function AppInner() {
   }, [loaded]);
 
   // \u2500\u2500 Auto-save hooks \u2500\u2500
-  const initialPaymentsRef = useRef(JSON.stringify(INITIAL));
-  const initialCpRef = useRef(JSON.stringify(CP_INITIAL));
-  const initialCrgRef = useRef(JSON.stringify(CRG_INITIAL));
-  const initialDcRef = useRef(JSON.stringify(DC_INITIAL));
-  const initialDealsRef = useRef(JSON.stringify(DEALS_INITIAL));
+  const initialPaymentsRef = useRef(JSON.stringify([]));
+  const initialCpRef = useRef(JSON.stringify([]));
+  const initialCrgRef = useRef(JSON.stringify([]));
+  const initialDcRef = useRef(JSON.stringify([]));
+  const initialDealsRef = useRef(JSON.stringify([]));
 
-  useEffect(() => { if (!skipSave.current && loaded && users.length > 0) apiSave('users', users, user?.email); }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded && payments.length > 0 && JSON.stringify(payments) !== initialPaymentsRef.current) apiSave('payments', payments, user?.email); }, [payments]);
-  useEffect(() => { if (!skipSave.current && loaded && cpPayments.length > 0 && JSON.stringify(cpPayments) !== initialCpRef.current) apiSave('customer-payments', cpPayments, user?.email); }, [cpPayments]);
-  useEffect(() => { if (!skipSave.current && loaded && crgDeals.length > 0 && JSON.stringify(crgDeals) !== initialCrgRef.current) apiSave('crg-deals', crgDeals, user?.email); }, [crgDeals]);
-  useEffect(() => { if (!skipSave.current && loaded && dcEntries.length > 0 && JSON.stringify(dcEntries) !== initialDcRef.current) apiSave('daily-cap', dcEntries, user?.email); }, [dcEntries]);
-  useEffect(() => { if (!skipSave.current && loaded && dealsData.length > 0 && JSON.stringify(dealsData) !== initialDealsRef.current) apiSave('deals', dealsData, user?.email); }, [dealsData]);
-  useEffect(() => { if (!skipSave.current && loaded && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0) apiSave('users', users, user?.email); }, [users]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && payments.length > 0 && JSON.stringify(payments) !== initialPaymentsRef.current) apiSave('payments', payments, user?.email); }, [payments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && cpPayments.length > 0 && JSON.stringify(cpPayments) !== initialCpRef.current) apiSave('customer-payments', cpPayments, user?.email); }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && crgDeals.length > 0 && JSON.stringify(crgDeals) !== initialCrgRef.current) apiSave('crg-deals', crgDeals, user?.email); }, [crgDeals]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && dcEntries.length > 0 && JSON.stringify(dcEntries) !== initialDcRef.current) apiSave('daily-cap', dcEntries, user?.email); }, [dcEntries]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && dealsData.length > 0 && JSON.stringify(dealsData) !== initialDealsRef.current) apiSave('deals', dealsData, user?.email); }, [dealsData]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
 
