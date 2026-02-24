@@ -711,9 +711,13 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         sendTelegramNotification(formatPaidPaymentMessage(p), CUSTOMER_PAYMENT_GROUP_CHAT_ID);
         // Send to Affiliate group -1002830517753
         sendAffiliatePaymentNotification(p, true);
-      } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
+} else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
         // Send to Customer Payment group (Brands) only - removed Affiliate group notification
         sendBrandPaymentNotification(p, false);
+        // Send Approved to pay notification with tag to Open Payment group
+        if (p.status === "Approved to pay") {
+          sendApprovedToPayNotification(p);
+        }
       }
     } else if (oldP.status !== p.status) {
       if (p.status === "Paid" && oldP.status !== "Paid") {
@@ -727,6 +731,14 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         sendOpenPaymentNotification(p);
         // Also notify brands group
         sendBrandPaymentNotification(p, false);
+        // Send Approved to pay notification with tag if status is Approved to pay
+        if (p.status === "Approved to pay") {
+          sendApprovedToPayNotification(p);
+        }
+      }
+      // Handle status change to Approved to pay from any other status
+      else if (p.status === "Approved to pay" && oldP.status !== "Approved to pay") {
+        sendApprovedToPayNotification(p);
       }
     }
   });
@@ -1118,6 +1130,52 @@ function formatOpenPaymentMessage(p) {
 💵 Amount: $${amount}
 👤 Opened by: ${p.openBy || "Unknown"}
 Status: ${p.status || "Open"}`;
+}
+
+function formatApprovedToPayMessage(p) {
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
+  return `🔄 Payment #${p.invoice} status → Approved to pay by ${p.openBy || "Y Admin"}
+
+@Rose14329`;
+}
+
+function sendApprovedToPayNotification(p) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Approved to pay notification skipped (no token configured)");
+    return;
+  }
+
+  const message = formatApprovedToPayMessage(p);
+  
+  const postData = JSON.stringify({
+    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) console.log("❌ Approved to pay notification error:", d);
+      else console.log("✅ Approved to pay notification sent for invoice:", p.invoice);
+    });
+  });
+
+  req.on('error', err => console.error("❌ Approved to pay notification error:", err.message));
+  req.write(postData);
+  req.end();
 }
 
 function sendOpenPaymentNotification(p) {
@@ -1546,10 +1604,11 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
       const st = userStates[chatId];
 
-      // Handle Offer: messages from the offer group FIRST (before state checks)
+      // Handle Offer: / Offers: messages from the offer group FIRST (before state checks)
       // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
-      if (chatId.toString() === OFFER_GROUP_CHAT_ID && offerMessageText.toLowerCase().startsWith('offer:')) {
+      const offerLower = offerMessageText.toLowerCase();
+      if (chatId.toString() === OFFER_GROUP_CHAT_ID && (offerLower.startsWith('offer:') || offerLower.startsWith('offers:'))) {
         try {
           await handleOfferMessage(bot, msg, offerMessageText);
         } catch (err) {
