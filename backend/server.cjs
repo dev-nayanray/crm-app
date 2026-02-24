@@ -36,7 +36,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "3.37";
+const VERSION = "4.00";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -861,17 +861,56 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     
     const merged = Array.from(mergedMap.values());
     
+    // DEDUPLICATION: For daily-cap and crg-deals, remove duplicate entries per agent/affiliate per date
+    let deduped = merged;
+    if (ep === "daily-cap") {
+      const seen = new Map();
+      deduped = [];
+      for (const r of merged) {
+        const key = `${r.date}__${(r.agent || "").trim().toLowerCase()}`;
+        if (seen.has(key)) {
+          // Merge: keep the one with more data (higher cap values)
+          const existing = seen.get(key);
+          const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
+          const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
+          if (newTotal > existTotal) { seen.set(key, r); }
+        } else {
+          seen.set(key, r);
+        }
+      }
+      deduped = Array.from(seen.values());
+      if (deduped.length < merged.length) console.log(`🧹 DEDUP [daily-cap]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} duplicates)`);
+    }
+    if (ep === "crg-deals") {
+      const seen = new Map();
+      deduped = [];
+      for (const r of merged) {
+        const key = `${r.date}__${(r.affiliate || "").trim().toLowerCase()}`;
+        if (seen.has(key)) {
+          // Keep the one with more data (has capReceived, started, etc.)
+          const existing = seen.get(key);
+          const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
+          const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
+          if (newScore > existScore) { seen.set(key, r); }
+        } else {
+          seen.set(key, r);
+        }
+      }
+      deduped = Array.from(seen.values());
+      if (deduped.length < merged.length) console.log(`🧹 DEDUP [crg-deals]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} duplicates)`);
+    }
+    
     if (clientNew > 0 || serverOnly.length > 0) {
-      console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length})`);
+      console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${deduped.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length})`);
     }
 
-    const success = await lockedWrite(file, merged, {
-      action: "update", user: userEmail || "unknown", details: `${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
+    const success = await lockedWrite(file, deduped, {
+      action: "update", user: userEmail || "unknown", details: `${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
     });
 
     if (success) {
-      broadcastUpdate(ep, merged);
-      res.json({ ok: true, count: merged.length, version: getVersion(ep), merged: true });
+      broadcastUpdate(ep, deduped);
+      res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true });
     } else {
       res.status(500).json({ error: "Write failed" });
     }
@@ -2368,6 +2407,53 @@ async function handleOfferMessage(bot, msg, messageText) {
 
 // ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
+// DATA DEDUPLICATION — clean existing duplicates (admin only)
+// ═══════════════════════════════════════════════════════════════
+app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
+  const results = {};
+  
+  // Deduplicate daily-cap: one record per agent per date
+  const dc = readJSON("daily-cap.json", []);
+  const dcSeen = new Map();
+  for (const r of dc) {
+    const key = `${r.date}__${(r.agent || "").trim().toLowerCase()}`;
+    if (dcSeen.has(key)) {
+      const existing = dcSeen.get(key);
+      const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
+      const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
+      if (newTotal > existTotal) dcSeen.set(key, r);
+    } else { dcSeen.set(key, r); }
+  }
+  const dcDeduped = Array.from(dcSeen.values());
+  if (dcDeduped.length < dc.length) {
+    await lockedWrite("daily-cap.json", dcDeduped, { action: "dedup", user: req.userSession.email, details: `Removed ${dc.length - dcDeduped.length} duplicates` });
+    broadcastUpdate("daily-cap", dcDeduped);
+  }
+  results["daily-cap"] = { before: dc.length, after: dcDeduped.length, removed: dc.length - dcDeduped.length };
+
+  // Deduplicate crg-deals: one record per affiliate per date
+  const crg = readJSON("crg-deals.json", []);
+  const crgSeen = new Map();
+  for (const r of crg) {
+    const key = `${r.date}__${(r.affiliate || "").trim().toLowerCase()}`;
+    if (crgSeen.has(key)) {
+      const existing = crgSeen.get(key);
+      const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
+      const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
+      if (newScore > existScore) crgSeen.set(key, r);
+    } else { crgSeen.set(key, r); }
+  }
+  const crgDeduped = Array.from(crgSeen.values());
+  if (crgDeduped.length < crg.length) {
+    await lockedWrite("crg-deals.json", crgDeduped, { action: "dedup", user: req.userSession.email, details: `Removed ${crg.length - crgDeduped.length} duplicates` });
+    broadcastUpdate("crg-deals", crgDeduped);
+  }
+  results["crg-deals"] = { before: crg.length, after: crgDeduped.length, removed: crg.length - crgDeduped.length };
+
+  console.log("🧹 DEDUP results:", JSON.stringify(results));
+  res.json({ ok: true, results });
+});
+
 // DATA RECONCILIATION — recover orphaned local records
 // ═══════════════════════════════════════════════════════════════
 app.post("/api/reconcile", requireAuth, async (req, res) => {
