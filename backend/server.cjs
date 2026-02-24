@@ -712,9 +712,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         // Send to Affiliate group -1002830517753
         sendAffiliatePaymentNotification(p, true);
       } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
-        // Send to Affiliate group (Open payments)
-        sendOpenPaymentNotification(p);
-        // Also send to Customer Payment group (Brands)
+        // Send to Customer Payment group (Brands) only - removed Affiliate group notification
         sendBrandPaymentNotification(p, false);
       }
     } else if (oldP.status !== p.status) {
@@ -1375,11 +1373,59 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
     
     let pollingErrorCount = 0;
+    let lastPollingRestart = 0;
+    const POLLING_RESTART_COOLDOWN = 30000; // 30 seconds between restarts
+    
     bot.on('polling_error', (error) => { 
       pollingErrorCount++;
+      const now = Date.now();
       console.log(`⚠️ Telegram polling error #${pollingErrorCount}: ${error.code || error.message}`);
+      
+      // ETELEGRAM means bot was removed and re-added to group - need to restart polling
+      if (error.code === 'ETELEGRAM' || error.message.includes('Forbidden')) {
+        // Check cooldown to prevent constant restarts
+        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) {
+          return;
+        }
+        
+        lastPollingRestart = now;
+        
+        // Stop polling and restart to get fresh updates
+        bot.stopPolling().then(() => {
+          console.log("⏹️ Polling stopped, restarting...");
+          return bot.startPolling();
+        }).then(() => {
+          console.log("✅ Telegram polling restarted - bot should now receive messages");
+        }).catch(err => {
+          console.error("❌ Failed to restart polling:", err.message);
+        });
+        
+        // Also try to send a message to verify access
+        // bot.sendMessage(OFFER_GROUP_CHAT_ID, "")
+        //   .then(() => console.log("✅ Bot has access to offer group"))
+        //   .catch(err => {
+        //     console.log(`❌ Bot cannot access offer group: ${err.message}`);
+        //     console.log("⚠️ Please check:");
+        //     console.log("   1. Bot is an admin in the group");
+        //     console.log("   2. Bot has permission to read messages");
+        //     console.log("   3. Group is not a private supergroup");
+        //   });
+        
+        // Reset error count after handling ETELEGRAM
+        pollingErrorCount = 0;
+        return;
+      }
+      
       if (pollingErrorCount >= 10) {
-        console.log("🔄 Too many polling errors — restarting bot polling...");
+        // Only restart if cooldown has passed
+        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) {
+          console.log("⏳ Too many errors but on cooldown, waiting...");
+          pollingErrorCount = 0;
+          return;
+        }
+        
+        // console.log("🔄 Too many polling errors — restarting bot polling...");
+        lastPollingRestart = now;
         pollingErrorCount = 0;
         bot.stopPolling().then(() => {
           setTimeout(() => {
@@ -1502,6 +1548,20 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
       const st = userStates[chatId];
 
+      // Handle Offer: messages from the offer group FIRST (before state checks)
+      // This ensures Offer: messages are processed even if user is in a waiting state
+      const offerMessageText = msg.text || '';
+      if (chatId.toString() === OFFER_GROUP_CHAT_ID && offerMessageText.toLowerCase().startsWith('offer:')) {
+        console.log(`📝 Offer message detected! Processing...`);
+        try {
+          await handleOfferMessage(bot, msg, offerMessageText);
+        } catch (err) {
+          console.error("❌ Error in handleOfferMessage:", err);
+          bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
+        }
+        return;
+      }
+
       // Handle /deals country text input
       if (st && st.state === "waiting_for_country_deals") {
         delete userStates[chatId];
@@ -1531,13 +1591,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
       // Skip hash detection if in ANY waiting state
       if (st) return;
-
-      // Handle Offer: messages from the offer group
-      const offerMessageText = msg.text || '';
-      if (chatId.toString() === OFFER_GROUP_CHAT_ID && offerMessageText.startsWith('Offer:')) {
-        await handleOfferMessage(bot, msg, offerMessageText);
-        return;
-      }
 
       // USDT hash detection (Brands group: -1002796530029)
       // This handles payments in the Finance | Brands group
@@ -1847,14 +1900,19 @@ async function handleOfferMessage(bot, msg, messageText) {
     // 196 BEnl
     // BitcoinApex
     // 1500+12
+    console.log(`📝 Parsing offer - lines: ${JSON.stringify(lines)}`);
     if (lines.length >= 4 && lines[0].toLowerCase() === 'offer:') {
       // Second line should be "196 BEnl" (affiliate + country)
-      const line2Match = lines[1].match(/^(\d+)\s+(\w+)$/);
+      // Fix: Make regex case-insensitive for country code part
+      const line2Match = lines[1].match(/^(\d+)\s+([A-Za-z0-9]+)$/);
+      console.log(`📝 Line 2 match: ${JSON.stringify(line2Match)}`);
       if (line2Match) {
         const affiliateId = line2Match[1];
-        const country = line2Match[2];
+        const country = line2Match[2]; // Keep original case (e.g., "BEnl")
         const brand = lines[2] || '';
         const crg = lines[3] || '';
+        
+        console.log(`📝 Parsed - Affiliate: ${affiliateId}, Country: ${country}, Brand: ${brand}, CRG: ${crg}`);
         
         // Validate we have at least affiliate and country
         if (affiliateId && country) {
