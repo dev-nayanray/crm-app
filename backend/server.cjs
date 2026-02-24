@@ -1114,13 +1114,12 @@ function sendTelegramNotification(message, chatId = FINANCE_GROUP_CHAT_ID) {
 
 function formatOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `💰 NEW OPEN PAYMENT 💰
+  return `🆕 NEW PAYMENT ADDED 💰
 
 📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
 👤 Opened by: ${p.openBy || "Unknown"}
-📅 Date: ${p.openDate || "N/A"}
-🔖 Status: ${p.status || "Open"}`;
+Status: ${p.status || "Open"}`;
 }
 
 function sendOpenPaymentNotification(p) {
@@ -1789,6 +1788,60 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Gg/Fb
     
     const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
+    
+    // Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
+    const simpleMatch = messageText.match(/^Offer:\s*(\d+)\s+(\w+)\s+(\S+)\s+(\d+[\+\%]\d+)/i);
+    if (simpleMatch) {
+      const affiliateId = simpleMatch[1];
+      const country = simpleMatch[2];
+      const brand = simpleMatch[3];
+      const crg = simpleMatch[4];
+      
+      // Get existing offers
+      const offersFile = path.join(DATA_DIR, "offers.json");
+      let existingOffers = [];
+      try {
+        if (fs.existsSync(offersFile)) {
+          existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+        }
+      } catch (e) {}
+      
+      // Remove existing offers for this affiliate
+      existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+      
+      // Add new offer
+      const timestamp = new Date().toISOString().split("T")[0];
+      existingOffers.push({
+        id: crypto.randomBytes(4).toString('hex'),
+        affiliateId: affiliateId,
+        country: country,
+        crg: crg,
+        crgAmount: crg.split('+')[0],
+        crgPercentage: crg.split('+')[1] || '',
+        brands: brand,
+        traffic: '',
+        status: "Open",
+        createdDate: timestamp,
+        rawMessage: messageText
+      });
+      
+      // Save to file
+      await lockedWrite("offers.json", existingOffers, {
+        action: "create",
+        user: "telegram-bot",
+        details: `Added offer for affiliate ${affiliateId}`
+      });
+      
+      // Broadcast to connected clients
+      broadcastUpdate("offers", existingOffers);
+      
+      // Send simplified notification
+      sendNewOfferNotification(affiliateId, country, brand);
+      
+      bot.sendMessage(msg.chat.id, `✅ Added new offer for affiliate ${affiliateId}: ${country} - ${brand} (CRG: ${crg})`);
+      console.log(`📝 Simple offer added: Affiliate ${affiliateId} - Country ${country}`);
+      return;
+    }
     
     // Find affiliate ID - look for standalone number
     let affiliateId = null;
