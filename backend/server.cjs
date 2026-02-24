@@ -36,7 +36,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "3.36";
+const VERSION = "3.37";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -909,14 +909,20 @@ app.post("/api/users", requireAuth, async (req, res) => {
     return u;
   });
 
-  const success = await lockedWrite("users.json", users, {
-    action: "update", user: userEmail || "system", details: `${users.length} users saved`
+  // SERVER-SIDE MERGE for users — preserve users from other clients
+  const mergedMap = new Map();
+  existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
+  users.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
+  const mergedUsers = Array.from(mergedMap.values());
+
+  const success = await lockedWrite("users.json", mergedUsers, {
+    action: "update", user: userEmail || "system", details: `${mergedUsers.length} users saved (merged)`
   });
 
   if (success) {
-    broadcastUpdate("users", users);
-    console.log(`👥 Users updated: ${users.length} users saved`);
-    res.json({ ok: true, count: users.length, version: getVersion("users") });
+    broadcastUpdate("users", mergedUsers);
+    console.log(`👥 Users updated: ${mergedUsers.length} users saved`);
+    res.json({ ok: true, count: mergedUsers.length, version: getVersion("users") });
   } else {
     res.status(500).json({ error: "Write failed" });
   }
