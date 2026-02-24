@@ -36,7 +36,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "3.24";
+const VERSION = "3.30";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -124,14 +124,18 @@ const ERC20_USDT_CONTRACT = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 const COUNTRY_NAMES = { DE:"Germany",FR:"France",UK:"United Kingdom",AU:"Australia",MY:"Malaysia",SI:"Singapore",HR:"Croatia",GCC:"Gulf Countries",ES:"Spain",BE:"Belgium",IT:"Italy" };
 const VALID_COUNTRIES = Object.keys(COUNTRY_NAMES);
 
-function httpRequest(url, isHttps = true) {
+function httpRequest(url, isHttps = true, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
     const protocol = isHttps ? https : http;
-    protocol.get(url, (res) => {
+    const req = protocol.get(url, (res) => {
       let data = "";
       res.on("data", (chunk) => data += chunk);
       res.on("end", () => resolve(data));
-    }).on("error", reject);
+    });
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms: ${url}`));
+    });
   });
 }
 
@@ -891,14 +895,14 @@ if (WS_AVAILABLE) {
     // Send current versions on connect
     const versions = {};
     endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
-    ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() }));
+    try { ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() })); } catch {}
 
     // Handle messages from client
     ws.on('message', (msg) => {
       try {
         const data = JSON.parse(msg);
         if (data.type === "ping") {
-          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+          try { ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() })); } catch {}
         }
       } catch {}
     });
@@ -917,7 +921,12 @@ if (WS_AVAILABLE) {
   setInterval(() => {
     wsClients.forEach(ws => {
       if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
-      ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
+      try {
+        ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
+      } catch (err) {
+        console.error("⚠️ Heartbeat send failed:", err.message);
+        wsClients.delete(ws);
+      }
     });
   }, 30000);
 }
@@ -935,9 +944,16 @@ function broadcastUpdate(table, data) {
 
   let sent = 0;
   wsClients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(message);
-      sent++;
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+        sent++;
+      } else {
+        wsClients.delete(ws);
+      }
+    } catch (err) {
+      console.error("⚠️ WS broadcast send error:", err.message);
+      wsClients.delete(ws);
     }
   });
   if (sent > 0) console.log(`📡 Broadcast ${table} update to ${sent} clients`);
@@ -1348,9 +1364,32 @@ const userStates = {};
 
 if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   try {
-    bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true, filepath: false });
-    console.log("🤖 Telegram bot initialized");
-    bot.on('polling_error', (error) => { console.log(`⚠️ Polling error:`, error.code || error.message); });
+    bot = new TelegramBot(TELEGRAM_TOKEN, { 
+      polling: { 
+        interval: 2000,        // 2s between polls (default 300ms causes connection churn)
+        autoStart: true,
+        params: { timeout: 30 } // Telegram long-poll: hold connection 30s
+      }, 
+      filepath: false,
+      request: { timeout: 30000 } // HTTP timeout: 30s
+    });
+    console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
+    
+    let pollingErrorCount = 0;
+    bot.on('polling_error', (error) => { 
+      pollingErrorCount++;
+      console.log(`⚠️ Telegram polling error #${pollingErrorCount}: ${error.code || error.message}`);
+      if (pollingErrorCount >= 10) {
+        console.log("🔄 Too many polling errors — restarting bot polling...");
+        pollingErrorCount = 0;
+        bot.stopPolling().then(() => {
+          setTimeout(() => {
+            bot.startPolling().then(() => console.log("✅ Telegram polling restarted"))
+              .catch(e => console.error("❌ Polling restart failed:", e.message));
+          }, 5000);
+        }).catch(() => {});
+      }
+    });
 
     bot.setMyCommands([
       { command:"/start", description:"Welcome & help" },
@@ -1619,7 +1658,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
         bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
-      }
+      } // close if (isFinanceGroup)
     });
 
     console.log("✅ USDT hash detection enabled");
@@ -1903,14 +1942,126 @@ async function handleOfferMessage(bot, msg, messageText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// DATA RECONCILIATION — recover orphaned local records
+// ═══════════════════════════════════════════════════════════════
+app.post("/api/reconcile", requireAuth, async (req, res) => {
+  const { table, localData } = req.body;
+  if (!table || !Array.isArray(localData)) return res.status(400).json({ error: "Need table name and localData array" });
+  const file = table + ".json";
+  const serverData = readJSON(file, []);
+  const serverIDs = new Set(serverData.map(r => r.id).filter(Boolean));
+  const orphans = localData.filter(r => r.id && !serverIDs.has(r.id));
+  if (orphans.length === 0) return res.json({ ok: true, message: "No orphaned records", serverCount: serverData.length });
+  const merged = [...serverData, ...orphans];
+  const success = await lockedWrite(file, merged, { action: "reconcile", user: req.userSession.email, details: `Recovered ${orphans.length} orphans` });
+  if (success) {
+    broadcastUpdate(table, merged);
+    res.json({ ok: true, recovered: orphans.length, total: merged.length });
+  } else {
+    res.status(500).json({ error: "Write failed" });
+  }
+});
+
 // GLOBAL ERROR HANDLER — catch-all, always returns JSON
 // ═══════════════════════════════════════════════════════════════
 app.use((err, req, res, next) => {
   console.error('💥 Express error:', err.message);
-  if (!res.headersSent) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+  if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// MEMORY MONITORING — detect leaks before they crash
+// ═══════════════════════════════════════════════════════════════
+const memoryLog = [];
+const MAX_MEMORY_LOG = 120;
+
+function getMemorySnapshot() {
+  const mem = process.memoryUsage();
+  return {
+    timestamp: new Date().toISOString(),
+    rss: Math.round(mem.rss / 1024 / 1024),
+    heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+    external: Math.round(mem.external / 1024 / 1024),
+    wsClients: wsClients.size,
+    sessions: activeSessions.size,
+    uptime: Math.round(process.uptime()),
+  };
+}
+
+setInterval(() => {
+  const snap = getMemorySnapshot();
+  memoryLog.push(snap);
+  if (memoryLog.length > MAX_MEMORY_LOG) memoryLog.shift();
+  if (snap.heapUsed > 400) {
+    console.error(`🚨 HIGH MEMORY: heap=${snap.heapUsed}MB rss=${snap.rss}MB ws=${snap.wsClients}`);
+  }
+  if (memoryLog.length >= 10) {
+    const tenAgo = memoryLog[memoryLog.length - 10];
+    const growth = snap.heapUsed - tenAgo.heapUsed;
+    if (growth > 50) console.error(`🚨 MEMORY LEAK: heap grew ${growth}MB in 10min (${tenAgo.heapUsed}→${snap.heapUsed}MB)`);
+  }
+}, 60000);
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN DIAGNOSTICS — live health + downloadable logs
+// ═══════════════════════════════════════════════════════════════
+app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
+  const snap = getMemorySnapshot();
+  let recentAudit = [];
+  try {
+    const files = fs.readdirSync(AUDIT_DIR).sort().reverse().slice(0, 3);
+    for (const f of files) {
+      const lines = fs.readFileSync(path.join(AUDIT_DIR, f), "utf8").trim().split("\n").slice(-50);
+      recentAudit.push({ file: f, entries: lines.map(l => { try { return JSON.parse(l); } catch { return l; } }) });
+    }
+  } catch {}
+  res.json({
+    server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid },
+    memory: snap, memoryHistory: memoryLog.slice(-30),
+    connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
+    telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
+    data: { payments: readJSON("payments.json",[]).length, customerPayments: readJSON("customer-payments.json",[]).length, crgDeals: readJSON("crg-deals.json",[]).length, dailyCap: readJSON("daily-cap.json",[]).length, deals: readJSON("deals.json",[]).length, offers: readJSON("offers.json",[]).length, wallets: readJSON("wallets.json",[]).length },
+    recentAudit,
+  });
+});
+
+app.get("/api/admin/logs/download", requireAdmin, (req, res) => {
+  const report = {
+    generatedAt: new Date().toISOString(),
+    server: { version: VERSION, uptime: process.uptime(), pid: process.pid, node: process.version },
+    memoryNow: getMemorySnapshot(), memoryHistory: memoryLog,
+    connections: { wsClients: wsClients.size, sessions: activeSessions.size },
+    telegram: { active: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 0 },
+  };
+  try {
+    const files = fs.readdirSync(AUDIT_DIR).sort().reverse().slice(0, 7);
+    report.auditLogs = {};
+    for (const f of files) {
+      report.auditLogs[f] = fs.readFileSync(path.join(AUDIT_DIR, f), "utf8").trim().split("\n").map(l => { try { return JSON.parse(l); } catch { return l; } });
+    }
+  } catch {}
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="blitz-diagnostics-${new Date().toISOString().split('T')[0]}.json"`);
+  res.send(JSON.stringify(report, null, 2));
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GRACEFUL SHUTDOWN — flush data before dying
+// ═══════════════════════════════════════════════════════════════
+function gracefulShutdown(signal) {
+  console.log(`\n🛑 ${signal} — graceful shutdown...`);
+  server.close(() => console.log("✅ HTTP closed"));
+  wsClients.forEach(ws => { try { ws.close(1001, "Server shutting down"); } catch {} });
+  if (bot) { try { bot.stopPolling(); console.log("✅ Telegram stopped"); } catch {} }
+  persistSessions();
+  try { createBackup("shutdown-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)); console.log("✅ Emergency backup"); } catch {}
+  writeAuditLog("system", "shutdown", "system", `${signal} — uptime: ${Math.round(process.uptime())}s, heap: ${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`);
+  setTimeout(() => process.exit(0), 2000);
+}
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ═══════════════════════════════════════════════════════════════
 // 14. START SERVER (HTTP + WebSocket on same port)
