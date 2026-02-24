@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.32";
+const VERSION = "3.33";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -647,11 +647,14 @@ const MONTHS = [
 
 const genId = () => Math.random().toString(36).substr(2, 9);
 
-// Convert 2-letter country code to flag emoji
+// Convert 2-letter country code to flag emoji (3-4 letter codes show text only)
 const countryFlag = code => {
-  if (!code || code.length !== 2) return "";
-  const offset = 127397;
-  return String.fromCodePoint(...[...code.toUpperCase()].map(c => c.charCodeAt(0) + offset));
+  if (!code) return "";
+  if (code.length === 2) {
+    const offset = 127397;
+    return String.fromCodePoint(...[...code.toUpperCase()].map(c => c.charCodeAt(0) + offset));
+  }
+  return ""; // 3-4 letter codes don't have flag emoji
 };
 
 const INITIAL = [
@@ -3231,7 +3234,7 @@ function DealsForm({ deal, onSave, onClose }) {
           <input style={inp} value={f.affiliate} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("affiliate", v); }} placeholder="e.g. 17" maxLength={3} />
         </Field>
         <Field label="Country">
-          <input style={inp} value={f.country} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2); s("country", v); }} placeholder="e.g. DE" maxLength={2} />
+          <input style={inp} value={f.country} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4); s("country", v); }} placeholder="e.g. DE" maxLength={4} />
         </Field>
         <Field label="Price ($)">
           <input style={inp} type="number" value={f.price} onChange={e => s("price", e.target.value)} placeholder="e.g. 1800" />
@@ -3386,7 +3389,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
               <thead>
                 <tr style={{ background: "#F8FAFC" }}>
                   {[
-                    { key: "affiliate", label: "Client" },
+                    { key: "affiliate", label: "Affiliate ID" },
                     { key: "country", label: "Country" },
                     { key: "price", label: "Price" },
                     { key: "crg", label: "CRG" },
