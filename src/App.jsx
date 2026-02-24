@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.33";
+const VERSION = "3.34";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -451,6 +451,32 @@ async function apiGet(endpoint) {
 const pendingSaves = new Map(); // key: endpoint, value: { data, userEmail, retries }
 let lastSaveTimestamps = {}; // FIX C1: Track when each table was last saved to prevent echo saves
 
+// ── Conflict resolution: when apiSave gets 409, merge server data into React state ──
+const conflictSetters = {}; // Registered by React component: { 'payments': setPayments, ... }
+function registerConflictSetter(table, setter) { conflictSetters[table] = setter; }
+
+function handleConflictResolution(endpoint, serverData, serverVersion) {
+  // 1. Update version so next save uses correct version
+  if (serverVersion) { dataVersions[endpoint] = serverVersion; savePersistedVersions(dataVersions); }
+  // 2. Save server data to localStorage
+  lsSave(endpoint, serverData);
+  // 3. Merge into React state (if setter registered) — THIS is the critical fix
+  const setter = conflictSetters[endpoint];
+  if (setter && typeof mergeByIDGlobal === 'function') {
+    setter(prev => {
+      const merged = mergeByIDGlobal(prev, serverData, endpoint);
+      lsSave(endpoint, merged);
+      return merged;
+    });
+    console.log(`🔄 Conflict on ${endpoint} — merged server v${serverVersion} into state`);
+  } else {
+    console.log(`🔄 Conflict on ${endpoint} — saved server v${serverVersion} to localStorage (no setter)`);
+  }
+}
+
+// Global reference to mergeByID (set by React component after mount)
+let mergeByIDGlobal = null;
+
 async function flushPendingSaves() {
   if (pendingSaves.size === 0) return;
   const token = getSessionToken();
@@ -505,15 +531,14 @@ async function apiSave(endpoint, data, userEmail) {
       return false;
     }
     if (res.status === 409) {
-      // FIX C3: Server rejected — our version is stale. Accept server's data.
+      // Server rejected — our version is stale. Merge server data into our state.
       try {
         const conflict = await res.json();
         if (conflict.serverData && Array.isArray(conflict.serverData)) {
-          lsSave(endpoint, conflict.serverData);
-          if (conflict.serverVersion) { dataVersions[endpoint] = conflict.serverVersion; savePersistedVersions(dataVersions); }
-          console.log(`🔄 Conflict on ${endpoint} — accepted server version v${conflict.serverVersion}`);
+          handleConflictResolution(endpoint, conflict.serverData, conflict.serverVersion);
         }
       } catch {}
+      pendingSaves.delete(endpoint); // Don't retry stale data
       return false;
     }
     if (!res.ok) throw new Error('save failed');
@@ -3618,6 +3643,16 @@ function AppInner() {
     if (added > 0 || updated > 0) console.log(`\u{1F500} MERGE [${tableName}]: server=${serverArr.length} +local_new=${added} +local_updated=${updated} = ${result.length}`);
     return result;
   }
+
+  // Expose mergeByID for global conflict resolution + register all setters
+  mergeByIDGlobal = mergeByID;
+  registerConflictSetter('users', setUsers);
+  registerConflictSetter('payments', setPayments);
+  registerConflictSetter('customer-payments', setCpPayments);
+  registerConflictSetter('crg-deals', setCrgDeals);
+  registerConflictSetter('daily-cap', setDcEntries);
+  registerConflictSetter('deals', setDealsData);
+  registerConflictSetter('wallets', setWalletsData);
 
   useEffect(() => {
     (async () => {
