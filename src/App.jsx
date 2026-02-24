@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "3.26";
+const VERSION = "3.30";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -793,17 +793,20 @@ function SyncStatus() {
   const isOk = status === "live";
   const isBad = status === "offline";
   const cfg = {
-    live: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.35)", color: "#10B981", icon: "\u2713", text: "Connected", glow: "0 0 6px rgba(16,185,129,0.4)" },
-    offline: { bg: "rgba(239,68,68,0.12)", border: "rgba(239,68,68,0.35)", color: "#EF4444", icon: "\u2715", text: "Local Only", glow: "0 0 6px rgba(239,68,68,0.4)" },
-    checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", icon: "\u2022", text: "...", glow: "none" },
-  }[status] || { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", icon: "\u2022", text: "...", glow: "none" };
+    live: { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.30)", color: "#10B981", text: "Connected" },
+    offline: { bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.30)", color: "#EF4444", text: "Offline" },
+    checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." },
+  }[status] || { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." };
   return (
-    <div title={isOk ? "Connected to production server" : isBad ? "Server offline \u2014 data saved locally only" : "Checking..."}
-      style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px", borderRadius: 12, fontSize: 11, fontWeight: 700, cursor: "default",
-        background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, fontFamily: "'JetBrains Mono',monospace" }}>
-      <span style={{ width: 16, height: 16, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: "#FFF",
-        background: isOk ? "linear-gradient(135deg, #10B981, #34D399)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : cfg.color,
-        boxShadow: cfg.glow }}>{cfg.icon}</span>
+    <div title={isOk ? "Connected to production server \u2014 all data synced" : isBad ? "Server offline \u2014 data saved locally only" : "Checking connection..."}
+      style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "default",
+        background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3 }}>
+      <span style={{ width: 18, height: 18, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontSize: 11, fontWeight: 900, color: "#FFF", lineHeight: 1,
+        background: isOk ? "linear-gradient(135deg, #059669, #10B981)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : "#94A3B8",
+        boxShadow: isOk ? "0 0 8px rgba(16,185,129,0.5)" : isBad ? "0 0 8px rgba(239,68,68,0.5)" : "none" }}>
+        {isOk ? "\u2713" : isBad ? "!" : "\u2022"}
+      </span>
       {cfg.text}
     </div>
   );
@@ -891,7 +894,7 @@ function fmtFee(fee, amount) {
 }
 
 /* ── Shared Responsive Header ── */
-function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, onLogout, accentColor }) {
+function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, accentColor }) {
   const mobile = useMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const { dark, toggle: toggleDark } = useTheme();
@@ -928,7 +931,6 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onRefresh, 
             <div className="desktop-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
               <div style={{ padding: "5px 14px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}12`, border: `1px solid ${accentColor || "#0EA5E9"}33`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 500 }}>{user.name}</div>
-              <button onClick={toggleDark} title={dark ? "Light mode" : "Dark mode"} style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 16, padding: "6px 10px", borderRadius: 8 }}>{dark ? "☀️" : "🌙"}</button>
               <SyncStatus />
               <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
                 onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -1541,6 +1543,9 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
         </Modal>
       )}
 
+      {/* Server Diagnostics — Admin only */}
+      <ServerDiagnostics />
+
       {/* Delete Confirm */}
       {delConfirm && (
         <Modal title="Remove User" onClose={() => setDelConfirm(null)}>
@@ -1555,8 +1560,98 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   );
 }
 
+/* ── Server Diagnostics (Admin only) ── */
+function ServerDiagnostics() {
+  const [diag, setDiag] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchDiag = async () => {
+    setLoading(true); setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/admin/diagnostics`, { headers: authHeaders(), signal: AbortSignal.timeout(8000) });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setDiag(await res.json());
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+
+  const downloadLogs = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/logs/download`, { headers: authHeaders() });
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `blitz-diagnostics-${new Date().toISOString().split('T')[0]}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { setError("Download failed: " + e.message); }
+  };
+
+  useEffect(() => { fetchDiag(); const iv = setInterval(fetchDiag, 30000); return () => clearInterval(iv); }, []);
+
+  const cardStyle = { background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0" };
+  const labelStyle = { fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 };
+  const valStyle = { fontSize: 20, fontWeight: 700, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" };
+
+  if (loading && !diag) return <div style={{ textAlign: "center", padding: 40, color: "#64748B" }}>Loading diagnostics...</div>;
+  if (error && !diag) return <div style={{ textAlign: "center", padding: 40, color: "#EF4444" }}>Error: {error}</div>;
+  if (!diag) return null;
+
+  const mem = diag.memory || {};
+  const isHighMem = mem.heapUsed > 300;
+  const history = diag.memoryHistory || [];
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Server Diagnostics</h2>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={fetchDiag} style={{ padding: "6px 14px", borderRadius: 8, background: "#F1F5F9", border: "1px solid #E2E8F0", color: "#475569", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Refresh</button>
+          <button onClick={downloadLogs} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(14,165,233,0.3)" }}>Download Full Logs</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={cardStyle}><div style={labelStyle}>Uptime</div><div style={valStyle}>{diag.server?.uptimeFormatted || "—"}</div></div>
+        <div style={cardStyle}><div style={labelStyle}>Heap Used</div><div style={{ ...valStyle, color: isHighMem ? "#EF4444" : "#10B981" }}>{mem.heapUsed || 0} MB</div></div>
+        <div style={cardStyle}><div style={labelStyle}>RSS Memory</div><div style={valStyle}>{mem.rss || 0} MB</div></div>
+        <div style={cardStyle}><div style={labelStyle}>WS Clients</div><div style={valStyle}>{diag.connections?.webSocketClients || 0}</div></div>
+        <div style={cardStyle}><div style={labelStyle}>Sessions</div><div style={valStyle}>{diag.connections?.activeSessions || 0}</div></div>
+        <div style={cardStyle}><div style={labelStyle}>TG Errors</div><div style={{ ...valStyle, color: (diag.telegram?.pollingErrors || 0) > 5 ? "#EF4444" : "#10B981" }}>{diag.telegram?.pollingErrors || 0}</div></div>
+      </div>
+
+      {history.length > 1 && (
+        <div style={{ ...cardStyle, marginBottom: 16 }}>
+          <div style={labelStyle}>Memory Trend (Last {history.length} min)</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 1, height: 60, marginTop: 8 }}>
+            {history.map((h, i) => {
+              const maxH = Math.max(...history.map(x => x.heapUsed), 100);
+              const pct = (h.heapUsed / maxH) * 100;
+              return <div key={i} style={{ flex: 1, background: h.heapUsed > 300 ? "#EF4444" : h.heapUsed > 200 ? "#F59E0B" : "#10B981", height: `${pct}%`, borderRadius: 2, minWidth: 2 }} title={`${h.heapUsed}MB at ${h.timestamp?.split('T')[1]?.slice(0,5) || ''}`} />;
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "#94A3B8", marginTop: 4 }}>
+            <span>{history[0]?.timestamp?.split('T')[1]?.slice(0,5) || ''}</span>
+            <span>{history[history.length-1]?.timestamp?.split('T')[1]?.slice(0,5) || ''}</span>
+          </div>
+        </div>
+      )}
+
+      {diag.data && (
+        <div style={{ ...cardStyle, marginBottom: 16 }}>
+          <div style={labelStyle}>Data Records</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
+            {Object.entries(diag.data).map(([k, v]) => (
+              <span key={k} style={{ fontSize: 12, color: "#475569" }}><strong>{k}:</strong> {v}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRefresh, userAccess }) {
+function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1592,7 +1687,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        telegramNotify(`💰 Payment #${p.invoice} marked as PAID — ${parseFloat(p.amount).toLocaleString()}$ by ${user.name}`);
+        // Notification sent by server - removed duplicate from frontend
       } else {
         telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
       }
@@ -1649,7 +1744,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, onRe
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
+      <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         {/* Top bar */}
@@ -2192,7 +2287,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
   );
 }
 
-function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayments, onRefresh, userAccess }) {
+function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayments, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -2268,7 +2363,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#0EA5E9" />
+      <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -2425,7 +2520,7 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
   );
 }
 
-function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, userAccess }) {
+function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -2552,7 +2647,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#F59E0B" />
+      <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#F59E0B" />
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -2768,7 +2863,7 @@ function DCForm({ entry, onSave, onClose, defaultDate }) {
   );
 }
 
-function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeals, onRefresh, userAccess }) {
+function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeals, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
@@ -2932,7 +3027,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#8B5CF6" />
+      <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#8B5CF6" />
 
       <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -3143,7 +3238,7 @@ function DealsForm({ deal, onSave, onClose }) {
   );
 }
 
-function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh, userAccess }) {
+function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -3225,7 +3320,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, onRefresh,
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onRefresh={onRefresh} onLogout={onLogout} accentColor="#10B981" />
+      <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -3458,71 +3553,44 @@ function AppInner() {
   const skipSave = useRef(true);
 
   // ═══════════════════════════════════════════════════════════════
-  // SYNC ENGINE v3.25 — LOCAL-FIRST WITH ID-BASED MERGE
+  // SYNC ENGINE v3.26 — LOCAL-FIRST WITH ID-BASED MERGE
   // ═══════════════════════════════════════════════════════════════
   //
-  // THE OLD BUG: Server has 50 records, localStorage has 80 (30 new).
-  //   Old code: setCrgDeals(serverData) → 30 local records DELETED.
+  // THE OLD BUG: Server has 50 records, localStorage has 80 (30 new offline edits).
+  //   Old code did setCrgDeals(serverData) → 30 local records SILENTLY DELETED.
   //
-  // THE FIX: Merge by record ID. Records in local but not server = NEW,
-  //   keep them. Records in server but not local = added by others, keep them.
-  //   Records in both = keep most recently updated version.
+  // THE FIX: Merge by record ID. Records only in local = NEW → KEEP.
+  //   Records only on server = from other users → KEEP. Both = newest wins.
   //
-  // GOLDEN RULE: NEVER replace local state with server data.
-  //              ALWAYS merge. A record is only deleted if a user explicitly deletes it.
+  // GOLDEN RULE: NEVER replace local state with server data. ALWAYS merge.
   // ═══════════════════════════════════════════════════════════════
 
-  const [syncStatus, setSyncStatus] = useState("checking"); // "live" | "offline" | "checking" | "merging" | "error"
-  const syncStatusRef = useRef("checking");
-  const updateSyncStatus = (s) => { syncStatusRef.current = s; setSyncStatus(s); };
-
-  // ── ID-based merge: combines two arrays, keeps ALL unique records ──
   function mergeByID(localArr, serverArr, tableName) {
     if (!serverArr || serverArr.length === 0) return localArr || [];
     if (!localArr || localArr.length === 0) return serverArr;
-
     const merged = new Map();
-
-    // Start with ALL server records
-    serverArr.forEach(r => { if (r && r.id) merged.set(r.id, { ...r, _src: 'server' }); });
-
+    serverArr.forEach(r => { if (r && r.id) merged.set(r.id, r); });
     let added = 0, updated = 0;
-    // Layer local records on top
     localArr.forEach(r => {
       if (!r || !r.id) return;
       const srv = merged.get(r.id);
-      if (!srv) {
-        // NEW local record — not on server yet. THIS IS THE KEY FIX.
-        merged.set(r.id, r);
-        added++;
-      } else {
-        // Both have this record — keep the most recently edited version
+      if (!srv) { merged.set(r.id, r); added++; }
+      else {
         const lt = r.updatedAt || r.lastModified || 0;
         const st = srv.updatedAt || srv.lastModified || 0;
-        if (lt > st) {
-          merged.set(r.id, r);
-          updated++;
-        }
-        // else: keep server version (it's newer)
+        if (lt > st) { merged.set(r.id, r); updated++; }
       }
     });
-
-    // Clean _src markers
-    const result = Array.from(merged.values()).map(r => { const { _src, ...clean } = r; return clean; });
-
-    if (added > 0 || updated > 0) {
-      console.log(`🔀 MERGE [${tableName}]: server=${serverArr.length} + local_new=${added} + local_updated=${updated} → total=${result.length}`);
-    }
+    const result = Array.from(merged.values());
+    if (added > 0 || updated > 0) console.log(`\u{1F500} MERGE [${tableName}]: server=${serverArr.length} +local_new=${added} +local_updated=${updated} = ${result.length}`);
     return result;
   }
 
-  // ── Main sync effect ──
   useEffect(() => {
     (async () => {
       skipSave.current = true;
-      updateSyncStatus("checking");
 
-      // Step 0: Check server health (no auth needed)
+      // Step 0: Check server health
       try {
         const healthRes = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(4000) });
         if (healthRes.ok) serverOnline = true;
@@ -3530,18 +3598,12 @@ function AppInner() {
 
       const hasToken = !!getSessionToken();
 
-      // Step 1: ALWAYS read localStorage FIRST — this is the user's local truth
+      // Step 1: ALWAYS load localStorage FIRST (local-first — instant paint)
       const local = {
-        users: lsGet('users', null),
-        payments: lsGet('payments', null),
-        'customer-payments': lsGet('customer-payments', null),
-        'crg-deals': lsGet('crg-deals', null),
-        'daily-cap': lsGet('daily-cap', null),
-        deals: lsGet('deals', null),
-        wallets: lsGet('wallets', null),
+        users: lsGet('users', null), payments: lsGet('payments', null),
+        'customer-payments': lsGet('customer-payments', null), 'crg-deals': lsGet('crg-deals', null),
+        'daily-cap': lsGet('daily-cap', null), deals: lsGet('deals', null), wallets: lsGet('wallets', null),
       };
-
-      // Apply localStorage immediately (instant paint, no waiting for server)
       if (local.users && local.users.length > 0) setUsers(local.users);
       if (local.payments && local.payments.length > 0) setPayments(local.payments);
       if (local['customer-payments'] && local['customer-payments'].length > 0) setCpPayments(local['customer-payments']);
@@ -3550,61 +3612,41 @@ function AppInner() {
       if (local.deals && local.deals.length > 0) setDealsData(local.deals);
       if (local.wallets && local.wallets.length > 0) setWalletsData(local.wallets);
 
-      // Step 2: If server is reachable + we have auth, fetch + MERGE
+      // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
-        updateSyncStatus("merging");
-
         const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
           apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
         ]);
-
-        // Auth failure check
         if (sessionExpiredFlag) {
-          sessionExpiredFlag = false;
-          setUser(null);
-          skipSave.current = false;
-          setLoaded(true);
-          return;
+          sessionExpiredFlag = false; setUser(null); skipSave.current = false; setLoaded(true); return;
         }
-
-        // If ALL fetches returned null during login grace → 401 race, stay offline
         const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
-          console.log("⚠️ All fetches failed during login — using local data");
-          updateSyncStatus("offline");
-          setLoaded(true);
-          setTimeout(() => { skipSave.current = false; }, 2000);
-          return;
+          console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
+          setLoaded(true); setTimeout(() => { skipSave.current = false; }, 2000); return;
         }
 
         if (anySuccess) {
-          // ══ MERGE PHASE — the core of v3.25 ══
           const pushTasks = [];
-          const serverData = { users: su, payments: sp, 'customer-payments': scp, 'crg-deals': scrg, 'daily-cap': sdc, deals: sdl, wallets: swl };
 
-          // USERS — merge + ensure INITIAL_USERS present + restore hashes
-          const usersMerged = mergeByID(local.users || INITIAL_USERS, su || [], 'users');
-          const seedMap = new Map(INITIAL_USERS.map(x => [x.email, x]));
-          // Add any missing seed users
-          const mergedEmails = new Set(usersMerged.map(x => x.email));
-          const missingSeed = INITIAL_USERS.filter(x => !mergedEmails.has(x.email));
-          const usersWithSeed = [...usersMerged, ...missingSeed];
-          // Restore hashes stripped by client
-          const usersFinal = usersWithSeed.map(u => {
-            if (!u.passwordHash) {
-              const seed = seedMap.get(u.email);
-              if (seed) return { ...u, passwordHash: seed.passwordHash };
-            }
-            return u;
-          });
-          setUsers(usersFinal);
-          if (su !== null && JSON.stringify(usersFinal) !== JSON.stringify(su)) {
-            pushTasks.push(apiSave('users', usersFinal, user?.email));
+          // USERS \u2014 merge + ensure INITIAL_USERS present + restore hashes
+          if (su !== null) {
+            const usersMerged = mergeByID(local.users || INITIAL_USERS, su, 'users');
+            const seedMap = new Map(INITIAL_USERS.map(x => [x.email, x]));
+            const mergedEmails = new Set(usersMerged.map(x => x.email));
+            const missing = INITIAL_USERS.filter(x => !mergedEmails.has(x.email));
+            const withSeed = [...usersMerged, ...missing];
+            const usersFinal = withSeed.map(u => {
+              if (!u.passwordHash) { const seed = seedMap.get(u.email); if (seed) return { ...u, passwordHash: seed.passwordHash }; }
+              return u;
+            });
+            setUsers(usersFinal);
+            if (JSON.stringify(usersFinal) !== JSON.stringify(su)) pushTasks.push(apiSave('users', usersFinal, user?.email));
           }
 
-          // ALL DATA TABLES — merge by ID, push back if local had new records
-          const dataTables = [
+          // DATA TABLES \u2014 merge by ID
+          const tables = [
             { key: 'payments', srv: sp, setter: setPayments, fallback: INITIAL },
             { key: 'customer-payments', srv: scp, setter: setCpPayments, fallback: CP_INITIAL },
             { key: 'crg-deals', srv: scrg, setter: setCrgDeals, fallback: CRG_INITIAL },
@@ -3612,40 +3654,22 @@ function AppInner() {
             { key: 'deals', srv: sdl, setter: setDealsData, fallback: DEALS_INITIAL },
             { key: 'wallets', srv: swl, setter: setWalletsData, fallback: null },
           ];
-
-          for (const t of dataTables) {
-            const localData = local[t.key];
+          for (const t of tables) {
             if (t.srv !== null) {
-              // Server returned data → MERGE with local
-              const merged = mergeByID(localData, t.srv, t.key);
+              const merged = mergeByID(local[t.key], t.srv, t.key);
               t.setter(merged);
               lsSave(t.key, merged);
-              // If merged has MORE records than server → local had new records → push merged up
-              if (merged.length > t.srv.length) {
-                pushTasks.push(apiSave(t.key, merged, user?.email));
-              }
-            } else if (localData && localData.length > 0) {
-              // Server fetch FAILED (null) — keep local, try to push
-              t.setter(localData);
-              pushTasks.push(apiSave(t.key, localData, user?.email));
+              if (merged.length > t.srv.length) pushTasks.push(apiSave(t.key, merged, user?.email));
+            } else if (local[t.key] && local[t.key].length > 0) {
+              t.setter(local[t.key]);
+              pushTasks.push(apiSave(t.key, local[t.key], user?.email));
             } else if (t.fallback && t.fallback.length > 0) {
-              // Nothing anywhere — use hardcoded defaults (local only, don't push)
               t.setter(t.fallback);
             }
           }
 
-          if (pushTasks.length > 0) {
-            console.log(`⬆️ Pushing ${pushTasks.length} merged tables to server...`);
-            await Promise.all(pushTasks);
-          }
-
-          updateSyncStatus("live");
-        } else {
-          updateSyncStatus("offline");
+          if (pushTasks.length > 0) await Promise.all(pushTasks);
         }
-      } else {
-        // Server offline or no auth — local data already applied above
-        updateSyncStatus(hasToken ? "offline" : "checking");
       }
 
       setLoaded(true);
@@ -3653,13 +3677,10 @@ function AppInner() {
     })();
   }, [user]); // Re-run when user logs in
 
-  // ── WebSocket Real-Time Sync — MERGE, never replace ──
+  // \u2500\u2500 WebSocket Real-Time Sync \u2014 MERGE, never replace \u2500\u2500
   useEffect(() => {
     if (!loaded || !getSessionToken()) return;
-
     connectWebSocket();
-
-    // Listen for real-time updates from other users
     const unsub = onWsUpdate((msg) => {
       if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data) || msg.data.length === 0) return;
       skipSave.current = true;
@@ -3669,38 +3690,31 @@ function AppInner() {
       };
       const setter = setters[msg.table];
       if (setter) {
-        // MERGE incoming WS data with current state — never replace
         setter(prev => {
           const merged = mergeByID(prev, msg.data, msg.table);
-          // Only update if actually different
-          if (JSON.stringify(merged) !== JSON.stringify(prev)) {
-            lsSave(msg.table, merged); // Keep localStorage in sync
-            return merged;
-          }
+          if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(msg.table, merged); return merged; }
           return prev;
         });
       }
       setTimeout(() => { skipSave.current = false; }, 2000);
     });
 
-    // Fallback polling every 15s — MERGE, never replace
+    // Fallback polling every 15s \u2014 MERGE, never replace
     const poll = async () => {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
-      if (!serverOnline) {
-        try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; updateSyncStatus("live"); } catch(e) {}
-      }
+      if (!serverOnline) { try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch {} }
       if (!serverOnline) return;
       const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
       ]);
       skipSave.current = true;
-      const tables = [
+      const all = [
         { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
         { d: swl, s: setWalletsData, k: 'wallets' },
       ];
-      for (const t of tables) {
+      for (const t of all) {
         if (t.d !== null && t.d.length > 0) {
           t.s(prev => {
             const merged = mergeByID(prev, t.d, t.k);
@@ -3712,16 +3726,11 @@ function AppInner() {
       setTimeout(() => { skipSave.current = false; }, 2000);
     };
     const interval = setInterval(poll, 15000);
-
-    // When server comes back online, flush pending saves
-    const reconnectFlush = setInterval(() => {
-      if (serverOnline && pendingSaves.size > 0) flushPendingSaves();
-    }, 10000);
-
+    const reconnectFlush = setInterval(() => { if (serverOnline && pendingSaves.size > 0) flushPendingSaves(); }, 10000);
     return () => { clearInterval(interval); clearInterval(reconnectFlush); unsub(); };
   }, [loaded]);
 
-  // ── Auto-save hooks — localStorage ALWAYS, server when online ──
+  // \u2500\u2500 Auto-save hooks \u2500\u2500
   const initialPaymentsRef = useRef(JSON.stringify(INITIAL));
   const initialCpRef = useRef(JSON.stringify(CP_INITIAL));
   const initialCrgRef = useRef(JSON.stringify(CRG_INITIAL));
@@ -3738,34 +3747,6 @@ function AppInner() {
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
 
-  const handleRefresh = async () => {
-    skipSave.current = true;
-    serverOnline = false;
-    updateSyncStatus("merging");
-    const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
-      apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
-    ]);
-    // MERGE — never replace
-    const tables = [
-      { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
-      { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
-      { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
-      { d: swl, s: setWalletsData, k: 'wallets' },
-    ];
-    let anyMerged = false;
-    for (const t of tables) {
-      if (t.d !== null && t.d.length > 0) {
-        t.s(prev => {
-          const merged = mergeByID(prev, t.d, t.k);
-          if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(t.k, merged); anyMerged = true; return merged; }
-          return prev;
-        });
-      }
-    }
-    updateSyncStatus(serverOnline ? "live" : "offline");
-    setTimeout(() => { skipSave.current = false; }, 2000);
-  };
-
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
       <style>{mobileCSS}{darkModeCSS}</style>
@@ -3781,33 +3762,7 @@ function AppInner() {
     </div>
   );
 
-  // ── Sync Status Indicator — always visible ──
-  const SyncBanner = () => {
-    const indicators = {
-      live: { dot: "#10B981", text: "Connected", icon: "✓", bg: "rgba(16,185,129,0.12)", border: "#10B98155", glow: "0 0 8px rgba(16,185,129,0.5)" },
-      merging: { dot: "#F59E0B", text: "Syncing", icon: "⟳", bg: "rgba(245,158,11,0.12)", border: "#F59E0B55", glow: "none" },
-      offline: { dot: "#EF4444", text: "Local Only", icon: "✕", bg: "rgba(239,68,68,0.12)", border: "#EF444455", glow: "0 0 8px rgba(239,68,68,0.4)" },
-      checking: { dot: "#64748B", text: "...", icon: "•", bg: "rgba(100,116,139,0.1)", border: "#64748B44", glow: "none" },
-      error: { dot: "#EF4444", text: "Error", icon: "⚠", bg: "rgba(239,68,68,0.15)", border: "#EF444466", glow: "0 0 8px rgba(239,68,68,0.4)" },
-    };
-    const ind = indicators[syncStatus] || indicators.checking;
-    const isOk = syncStatus === "live";
-    const isBad = syncStatus === "offline" || syncStatus === "error";
-    return (
-      <>
-        <style>{mobileCSS}{darkModeCSS}</style>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", background: ind.bg, border: `1px solid ${ind.border}`, borderRadius: 20, fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3, cursor: "default" }}>
-          <div style={{ width: 18, height: 18, borderRadius: "50%", background: isOk ? "linear-gradient(135deg, #10B981, #34D399)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : ind.dot, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#FFF", fontWeight: 900, boxShadow: ind.glow, animation: syncStatus === "merging" ? "pulse 1s infinite" : "none" }}>
-            {ind.icon}
-          </div>
-          <span style={{ color: ind.dot }}>{ind.text}</span>
-          {pendingSaves.size > 0 && <span style={{ color: "#F59E0B", fontSize: 10 }}>⬆{pendingSaves.size}</span>}
-        </div>
-      </>
-    );
-  };
-
-  if (!user) return (<><SyncBanner /><LoginScreen onLogin={u => { justLoggedIn = true; saveSession(u); setUser(u); setTimeout(() => { justLoggedIn = false; }, 10000); }} users={users} /></>);
+  if (!user) return (<><LoginScreen onLogin={u => { justLoggedIn = true; saveSession(u); setUser(u); setTimeout(() => { justLoggedIn = false; }, 10000); }} users={users} /></>);
 
   const userAccess = getPageAccess(user);
   const canAccess = pg => userAccess.includes(pg);
@@ -3819,12 +3774,12 @@ function AppInner() {
     return null;
   }
 
-  if (page === "admin" && isAdmin(user.email)) return (<><SyncBanner /><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
-  if (page === "customers" && canAccess("customers")) return (<><SyncBanner /><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  if (page === "crg" && canAccess("crg")) return (<><SyncBanner /><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  if (page === "dailycap" && canAccess("dailycap")) return (<><SyncBanner /><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  if (page === "deals" && canAccess("deals")) return (<><SyncBanner /><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} onRefresh={handleRefresh} userAccess={userAccess} /></>);
-  return (<><SyncBanner /><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} onRefresh={handleRefresh} userAccess={userAccess} /></>);
+  if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
+  if (page === "customers" && canAccess("customers")) return (<><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} userAccess={userAccess} /></>);
+  if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
+  if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
+  if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
+  return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} userAccess={userAccess} /></>);
 }
 
 export default function App() {
