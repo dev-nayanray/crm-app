@@ -1,8 +1,24 @@
 // Screenshot functionality for Telegram bot
 // This module handles capturing and sending screenshots to Telegram
 
+let puppeteer = null;
+let PUPPETEER_AVAILABLE = false;
+
+// Try to load puppeteer
+try {
+  puppeteer = require('puppeteer');
+  PUPPETEER_AVAILABLE = true;
+  console.log("📸 Puppeteer loaded successfully");
+} catch (e) {
+  console.log("⚠️  Puppeteer not installed — screenshot functionality disabled");
+  console.log("   Install: npm install puppeteer");
+}
+
 async function captureDataScreenshot(type, readJSON) {
-  const puppeteer = require('puppeteer');
+  if (!PUPPETEER_AVAILABLE || !puppeteer) {
+    console.error("❌ Screenshot failed: Puppeteer not available");
+    return null;
+  }
   
   let htmlContent = '';
   let title = '';

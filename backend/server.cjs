@@ -100,9 +100,12 @@ function seedUsers() {
 seedUsers();
 
 // Telegram Bot Configuration
-// SECURITY: Use environment variables. Fallback to hardcoded for backwards compat.
-// Set these in your .env or systemd service: TELEGRAM_TOKEN, ETHERSCAN_API_KEY
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
+// SECURITY: Use environment variables only. Never hardcode tokens!
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+if (!TELEGRAM_TOKEN) {
+  console.log("⚠️  TELEGRAM_TOKEN not set — Telegram bot disabled");
+  console.log("   Set environment variable: export TELEGRAM_TOKEN='your_bot_token'");
+}
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
