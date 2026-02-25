@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.07";
+const VERSION = "5.09";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -726,7 +726,8 @@ const inp = {
 };
 
 /* ── Components ── */
-const TEAM_NAMES = ["Alex", "John", "Katie", "Joy", "Oksana", "Donald"];
+const TEAM_NAMES_DEFAULT = ["Alex", "John", "Katie", "Joy", "Oksana", "Donald"];
+const TEAM_NAMES_REF = { current: [...TEAM_NAMES_DEFAULT] };
 
 const PEOPLE_COLORS = {
   Alex: "#579BFC", Katie: "#E2445C", Oksana: "#A25DDC", Joy: "#00C875", John: "#7F5347", Donald: "#FDAB3D",
@@ -741,7 +742,7 @@ const getPersonColor = name => {
 function NameCombo({ value, onChange, placeholder }) {
   const [custom, setCustom] = useState(false);
   const [customVal, setCustomVal] = useState("");
-  const isCustom = value && !TEAM_NAMES.includes(value);
+  const isCustom = value && !TEAM_NAMES_REF.current.includes(value);
 
   if (custom || (isCustom && value)) {
     return (
@@ -757,7 +758,7 @@ function NameCombo({ value, onChange, placeholder }) {
 
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-      {TEAM_NAMES.map(name => (
+      {TEAM_NAMES_REF.current.map(name => (
         <button key={name} onClick={() => onChange(name)}
           style={{
             padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
@@ -4245,6 +4246,14 @@ function AppInner() {
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
+
+  // ── Keep TEAM_NAMES in sync with User Management ──
+  useEffect(() => {
+    if (users && users.length > 0) {
+      const names = users.map(u => u.name).filter(Boolean);
+      if (names.length > 0) TEAM_NAMES_REF.current = names;
+    }
+  }, [users]);
   const skipSave = useRef(true);
   const serverFetchDone = useRef(false); // CRITICAL: block saves until first server fetch completes
 
