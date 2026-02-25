@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.06.2";
+const VERSION = "5.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1248,7 +1248,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
       <BulkActionBar count={selected.size} onClear={clearSelection}
-        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected payment(s)?`)) { selArr.forEach(id => onBulkDelete(id)); clearSelection(); } } : null}
+        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected payment(s)?`)) { onBulkDelete(selArr); clearSelection(); } } : null}
         onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
         onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
       />
@@ -1442,6 +1442,11 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                 </div>
                 <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace" }}>{u.email}</div>
                 <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
+                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                  🕐 Last login: <span style={{ color: u.lastLogin ? "#64748B" : "#CBD5E1", fontFamily: "'JetBrains Mono',monospace" }}>
+                    {u.lastLogin ? (() => { const d = new Date(u.lastLogin); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "Never"}
+                  </span>
+                </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
                   {ALL_PAGES.map(pg => {
                     const hasAccess = isAdmin(u.email) || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
@@ -2288,6 +2293,10 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
   const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   // Bulk actions
+  const handleBulkDelete = (ids) => {
+    ids.forEach(id => trackDelete('payments', id));
+    setPayments(prev => prev.filter(p => !ids.includes(p.id)));
+  };
   const handleBulkDuplicate = (ids) => {
     setPayments(prev => {
       const copies = [];
@@ -2359,12 +2368,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -2822,7 +2831,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
       <BulkActionBar count={selected.size} onClear={clearSelection}
-        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected?`)) { selArr.forEach(id => onBulkDelete(id)); clearSelection(); } } : null}
+        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected?`)) { onBulkDelete(selArr); clearSelection(); } } : null}
         onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
         onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
       />
@@ -2890,6 +2899,10 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
 
   const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
+  const handleBulkDelete = (ids) => {
+    ids.forEach(id => trackDelete('customer-payments', id));
+    setPayments(prev => prev.filter(p => !ids.includes(p.id)));
+  };
   const handleCpBulkDuplicate = (ids) => {
     setPayments(prev => {
       const copies = [];
@@ -2964,11 +2977,11 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -4340,11 +4353,11 @@ function AppInner() {
 
           // DATA TABLES \u2014 merge by ID
           const tables = [
-            { key: 'payments', srv: sp, setter: setPayments },
-            { key: 'customer-payments', srv: scp, setter: setCpPayments },
-            { key: 'crg-deals', srv: scrg, setter: setCrgDeals },
-            { key: 'daily-cap', srv: sdc, setter: setDcEntries },
-            { key: 'deals', srv: sdl, setter: setDealsData },
+            { key: 'payments', srv: sp, setter: setPayments, ref: initialPaymentsRef },
+            { key: 'customer-payments', srv: scp, setter: setCpPayments, ref: initialCpRef },
+            { key: 'crg-deals', srv: scrg, setter: setCrgDeals, ref: initialCrgRef },
+            { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: initialDcRef },
+            { key: 'deals', srv: sdl, setter: setDealsData, ref: initialDealsRef },
             { key: 'wallets', srv: swl, setter: setWalletsData },
           ];
           for (const t of tables) {
@@ -4352,9 +4365,11 @@ function AppInner() {
               const merged = mergeByID(local[t.key], t.srv, t.key);
               t.setter(merged);
               lsSave(t.key, merged);
+              if (t.ref) t.ref.current = JSON.stringify(merged);
               if (merged.length > t.srv.length) pushTasks.push(apiSave(t.key, merged, user?.email));
             } else if (local[t.key] && local[t.key].length > 0) {
               t.setter(local[t.key]);
+              if (t.ref) t.ref.current = JSON.stringify(local[t.key]);
               pushTasks.push(apiSave(t.key, local[t.key], user?.email));
             }
             // NO FALLBACK — if both server and localStorage empty, state stays [] (safe)
@@ -4431,11 +4446,11 @@ function AppInner() {
   const initialDealsRef = useRef(JSON.stringify([]));
 
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0) apiSave('users', users, user?.email); }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && payments.length > 0 && JSON.stringify(payments) !== initialPaymentsRef.current) apiSave('payments', payments, user?.email); }, [payments]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && cpPayments.length > 0 && JSON.stringify(cpPayments) !== initialCpRef.current) apiSave('customer-payments', cpPayments, user?.email); }, [cpPayments]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && crgDeals.length > 0 && JSON.stringify(crgDeals) !== initialCrgRef.current) apiSave('crg-deals', crgDeals, user?.email); }, [crgDeals]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && dcEntries.length > 0 && JSON.stringify(dcEntries) !== initialDcRef.current) apiSave('daily-cap', dcEntries, user?.email); }, [dcEntries]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && dealsData.length > 0 && JSON.stringify(dealsData) !== initialDealsRef.current) apiSave('deals', dealsData, user?.email); }, [dealsData]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(payments) !== initialPaymentsRef.current) { initialPaymentsRef.current = JSON.stringify(payments); apiSave('payments', payments, user?.email); } }, [payments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(cpPayments) !== initialCpRef.current) { initialCpRef.current = JSON.stringify(cpPayments); apiSave('customer-payments', cpPayments, user?.email); } }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(crgDeals) !== initialCrgRef.current) { initialCrgRef.current = JSON.stringify(crgDeals); apiSave('crg-deals', crgDeals, user?.email); } }, [crgDeals]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dcEntries) !== initialDcRef.current) { initialDcRef.current = JSON.stringify(dcEntries); apiSave('daily-cap', dcEntries, user?.email); } }, [dcEntries]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dealsData) !== initialDealsRef.current) { initialDealsRef.current = JSON.stringify(dealsData); apiSave('deals', dealsData, user?.email); } }, [dealsData]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
