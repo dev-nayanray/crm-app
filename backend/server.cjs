@@ -37,7 +37,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "5.05";
+const VERSION = "5.08";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -686,6 +686,14 @@ app.post("/api/login", (req, res) => {
     const token = generateSessionToken();
     activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
     persistSessions();
+    // ── Record lastLogin timestamp in users.json ──
+    try {
+      const allUsers = readJSON("users.json", []);
+      const idx = allUsers.findIndex(u => u.email === emailClean);
+      if (idx !== -1) { allUsers[idx].lastLogin = new Date().toISOString(); }
+      else { allUsers.push({ email: emailClean, lastLogin: new Date().toISOString() }); }
+      fs.writeFileSync(path.join(DATA_DIR, "users.json"), JSON.stringify(allUsers, null, 2), "utf8");
+    } catch (e) { console.error("⚠️ Failed to update lastLogin:", e.message); }
     console.log("✅ Login OK:", emailClean, "| method:", fileMatch && fileMatch.passwordHash === passwordHash ? "file" : "seed_fallback");
     writeAuditLog("auth", "login_success", emailClean, "IP: " + ip);
     res.json({ ok: true, token, user: { email: user.email, name: user.name, pageAccess: user.pageAccess } });
@@ -753,9 +761,14 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   // Empty array protection
   if (payments.length === 0) {
     const existing = readJSON("payments.json", []);
-    if (existing.length > 0) {
-      console.log(`⚠️ BLOCKED empty save to payments — ${existing.length} records protected`);
+    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+    if (existing.length > 0 && deleteSet.size === 0) {
+      console.log(`⚠️ BLOCKED empty save to payments — ${existing.length} records protected (no delete IDs)`);
       return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
+    }
+    if (deleteSet.size > 0) {
+      console.log(`🗑️ [payments]: Intentional bulk delete of ${deleteSet.size} records, allowing empty save`);
+      createBackup(`pre-bulk-delete-payments-${Date.now()}`);
     }
   }
 
@@ -857,9 +870,15 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
     if (records.length === 0) {
       const existing = readJSON(file, []);
-      if (existing.length > 0) {
-        console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected`);
+      const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+      if (existing.length > 0 && deleteSet.size === 0) {
+        console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected (no delete IDs)`);
         return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
+      }
+      // If deletedIDs present, this is an intentional bulk delete — allow it
+      if (deleteSet.size > 0) {
+        console.log(`🗑️ [${ep}]: Intentional bulk delete of ${deleteSet.size} records, allowing empty save`);
+        createBackup(`pre-bulk-delete-${ep}-${Date.now()}`);
       }
     }
 
@@ -1018,7 +1037,12 @@ app.post("/api/users", requireAuth, async (req, res) => {
   // SERVER-SIDE MERGE for users — preserve users from other clients
   const mergedMap = new Map();
   existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
-  users.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
+  users.forEach(u => { if (u && u.email) {
+    const ex = mergedMap.get(u.email);
+    // Preserve lastLogin from server — client doesn't track this
+    if (ex && ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
+    mergedMap.set(u.email, u);
+  } });
   const mergedUsers = Array.from(mergedMap.values());
 
   const success = await lockedWrite("users.json", mergedUsers, {
