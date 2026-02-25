@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "4.00";
+const VERSION = "5.00";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1662,6 +1662,14 @@ function ServerDiagnostics() {
               }
             } catch (e) { alert("Dedup failed: " + e.message); }
           }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(245,158,11,0.3)" }}>🧹 Dedup Data</button>
+          <button onClick={async () => {
+            try {
+              const res = await fetch(`${API_BASE}/telegram/screenshot/all`, { method: "POST", headers: authHeaders() });
+              const data = await res.json();
+              if (data.ok) alert("✅ Both screenshots sent to Telegram!");
+              else alert("❌ " + (data.error || "Failed to send screenshots"));
+            } catch (e) { alert("❌ " + e.message); }
+          }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(16,185,129,0.3)" }}>📸 Send All Screenshots</button>
         </div>
       </div>
 
@@ -1706,7 +1714,7 @@ function ServerDiagnostics() {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, userAccess }) {
+function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgDeals, dcEntries, cpPayments, userAccess }) {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -1716,6 +1724,44 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
   const [delConfirm, setDelConfirm] = useState(null);
   const [paySort, setPaySort] = useState("manual");
   const availStatuses = getAvailableStatuses(user.email);
+
+  // ── KPI Calculations ──
+  const today = new Date().toISOString().split("T")[0];
+  const todayCrg = (crgDeals || []).filter(d => d.date === today);
+  const todayDc = (dcEntries || []).filter(d => d.date === today);
+  const todayCap = todayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const todayStarted = todayCrg.filter(d => d.started).length;
+  const todayFtd = todayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+  const todayCapRec = todayCrg.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+  const conversionRate = todayStarted > 0 ? ((todayFtd / todayStarted) * 100).toFixed(1) : "0";
+  const activeAgents = todayDc.length;
+  const openPaymentsCount = (payments || []).filter(p => OPEN_STATUSES.includes(p.status)).length;
+  const openPaymentsTotal = (payments || []).filter(p => OPEN_STATUSES.includes(p.status)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const cpReceived = (cpPayments || []).filter(p => p.status === "Received").length;
+
+  // ── 7-Day CAP Trend ──
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (6 - i));
+    return d.toISOString().split("T")[0];
+  });
+  const capTrend = last7Days.map(date => {
+    const dayDeals = (crgDeals || []).filter(d => d.date === date);
+    return {
+      date: date.slice(5), // "02-19"
+      cap: dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
+      ftd: dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0),
+      started: dayDeals.filter(d => d.started).length,
+    };
+  });
+  const maxCap = Math.max(...capTrend.map(d => d.cap), 1);
+
+  // ── Top Agents Today (by CAP managed) ──
+  const agentCapMap = {};
+  todayCrg.forEach(d => {
+    const agent = (d.manageAff || "").trim();
+    if (agent) agentCapMap[agent] = (agentCapMap[agent] || 0) + (parseInt(d.cap) || 0);
+  });
+  const topAgents = Object.entries(agentCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const handlePayMove = (id, direction) => {
     setPayments(prev => {
@@ -1802,6 +1848,77 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
       <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
+        {/* ═══ KPI Overview ═══ */}
+        <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Today's Overview</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 24 }}>
+          {[
+            { label: "CAP Today", value: todayCap.toLocaleString(), accent: "#6366F1", bg: "#EEF2FF", icon: "📊" },
+            { label: "Started", value: `${todayStarted}/${todayCrg.length}`, accent: "#10B981", bg: "#ECFDF5", icon: "🚀" },
+            { label: "FTDs", value: todayFtd, accent: "#F59E0B", bg: "#FFFBEB", icon: "💎" },
+            { label: "Conversion", value: `${conversionRate}%`, accent: todayFtd > 0 ? "#10B981" : "#94A3B8", bg: "#F0FDF4", icon: "📈" },
+            { label: "Agents Active", value: activeAgents, accent: "#8B5CF6", bg: "#F5F3FF", icon: "👥" },
+            { label: "Open Payments", value: `${openPaymentsCount}`, sub: `$${openPaymentsTotal.toLocaleString()}`, accent: "#0EA5E9", bg: "#EFF6FF", icon: "💰" },
+          ].map((c, i) => (
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: c.accent }} />
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>{c.label}</div>
+                  <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
+                  {c.sub && <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, marginTop: 2 }}>{c.sub}</div>}
+                </div>
+                <span style={{ fontSize: 24 }}>{c.icon}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ═══ 7-Day CAP Trend + Top Agents ═══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 28 }}>
+          {/* Chart */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 16 }}>7-Day CAP Trend</div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
+              {capTrend.map((d, i) => {
+                const h = maxCap > 0 ? (d.cap / maxCap) * 100 : 0;
+                const isToday = i === capTrend.length - 1;
+                return (
+                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#334155", fontFamily: "'JetBrains Mono',monospace" }}>{d.cap || ""}</span>
+                    <div style={{ width: "100%", height: `${Math.max(h, 4)}%`, background: isToday ? "linear-gradient(180deg, #6366F1, #818CF8)" : "linear-gradient(180deg, #CBD5E1, #E2E8F0)", borderRadius: "6px 6px 0 0", minHeight: 4, transition: "height 0.3s" }} />
+                    <span style={{ fontSize: 9, color: isToday ? "#6366F1" : "#94A3B8", fontWeight: isToday ? 700 : 500 }}>{d.date}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: 16, marginTop: 12, borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
+              <span style={{ fontSize: 11, color: "#64748B" }}>7d total: <b style={{ color: "#6366F1" }}>{capTrend.reduce((s, d) => s + d.cap, 0).toLocaleString()}</b> CAP</span>
+              <span style={{ fontSize: 11, color: "#64748B" }}>FTDs: <b style={{ color: "#F59E0B" }}>{capTrend.reduce((s, d) => s + d.ftd, 0)}</b></span>
+              <span style={{ fontSize: 11, color: "#64748B" }}>Started: <b style={{ color: "#10B981" }}>{capTrend.reduce((s, d) => s + d.started, 0)}</b></span>
+            </div>
+          </div>
+          {/* Top Agents */}
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>Top Agents Today</div>
+            {topAgents.length === 0 && <div style={{ color: "#94A3B8", fontSize: 13 }}>No data yet today</div>}
+            {topAgents.map(([name, cap], i) => {
+              const pct = maxCap > 0 ? (cap / topAgents[0][1]) * 100 : 0;
+              return (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
+                  <span style={{ display: "inline-block", padding: "4px 0", borderRadius: 0, background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12, textAlign: "center", width: 70, borderRadius: 4 }}>{name}</span>
+                  <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: i === 0 ? "linear-gradient(90deg, #F59E0B, #FBBF24)" : "linear-gradient(90deg, #CBD5E1, #E2E8F0)", borderRadius: 4, transition: "width 0.3s" }} />
+                  </div>
+                  <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 40, textAlign: "right" }}>{cap}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ═══ Payments Section ═══ */}
+        <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Payments</h2>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2575,6 +2692,36 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
   );
 }
 
+// ── Inline Editable Cell ──
+function InlineCell({ value, onSave, style, type = "text", placeholder = "" }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || "");
+  const ref = useRef(null);
+  useEffect(() => { setVal(value || ""); }, [value]);
+  useEffect(() => { if (editing && ref.current) ref.current.focus(); }, [editing]);
+  const save = () => { setEditing(false); if (val !== (value || "")) onSave(val); };
+  if (!editing) {
+    return (
+      <td style={{ ...style, cursor: "pointer", userSelect: "none" }} onClick={() => setEditing(true)} title="Click to edit">
+        {type === "checkbox" ? (value ? <span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span> : <span style={{ color: "#C5C7D0", fontSize: 14 }}>○</span>) : (value || <span style={{ color: "#C5C7D0" }}>{placeholder || "—"}</span>)}
+      </td>
+    );
+  }
+  if (type === "checkbox") {
+    // Toggle immediately
+    setTimeout(() => { onSave(!value); setEditing(false); }, 0);
+    return <td style={style}><span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span></td>;
+  }
+  return (
+    <td style={{ ...style, padding: 0 }}>
+      <input ref={ref} value={val} onChange={e => setVal(e.target.value)}
+        onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value || ""); setEditing(false); } }}
+        style={{ width: "100%", height: "100%", padding: "4px 8px", border: "2px solid #0EA5E9", borderRadius: 0, outline: "none", fontSize: 13, fontFamily: type === "number" ? "'JetBrains Mono',monospace" : "inherit", fontWeight: 600, background: "#EFF6FF", boxSizing: "border-box" }}
+      />
+    </td>
+  );
+}
+
 function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess }) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -2607,6 +2754,11 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
       }));
     if (newEntries.length === 0) return;
     setDeals(prev => [...prev, ...newEntries]);
+  };
+
+  // Inline field update
+  const updateField = (id, field, value) => {
+    setDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
   };
 
   // Move a deal up or down within its date group
@@ -2756,6 +2908,16 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
           <button onClick={handleSortAlpha}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: crgSort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${crgSort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 8, color: crgSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600, marginLeft: "auto" }}
           >{crgSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
+          <button onClick={async () => {
+            try {
+              const res = await fetch(`${API_BASE}/telegram/screenshot/crg`, { method: "POST", headers: authHeaders() });
+              const data = await res.json();
+              if (data.ok) alert("✅ CRG screenshot sent to Telegram!");
+              else alert("❌ " + (data.error || "Failed to send screenshot"));
+            } catch (e) { alert("❌ " + e.message); }
+          }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #10B981", borderRadius: 8, color: "#10B981", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📸 CRG Screenshot</button>
         </div>
 
         {/* Summary cards — Today only */}
@@ -2811,17 +2973,15 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
                         <td style={{ padding: 0, borderRight: "1px solid #CBD5E1", background: d.manageAff ? getPersonColor(d.manageAff) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
                         </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #CBD5E1", textAlign: "center", color: "#323338" }}>{d.cap || ""}</td>
+                        <InlineCell value={d.cap} onSave={v => updateField(d.id, "cap", v)} type="number" style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #CBD5E1", textAlign: "center", color: "#323338" }} />
                         <td style={{ padding: 0, borderRight: "1px solid #CBD5E1", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.madeSale || ""}</span>
                         </td>
-                        <td style={{ padding: "0 10px", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
-                          {d.started ? <span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span> : ""}
-                        </td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }}>{d.capReceived || ""}</td>
-                        <td style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }}>{d.ftd || ""}</td>
-                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{d.hours || ""}</td>
-                        <td style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.funnel || ""}</td>
+                        <InlineCell value={d.started} onSave={v => updateField(d.id, "started", v)} type="checkbox" style={{ padding: "0 10px", borderRight: "1px solid #CBD5E1", textAlign: "center" }} />
+                        <InlineCell value={d.capReceived} onSave={v => updateField(d.id, "capReceived", v)} type="number" placeholder="" style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.capReceived ? "#323338" : "#C5C7D0" }} />
+                        <InlineCell value={d.ftd} onSave={v => updateField(d.id, "ftd", v)} type="number" placeholder="" style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.ftd ? "#323338" : "#C5C7D0" }} />
+                        <InlineCell value={d.hours} onSave={v => updateField(d.id, "hours", v)} style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }} />
+                        <InlineCell value={d.funnel} onSave={v => updateField(d.id, "funnel", v)} style={{ padding: "0 12px", fontSize: 13, color: "#676879", borderRight: "1px solid #CBD5E1", maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} />
                         <td style={{ padding: "4px 8px" }}>
                           <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                             {crgSort === "manual" && <>
@@ -3128,6 +3288,10 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 
   const handleDelete = id => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
+  const updateField = (id, field, value) => {
+    setEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
+  };
+
   const todayEntries = filtered.filter(d => d.date === today);
   const grandAff = todayEntries.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
   const grandBrands = todayEntries.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
@@ -3175,6 +3339,16 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
           <button onClick={handleDcSortAlpha}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: dcSort === "alpha" ? "#0EA5E9" : "transparent", border: `2px solid ${dcSort === "alpha" ? "#0EA5E9" : "#94A3B8"}`, borderRadius: 8, color: dcSort === "alpha" ? "#FFF" : "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 600, marginLeft: "auto" }}
           >{dcSort === "alpha" ? "✓ A→Z Sorted" : "A→Z Sort"}</button>
+          <button onClick={async () => {
+            try {
+              const res = await fetch(`${API_BASE}/telegram/screenshot/agents`, { method: "POST", headers: authHeaders() });
+              const data = await res.json();
+              if (data.ok) alert("✅ Agents screenshot sent to Telegram!");
+              else alert("❌ " + (data.error || "Failed to send screenshot"));
+            } catch (e) { alert("❌ " + e.message); }
+          }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", background: "transparent", border: "2px solid #10B981", borderRadius: 8, color: "#10B981", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+          >📸 Agents Screenshot</button>
         </div>
 
         {/* Summary cards — Today only */}
@@ -3231,8 +3405,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
                               onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                             >{d.agent}</span>
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.affiliates || ""}{isTopAff ? " 👍" : ""}</td>
-                          <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }}>{d.brands || ""}{isTopBrands ? " 👍" : ""}</td>
+                          <InlineCell value={d.affiliates} onSave={v => updateField(d.id, "affiliates", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }} />
+                          <InlineCell value={d.brands} onSave={v => updateField(d.id, "brands", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }} />
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #CBD5E1" }}>{t || ""}</td>
                           <td style={{ padding: "8px 8px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
@@ -3907,7 +4081,7 @@ function AppInner() {
   if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
-  return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} userAccess={userAccess} /></>);
+  return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
 }
 
 export default function App() {
