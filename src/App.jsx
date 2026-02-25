@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.00";
+const VERSION = "5.02";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1727,17 +1727,35 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
 
   // ── KPI Calculations ──
   const today = new Date().toISOString().split("T")[0];
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  
+  // CRG Deals
   const todayCrg = (crgDeals || []).filter(d => d.date === today);
-  const todayDc = (dcEntries || []).filter(d => d.date === today);
+  const monthCrg = (crgDeals || []).filter(d => (d.date || "").startsWith(monthPrefix));
   const todayCap = todayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const monthCap = monthCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
   const todayStarted = todayCrg.filter(d => d.started).length;
+  const monthStarted = monthCrg.filter(d => d.started).length;
   const todayFtd = todayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
   const todayCapRec = todayCrg.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
-  const conversionRate = todayStarted > 0 ? ((todayFtd / todayStarted) * 100).toFixed(1) : "0";
+  const todayNewDeals = todayCrg.length;
+  const monthNewDeals = monthCrg.length;
+
+  // Daily Cap / Agents
+  const todayDc = (dcEntries || []).filter(d => d.date === today);
   const activeAgents = todayDc.length;
-  const openPaymentsCount = (payments || []).filter(p => OPEN_STATUSES.includes(p.status)).length;
-  const openPaymentsTotal = (payments || []).filter(p => OPEN_STATUSES.includes(p.status)).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const cpReceived = (cpPayments || []).filter(p => p.status === "Received").length;
+
+  // Payments — Paid totals
+  const todayPaid = (payments || []).filter(p => p.status === "Paid" && p.paidDate === today);
+  const todayPaidTotal = todayPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const monthPaid = (payments || []).filter(p => p.status === "Paid" && p.month === now.getMonth() && p.year === now.getFullYear());
+  const monthPaidTotal = monthPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  // Customer Payments
+  const todayCp = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(today));
+  const todayCpTotal = todayCp.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const monthCpAll = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(monthPrefix));
+  const monthCpTotal = monthCpAll.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
   // ── 7-Day CAP Trend ──
   const last7Days = Array.from({ length: 7 }, (_, i) => {
@@ -1762,6 +1780,13 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
     if (agent) agentCapMap[agent] = (agentCapMap[agent] || 0) + (parseInt(d.cap) || 0);
   });
   const topAgents = Object.entries(agentCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // ── Monthly Agent CAP totals (for targets) ──
+  const agentMonthCap = {};
+  monthCrg.forEach(d => {
+    const agent = (d.manageAff || "").trim();
+    if (agent) agentMonthCap[agent] = (agentMonthCap[agent] || 0) + (parseInt(d.cap) || 0);
+  });
 
   const handlePayMove = (id, direction) => {
     setPayments(prev => {
@@ -1850,24 +1875,28 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
       <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         {/* ═══ KPI Overview ═══ */}
         <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Today's Overview</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 24 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
           {[
-            { label: "CAP Today", value: todayCap.toLocaleString(), accent: "#6366F1", bg: "#EEF2FF", icon: "📊" },
-            { label: "Started", value: `${todayStarted}/${todayCrg.length}`, accent: "#10B981", bg: "#ECFDF5", icon: "🚀" },
-            { label: "FTDs", value: todayFtd, accent: "#F59E0B", bg: "#FFFBEB", icon: "💎" },
-            { label: "Conversion", value: `${conversionRate}%`, accent: todayFtd > 0 ? "#10B981" : "#94A3B8", bg: "#F0FDF4", icon: "📈" },
-            { label: "Agents Active", value: activeAgents, accent: "#8B5CF6", bg: "#F5F3FF", icon: "👥" },
-            { label: "Open Payments", value: `${openPaymentsCount}`, sub: `$${openPaymentsTotal.toLocaleString()}`, accent: "#0EA5E9", bg: "#EFF6FF", icon: "💰" },
+            { label: "CAP", today: todayCap.toLocaleString(), month: monthCap.toLocaleString(), accent: "#6366F1", bg: "#EEF2FF", icon: "📊" },
+            { label: "Started", today: `${todayStarted}/${todayCrg.length}`, month: `${monthStarted}/${monthCrg.length}`, accent: "#10B981", bg: "#ECFDF5", icon: "🚀" },
+            { label: "Agents Active", today: activeAgents, month: null, accent: "#8B5CF6", bg: "#F5F3FF", icon: "👥" },
+            { label: "Paid Amount", today: `$${todayPaidTotal.toLocaleString()}`, month: `$${monthPaidTotal.toLocaleString()}`, accent: "#10B981", bg: "#ECFDF5", icon: "💰" },
+            { label: "Customer Payments", today: `$${todayCpTotal.toLocaleString()}`, month: `$${monthCpTotal.toLocaleString()}`, accent: "#0EA5E9", bg: "#EFF6FF", icon: "🏦" },
+            { label: "New CRG Deals", today: todayNewDeals, month: monthNewDeals, accent: "#F59E0B", bg: "#FFFBEB", icon: "📝" },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: c.accent }} />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <div>
-                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>{c.label}</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
-                  {c.sub && <div style={{ fontSize: 12, color: "#64748B", fontWeight: 600, marginTop: 2 }}>{c.sub}</div>}
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{c.label}</div>
+                  <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.today}</div>
+                  {c.month !== null && (
+                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4, fontWeight: 600 }}>
+                      <span style={{ color: "#94A3B8" }}>Month:</span> <span style={{ color: c.accent }}>{c.month}</span>
+                    </div>
+                  )}
                 </div>
-                <span style={{ fontSize: 24 }}>{c.icon}</span>
+                <span style={{ fontSize: 22 }}>{c.icon}</span>
               </div>
             </div>
           ))}
@@ -1916,6 +1945,79 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
             })}
           </div>
         </div>
+
+        {/* ═══ Agent CAP Targets vs Actual ═══ */}
+        {(() => {
+          const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
+          const [targets, setTargetsState] = [
+            JSON.parse(localStorage.getItem(targetKey) || '{}'),
+            (t) => { localStorage.setItem(targetKey, JSON.stringify(t)); }
+          ];
+          const [editingTargets, setET] = useState(false);
+          const [tempTargets, setTT] = useState(targets);
+
+          const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+          const dayOfMonth = now.getDate();
+          const expectedPace = dayOfMonth / daysInMonth;
+
+          const allAgents = [...new Set([...Object.keys(targets), ...Object.keys(agentMonthCap)])].sort();
+
+          return allAgents.length > 0 || isAdmin(user.email) ? (
+            <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 28, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} CAP Targets vs Actual</div>
+                {isAdmin(user.email) && (
+                  <button onClick={() => { setET(!editingTargets); setTT({...targets}); }}
+                    style={{ padding: "4px 12px", borderRadius: 6, background: editingTargets ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+                  >{editingTargets ? "Cancel" : "Set Targets"}</button>
+                )}
+              </div>
+              {editingTargets && (
+                <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, marginBottom: 8 }}>Set monthly CAP target per agent:</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {[...new Set([...Object.keys(agentMonthCap), ...Object.keys(tempTargets)])].sort().map(agent => (
+                      <div key={agent} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ display: "inline-block", padding: "2px 8px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{agent}</span>
+                        <input value={tempTargets[agent] || ""} onChange={e => setTT(p => ({ ...p, [agent]: e.target.value }))}
+                          style={{ width: 60, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} placeholder="CAP" />
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => { setTargetsState(tempTargets); setET(false); window.location.reload(); }}
+                    style={{ marginTop: 8, padding: "4px 16px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Save Targets</button>
+                </div>
+              )}
+              {allAgents.filter(a => parseInt(targets[a]) > 0).length > 0 ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  {allAgents.filter(a => parseInt(targets[a]) > 0).map(agent => {
+                    const target = parseInt(targets[agent]) || 0;
+                    const actual = agentMonthCap[agent] || 0;
+                    const pct = target > 0 ? Math.min((actual / target) * 100, 150) : 0;
+                    const barPct = Math.min(pct, 100);
+                    const expectedCap = Math.round(target * expectedPace);
+                    const onTrack = actual >= expectedCap;
+                    const barColor = pct >= 100 ? "#10B981" : onTrack ? "#10B981" : actual >= expectedCap * 0.7 ? "#F59E0B" : "#EF4444";
+                    return (
+                      <div key={agent} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ display: "inline-block", padding: "4px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span>
+                        <div style={{ flex: 1, position: "relative", height: 22, background: "#F1F5F9", borderRadius: 6, overflow: "hidden" }}>
+                          <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${barPct}%`, background: barColor, borderRadius: 6, transition: "width 0.5s" }} />
+                          <div style={{ position: "absolute", left: `${Math.min(expectedPace * 100, 100)}%`, top: 0, bottom: 0, width: 2, background: "#334155", opacity: 0.4 }} title={`Expected pace: ${expectedCap} CAP by day ${dayOfMonth}`} />
+                          <span style={{ position: "relative", zIndex: 1, fontSize: 10, fontWeight: 700, color: barPct > 40 ? "#FFF" : "#334155", padding: "0 8px", lineHeight: "22px" }}>{actual.toLocaleString()} / {target.toLocaleString()} CAP ({pct.toFixed(0)}%)</span>
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: onTrack ? "#10B981" : "#EF4444", minWidth: 55 }}>{pct >= 100 ? "🏆 Done" : onTrack ? "✓ On track" : "⚠ Behind"}</span>
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Dark line = expected pace for day {dayOfMonth}/{daysInMonth}</div>
+                </div>
+              ) : (
+                <div style={{ color: "#94A3B8", fontSize: 13 }}>{isAdmin(user.email) ? 'Click "Set Targets" to configure monthly CAP goals per agent.' : "No targets set for this month yet."}</div>
+              )}
+            </div>
+          ) : null;
+        })()}
 
         {/* ═══ Payments Section ═══ */}
         <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Payments</h2>
@@ -2640,10 +2742,25 @@ const CRG_INITIAL = [
 ];
 
 
-function CRGForm({ deal, onSave, onClose, defaultDate }) {
+function CRGForm({ deal, allDeals, onSave, onClose, defaultDate }) {
   const [f, setF] = useState(deal || { affiliate: "", deal: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", funnel: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  // Duplicate detection: same affiliate + same date
+  const dupWarning = (() => {
+    if (!f.affiliate || !f.date) return null;
+    const matches = (allDeals || []).filter(d => {
+      if (deal && d.id === deal.id) return false;
+      return (d.affiliate || "").trim().toLowerCase() === f.affiliate.trim().toLowerCase()
+        && d.date === f.date
+        && (d.brokerCap || "").trim().toLowerCase() === (f.brokerCap || "").trim().toLowerCase();
+    });
+    if (matches.length > 0) {
+      return `⚠ A CRG deal for "${f.affiliate}" with broker "${f.brokerCap || "same"}" already exists on ${f.date}`;
+    }
+    return null;
+  })();
 
   const handleSave = () => {
     if (!f.affiliate.trim()) { setError("Affiliate is required"); return; }
@@ -2683,6 +2800,7 @@ function CRGForm({ deal, onSave, onClose, defaultDate }) {
         <Field label="Hours"><input style={inp} value={f.hours} onChange={e => s("hours", e.target.value)} placeholder="e.g. 04-13 gmt+2" /></Field>
       </div>
       <Field label="Funnel"><textarea style={{ ...inp, minHeight: 50, resize: "vertical" }} value={f.funnel || ""} onChange={e => s("funnel", e.target.value)} placeholder="Funnel info..." /></Field>
+      {dupWarning && <div style={{ color: "#B45309", fontSize: 13, padding: "8px 12px", background: "#FFFBEB", borderRadius: 8, marginBottom: 8, border: "1px solid #FDE68A", fontWeight: 600 }}>{dupWarning}</div>}
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -3034,7 +3152,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
 
       {modalOpen && (
         <Modal title={editDeal ? "Edit Affiliate" : "New Affiliate"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
-          <CRGForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); setNewDayDate(null); }} defaultDate={newDayDate} />
+          <CRGForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); setNewDayDate(null); }} defaultDate={newDayDate} />
         </Modal>
       )}
       {delConfirm && (
@@ -3053,11 +3171,22 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
 /* ── Daily Cap Page ── */
 const DC_INITIAL = [];
 
-function DCForm({ entry, onSave, onClose, defaultDate }) {
+function DCForm({ entry, allEntries, onSave, onClose, defaultDate }) {
   const [f, setF] = useState(entry || { agent: "", affiliates: "", brands: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const total = (parseInt(f.affiliates) || 0) + (parseInt(f.brands) || 0);
+
+  // Duplicate detection: same agent + same date
+  const dupWarning = (() => {
+    if (!f.agent || !f.date) return null;
+    const matches = (allEntries || []).filter(d => {
+      if (entry && d.id === entry.id) return false;
+      return (d.agent || "").trim().toLowerCase() === f.agent.trim().toLowerCase() && d.date === f.date;
+    });
+    if (matches.length > 0) return `⚠ Agent "${f.agent}" already has an entry for ${f.date}`;
+    return null;
+  })();
 
   const handleSave = () => {
     if (!f.agent.trim()) { setError("Agent name is required"); return; }
@@ -3089,6 +3218,7 @@ function DCForm({ entry, onSave, onClose, defaultDate }) {
         <span style={{ color: "#64748B", fontSize: 13, fontWeight: 600 }}>Total:</span>
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>{total}</span>
       </div>
+      {dupWarning && <div style={{ color: "#B45309", fontSize: 13, padding: "8px 12px", background: "#FFFBEB", borderRadius: 8, marginBottom: 8, border: "1px solid #FDE68A", fontWeight: 600 }}>{dupWarning}</div>}
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -3441,7 +3571,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 
       {modalOpen && (
         <Modal title={editEntry ? "Edit Agent" : "New Agent"} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }}>
-          <DCForm entry={editEntry} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }} defaultDate={newDayDate} />
+          <DCForm entry={editEntry} allEntries={entries} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }} defaultDate={newDayDate} />
         </Modal>
       )}
       {delConfirm && (
@@ -3473,10 +3603,24 @@ const DEALS_INITIAL = [
   { id: genId(), affiliate: "28", country: "FI", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
 ];
 
-function DealsForm({ deal, onSave, onClose }) {
+function DealsForm({ deal, allDeals, onSave, onClose }) {
   const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", source: "", deduction: "", date: new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  // Duplicate detection: check if affiliate + country + funnels matches existing record
+  const dupWarning = (() => {
+    if (!f.affiliate || !f.country) return null;
+    const matches = (allDeals || []).filter(d => {
+      if (deal && d.id === deal.id) return false; // skip self when editing
+      return (d.affiliate || "").trim().toLowerCase() === f.affiliate.trim().toLowerCase()
+        && (d.country || "").trim().toLowerCase() === f.country.trim().toLowerCase();
+    });
+    if (matches.length > 0) {
+      return `⚠ An offer for affiliate ${f.affiliate} + ${f.country} already exists (${matches.map(m => m.funnels || m.dealType || "").join(", ")})`;
+    }
+    return null;
+  })();
 
   const handleSave = () => {
     if (!f.affiliate.trim()) { setError("Affiliate is required"); return; }
@@ -3519,6 +3663,7 @@ function DealsForm({ deal, onSave, onClose }) {
           <input style={inp} type="date" value={f.date || ""} onChange={e => s("date", e.target.value)} />
         </Field>
       </div>
+      {dupWarning && <div style={{ color: "#B45309", fontSize: 13, padding: "8px 12px", background: "#FFFBEB", borderRadius: 8, marginBottom: 8, border: "1px solid #FDE68A", fontWeight: 600 }}>{dupWarning}</div>}
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
@@ -3763,7 +3908,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
 
       {modalOpen && (
         <Modal title={editDeal ? "Edit Offer" : "New Offer"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
-          <DealsForm deal={editDeal} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
+          <DealsForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
         </Modal>
       )}
       {delConfirm && (
