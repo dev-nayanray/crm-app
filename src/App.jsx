@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.02";
+const VERSION = "5.06.1";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -697,52 +697,7 @@ const countryFlag = code => {
   return ""; // 3-4 letter codes don't have flag emoji
 };
 
-const INITIAL = [
-  { id: genId(), invoice: "117", paidDate: "2026-02-02", status: "Paid", amount: "2300", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "35", paidDate: "2026-02-02", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ ONLY USDT ‼️ TRC-20: TYUWBpmzSqCcz9r5rRVGQvQzfb7qC1PphQ ERC-20: 0x5066d63E...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "47", paidDate: "2026-02-02", status: "Paid", amount: "26990", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "13", paidDate: "2026-02-03", status: "Paid", amount: "3200", openBy: "Sophia", type: "Brand Payment", instructions: "Pls process the payment   TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "165", paidDate: "2026-02-03", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Our wallets: 0xA061F8742Ea82a41c8f1cccd26868Cb9Ae5E9B79 Erc  TBv35KYhJMs89qRu...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "130", paidDate: "2026-02-03", status: "Paid", amount: "2600", openBy: "Sophia", type: "Brand Payment", instructions: "TRC TCJLAVWWPyosxq8WBGB1yYid5pRP94BAS6 +2%FEE  ERC 0xDC8eAD92DEa0D3A174fb1497...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "137", paidDate: "2026-02-03", status: "Paid", amount: "10000", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "159", paidDate: "2026-02-03", status: "Paid", amount: "1450", openBy: "Sophia", type: "Brand Payment", instructions: "FEE 2% USDT (ERC20) 0x564a0700D9C77c8811FEE19ECc137B3A929e315c  USDC (ERC20) ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "33", paidDate: "2026-02-04", status: "Paid", amount: "16230", openBy: "Sophia", type: "Brand Payment", instructions: "We only accept payments in USDT. Payment wallet addresses:  USDT TRC-20  TMBF...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "168", paidDate: "2026-02-04", status: "Paid", amount: "3000", openBy: "Sophia", type: "Brand Payment", instructions: ":  🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD890444f2c066eFDDD713...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-05", status: "Paid", amount: "4000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "168", paidDate: "2026-02-05", status: "Paid", amount: "8000", openBy: "Sophia", type: "Brand Payment", instructions: "🔗 ERC20 (Ethereum) - USDT/USDC: 0x9fb3889367FC8c0C32FD890444f2c066eFDDD713  💰...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "137", paidDate: "2026-02-05", status: "Paid", amount: "3500", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-06", status: "Paid", amount: "10000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "68", paidDate: "2026-02-06", status: "Paid", amount: "1800", openBy: "Sophia", type: "Brand Payment", instructions: "ELPIS  USDT TRC  TLjLRPN6FWZ44shV73fRNUj9dmAgdnjqRR  USDT ERC/USDC ERC  0xFAE...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "13", paidDate: "2026-02-09", status: "Paid", amount: "1650", openBy: "Sophia", type: "Brand Payment", instructions: "TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - 0x7F0179D7Cc08fF7dc4D87857...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "47", paidDate: "2026-02-09", status: "Paid", amount: "24550", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "117", paidDate: "2026-02-09", status: "Paid", amount: "5130", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-09", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "196", paidDate: "2026-02-10", status: "Paid", amount: "1000", openBy: "Sophia", type: "Brand Payment", instructions: "TXERqryyzQC5htUbgupp4B6pZ1oSYTHm4h  TRC 20", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "175", paidDate: "2026-02-10", status: "Paid", amount: "340", openBy: "Sophia", type: "Brand Payment", instructions: "- Wallets - USDT -   TRC-20 TPHsyQ5BVsxNFtoRfpUE6LfszkcSUPdzjm  ERC-20 0xf819...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "12", paidDate: "2026-02-10", status: "Paid", amount: "2400", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20: TQZn4ufgaD2FsSQg6aTxLVfHX9SSpg7jV2  USDT ERC-20: 0xA5F1A1b03844a...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "137", paidDate: "2026-02-10", status: "Paid", amount: "6000", openBy: "Sophia", type: "Brand Payment", instructions: "❕‼️UPDATED NEW Wallets: ONLY USDT‼️❕  TRC20 - TKDR9q8RNq2XaxWQCYzsGGJcHef386x...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "122", paidDate: "2026-02-10", status: "Paid", amount: "7208", openBy: "Sophia", type: "Brand Payment", instructions: "❗️NEW WALLET❗️ TZ1U7FRRv2QtaTT2aLJfDqCU95KDxQkHsK", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "134", paidDate: "2026-02-10", status: "Paid", amount: "6030", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC20       TUuWDyvwbimGcaX3gLYYsK4zBZk3QvoKR7", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "33", paidDate: "2026-02-11", status: "Paid", amount: "22690", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20  TMBFC53yfyDbBDJ5d8jcuAoKeh1ax3QdeX  USDT ERC-20 0x750654D4440D4C...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "35", paidDate: "2026-02-11", status: "Paid", amount: "1848", openBy: "Sophia", type: "Brand Payment", instructions: "‼️ ONLY USDT ‼️ TRC-20: TYUWBpmzSqCcz9r5rRVGQvQzfb7qC1PphQ ERC-20: 0x5066d63E...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-11", status: "Paid", amount: "8000", openBy: "Julia", type: "Brand Payment", instructions: "", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "117", paidDate: "2026-02-12", status: "Paid", amount: "15000", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "80", paidDate: "2026-02-16", status: "Paid", amount: "825", openBy: "Sophia", type: "Brand Payment", instructions: "Hello dear, confirmed Wallets are the same: ERC – 0x6e2449206C27D6D3714801638...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "71", paidDate: "2026-02-16", status: "Paid", amount: "2600", openBy: "Sophia", type: "Brand Payment", instructions: "0xBAaB1FEE27badEE9E85c7498A1bC4e1BF780F460", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-16", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "117", paidDate: "2026-02-16", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c493462B6e4  TRC20...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "159", paidDate: "2026-02-16", status: "Paid", amount: "2652", openBy: "Sophia", type: "Brand Payment", instructions: "USDT (ERC20) 0x564a0700D9C77c8811FEE19ECc137B3A929e315c  USDC (ERC20) 0x564a0...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "12", paidDate: "2026-02-16", status: "Paid", amount: "1950", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20: TQZn4ufgaD2FsSQg6aTxLVfHX9SSpg7jV2  USDT ERC-20: 0xA5F1A1b03844a...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "13", paidDate: "2026-02-17", status: "Paid", amount: "7750", openBy: "Sophia", type: "Brand Payment", instructions: "Pls process the payment   TRC20 - TAqtT5SP5rCqXVpF3mG9hjHD2rnqj5Yono ERC20 - ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "175", paidDate: "2026-02-17", status: "Paid", amount: "15600", openBy: "Sophia", type: "Brand Payment", instructions: "- Wallets - USDT -   TRC-20 TPHsyQ5BVsxNFtoRfpUE6LfszkcSUPdzjm  ERC-20 0xf819...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "47", paidDate: "2026-02-17", status: "Paid", amount: "9600", openBy: "Sophia", type: "Brand Payment", instructions: "USDT ERC20 + FEE  0x6A8CC73BBFd9717489Ad89661aba0482d1121cc4   USDT TRC20 + F...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "211", paidDate: "2026-02-17", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "Hi guys!   Our wallets   0x2d93167590B6951fD5A1b4aEaf984Ff155C8E25D  Erc 2%  ...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "171", paidDate: "2026-02-18", status: "Paid", amount: "4785", openBy: "Sophia", type: "Brand Payment", instructions: "NEW Wallets: ❗️❗️💵💸🟩  BTC - 3ApPSHdMCuTLn2Uf2AJmKW3uyWiF1voFZs  TRC - TYm8rfR...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "134", paidDate: "2026-02-18", status: "Paid", amount: "3855", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC20 TUuWDyvwbimGcaX3gLYYsK4zBZk3QvoKR7", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "33", paidDate: "2026-02-18", status: "Paid", amount: "5580", openBy: "Sophia", type: "Brand Payment", instructions: "USDT TRC-20  TMBFC53yfyDbBDJ5d8jcuAoKeh1ax3QdeX  USDT ERC-20 0x750654D4440D4C...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "171", paidDate: "2026-02-18", status: "Paid", amount: "5000", openBy: "Sophia", type: "Brand Payment", instructions: "NEW Wallets: ❗️❗️💵💸🟩  BTC - 3ApPSHdMCuTLn2Uf2AJmKW3uyWiF1voFZs  TRC - TYm8rfR...", paymentHash: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "117", paidDate: "2026-02-18", status: "Paid", amount: "7000", openBy: "Sophia", type: "Brand Payment", instructions: "Our wallets: USDTerc20/ USDC erc20/ eth: 0xAE63A91758600339C8e5Ae58b6473c4934...", paymentHash: "", month: 1, year: 2026 },
-];
+const INITIAL = []; // REMOVED: hardcoded demo data caused production data loss on deploy
 
 /* ── Icons ── */
 const I = {
@@ -942,11 +897,13 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
   const [menuOpen, setMenuOpen] = useState(false);
   const { dark, toggle: toggleDark } = useTheme();
   const allNavPages = [
-    { key: "dashboard", label: "Payments", color: "#0EA5E9" },
+    { key: "overview", label: "Dashboard", color: "#6366F1" },
+    { key: "payments", label: "Payments", color: "#0EA5E9" },
     { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
     { key: "crg", label: "CRG Deals", color: "#F59E0B" },
     { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
     { key: "deals", label: "Offers", color: "#10B981" },
+    { key: "settings", label: "Settings", color: "#64748B" },
   ];
   if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
 
@@ -1019,7 +976,7 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
   return (
     <>
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Invoice #"><input style={inp} value={f.invoice} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("invoice", v); }} placeholder="e.g. 100" maxLength={3} /></Field>
+        <Field label="Affiliate ID"><input style={inp} value={f.invoice} onChange={e => { const v = e.target.value.replace(/\D/g, "").slice(0, 3); s("invoice", v); }} placeholder="e.g. 100" maxLength={3} /></Field>
         <Field label="Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
         <Field label="Fee (number or %)">
           <input style={inp} value={f.fee || ""} onChange={e => s("fee", e.target.value)} placeholder="e.g. 2% or 50" />
@@ -1069,12 +1026,54 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
 }
 
 /* ── Payment Table ── */
-function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove }) {
+// ── Bulk Action Bar — floating bottom bar when rows are selected ──
+function BulkActionBar({ count, onDelete, onDuplicate, onArchive, onClear }) {
+  if (count === 0) return null;
+  return (
+    <div style={{
+      position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", zIndex: 200,
+      background: "#FFFFFF", borderRadius: 16, padding: "10px 20px",
+      boxShadow: "0 8px 32px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08)",
+      display: "flex", alignItems: "center", gap: 6, border: "1px solid #E2E8F0",
+      animation: "fadeUp 0.25s ease both",
+    }}>
+      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "50%", background: "#0EA5E9", color: "#FFF", fontWeight: 800, fontSize: 13, marginRight: 4 }}>{count}</span>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "#334155", marginRight: 8 }}>selected</span>
+      <div style={{ width: 1, height: 24, background: "#E2E8F0", margin: "0 4px" }} />
+      {onDuplicate && <button onClick={onDuplicate} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 12px", borderRadius: 8, color: "#475569" }}
+        onMouseEnter={e => e.currentTarget.style.background = "#F1F5F9"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V4a2 2 0 012-2h12"/></svg>
+        <span style={{ fontSize: 10, fontWeight: 600 }}>Duplicate</span>
+      </button>}
+      {onArchive && <button onClick={onArchive} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 12px", borderRadius: 8, color: "#475569" }}
+        onMouseEnter={e => e.currentTarget.style.background = "#F1F5F9"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+        <span style={{ fontSize: 10, fontWeight: 600 }}>Archive</span>
+      </button>}
+      {onDelete && <button onClick={onDelete} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "4px 12px", borderRadius: 8, color: "#DC2626" }}
+        onMouseEnter={e => e.currentTarget.style.background = "#FEF2F2"} onMouseLeave={e => e.currentTarget.style.background = "none"}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        <span style={{ fontSize: 10, fontWeight: 600 }}>Delete</span>
+      </button>}
+      <div style={{ width: 1, height: 24, background: "#E2E8F0", margin: "0 4px" }} />
+      <button onClick={onClear} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 8px", borderRadius: 8, color: "#94A3B8", display: "flex", alignItems: "center", fontSize: 18 }}
+        onMouseEnter={e => e.currentTarget.style.background = "#F1F5F9"} onMouseLeave={e => e.currentTarget.style.background = "none"}>✕</button>
+    </div>
+  );
+}
+
+function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
+  const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
     ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
     : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  const toggleSelect = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(p => p.id)));
+  const clearSelection = () => setSelected(new Set());
+  const selArr = [...selected];
 
   // Date range
   const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
@@ -1105,7 +1104,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
           <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>#{p.invoice}</span>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>ID: {p.invoice}</span>
                 <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...statusStyle(p.status) }}>{p.status}</span>
               </div>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
@@ -1139,7 +1138,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         ))}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, padding: "12px", flexWrap: "wrap" }}>
           {dateRange && <span style={{ padding: "5px 14px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{dateRange}</span>}
-          <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} invoices</span>
+          <span style={{ padding: "5px 14px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 12 }}>{payments.length} payments</span>
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 15, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         </div>
       </div>
@@ -1150,13 +1149,14 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
         <colgroup>
+          <col style={{ width: "3%" }} />{/* Checkbox */}
           <col style={{ width: "6%" }} />{/* Invoice */}
           <col style={{ width: "7%" }} />{/* Paid Date */}
-          <col style={{ width: "9%" }} />{/* Type */}
+          <col style={{ width: "8%" }} />{/* Type */}
           <col style={{ width: "10%" }} />{/* Status */}
           <col style={{ width: "8%" }} />{/* Amount */}
-          <col style={{ width: "6%" }} />{/* Fee */}
-          <col style={{ width: "8%" }} />{/* Open By */}
+          <col style={{ width: "5%" }} />{/* Fee */}
+          <col style={{ width: "7%" }} />{/* Open By */}
           <col style={{ width: "14%" }} />{/* TRC */}
           <col style={{ width: "14%" }} />{/* ERC */}
           <col style={{ width: "10%" }} />{/* Hash */}
@@ -1164,7 +1164,10 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+            <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
+              <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
+            </th>
+            {["Affiliate ID","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
@@ -1175,14 +1178,18 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
             const amt = parseFloat(p.amount) || 0;
             const isHighValue = amt >= 5000;
             const isOverdue = p.status === "Open" && p.paidDate && new Date(p.paidDate) < new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            const rowBg = isOverdue ? "rgba(239,68,68,0.05)" : isHighValue ? "rgba(14,165,233,0.04)" : "transparent";
-            const rowBorder = isOverdue ? "#FECACA" : isHighValue ? "#BAE6FD" : "#F1F5F9";
+            const isSel = selected.has(p.id);
+            const rowBg = isSel ? "rgba(14,165,233,0.1)" : isOverdue ? "rgba(239,68,68,0.05)" : isHighValue ? "rgba(14,165,233,0.04)" : "transparent";
+            const rowBorder = isSel ? "#93C5FD" : isOverdue ? "#FECACA" : isHighValue ? "#BAE6FD" : "#F1F5F9";
             return (
             <tr key={p.id}
-              style={{ borderBottom: `1px solid ${rowBorder}`, transition: "background 0.15s", background: rowBg, borderLeft: isOverdue ? "3px solid #EF4444" : isHighValue ? "3px solid #0EA5E9" : "3px solid transparent" }}
-              onMouseEnter={e => e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "#F8FAFC"}
+              style={{ borderBottom: `1px solid ${rowBorder}`, transition: "background 0.15s", background: rowBg, borderLeft: isSel ? "3px solid #0EA5E9" : isOverdue ? "3px solid #EF4444" : isHighValue ? "3px solid #0EA5E9" : "3px solid transparent" }}
+              onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "#F8FAFC"; }}
               onMouseLeave={e => e.currentTarget.style.background = rowBg}
             >
+              <td style={{ padding: "4px 4px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
+                <input type="checkbox" checked={isSel} onChange={() => toggleSelect(p.id)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
+              </td>
               <td style={{ padding: "7px 6px", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
@@ -1236,10 +1243,15 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         {dateRange && (
           <span style={{ padding: "5px 16px", borderRadius: 20, background: "#F472B6", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{dateRange}</span>
         )}
-        <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{payments.length} invoices</span>
+        <span style={{ padding: "5px 16px", borderRadius: 20, background: "#10B981", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{payments.length} payments</span>
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
+      <BulkActionBar count={selected.size} onClear={clearSelection}
+        onDelete={() => { if (confirm(`Delete ${selected.size} selected invoice(s)?`)) { selArr.forEach(id => onDelete(id)); clearSelection(); } }}
+        onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
+        onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
+      />
     </div>
   );
 }
@@ -1289,16 +1301,28 @@ function GroupHeader({ icon, title, count, total, accentColor, defaultOpen, chil
 
 /* ── Admin Panel ── */
 const ALL_PAGES = [
-  { key: "dashboard", label: "Payments", color: "#0EA5E9" },
+  { key: "overview", label: "Dashboard", color: "#6366F1" },
+  { key: "payments", label: "Payments", color: "#0EA5E9" },
   { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
   { key: "crg", label: "CRG Deals", color: "#F59E0B" },
   { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
   { key: "deals", label: "Offers", color: "#10B981" },
+  { key: "settings", label: "Settings", color: "#64748B" },
 ];
 
 function getPageAccess(user) {
   if (isAdmin(user.email)) return ALL_PAGES.map(p => p.key);
-  return user.pageAccess || ALL_PAGES.map(p => p.key);
+  let access = user.pageAccess || ALL_PAGES.map(p => p.key);
+  // Migrate old "dashboard" key to new page structure
+  if (access.includes("dashboard")) {
+    access = access.filter(k => k !== "dashboard");
+    if (!access.includes("overview")) access.unshift("overview");
+    if (!access.includes("payments")) access.splice(1, 0, "payments");
+  }
+  // Ensure overview and settings are always accessible
+  if (!access.includes("overview")) access.unshift("overview");
+  if (!access.includes("settings")) access.push("settings");
+  return access;
 }
 
 function PageAccessToggles({ access, onChange }) {
@@ -1664,6 +1688,14 @@ function ServerDiagnostics() {
           }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(245,158,11,0.3)" }}>🧹 Dedup Data</button>
           <button onClick={async () => {
             try {
+              const res = await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() });
+              const data = await res.json();
+              if (data.ok) alert(`✅ Backup created: ${data.backup}\n\nUse this before deploying new versions!`);
+              else alert("❌ Backup failed: " + (data.error || "Unknown error"));
+            } catch (e) { alert("❌ Backup failed: " + e.message); }
+          }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#8B5CF6,#A78BFA)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(139,92,246,0.3)" }}>💾 Create Backup</button>
+          <button onClick={async () => {
+            try {
               const res = await fetch(`${API_BASE}/telegram/screenshot/all`, { method: "POST", headers: authHeaders() });
               const data = await res.json();
               if (data.ok) alert("✅ Both screenshots sent to Telegram!");
@@ -1714,21 +1746,14 @@ function ServerDiagnostics() {
 }
 
 /* ── Dashboard ── */
-function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgDeals, dcEntries, cpPayments, userAccess }) {
+// ═══════════════════════════════════════════════════════════════
+// OVERVIEW DASHBOARD — Dedicated analytics & KPI page
+// ═══════════════════════════════════════════════════════════════
+function OverviewDashboard({ user, onLogout, onNav, payments, crgDeals, dcEntries, cpPayments, userAccess }) {
   const now = new Date();
-  const [month, setMonth] = useState(now.getMonth());
-  const [year, setYear] = useState(now.getFullYear());
-  const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editPay, setEditPay] = useState(null);
-  const [delConfirm, setDelConfirm] = useState(null);
-  const [paySort, setPaySort] = useState("manual");
-  const availStatuses = getAvailableStatuses(user.email);
-
-  // ── KPI Calculations ──
-  const today = new Date().toISOString().split("T")[0];
+  const today = now.toISOString().split("T")[0];
   const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  
+
   // CRG Deals
   const todayCrg = (crgDeals || []).filter(d => d.date === today);
   const monthCrg = (crgDeals || []).filter(d => (d.date || "").startsWith(monthPrefix));
@@ -1737,7 +1762,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   const todayStarted = todayCrg.filter(d => d.started).length;
   const monthStarted = monthCrg.filter(d => d.started).length;
   const todayFtd = todayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-  const todayCapRec = todayCrg.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+  const monthFtd = monthCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
   const todayNewDeals = todayCrg.length;
   const monthNewDeals = monthCrg.length;
 
@@ -1750,6 +1775,8 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   const todayPaidTotal = todayPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const monthPaid = (payments || []).filter(p => p.status === "Paid" && p.month === now.getMonth() && p.year === now.getFullYear());
   const monthPaidTotal = monthPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const openPayments = (payments || []).filter(p => OPEN_STATUSES.includes(p.status));
+  const openPaymentsTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
   // Customer Payments
   const todayCp = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(today));
@@ -1757,7 +1784,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   const monthCpAll = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(monthPrefix));
   const monthCpTotal = monthCpAll.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
 
-  // ── 7-Day CAP Trend ──
+  // 7-Day CAP Trend
   const last7Days = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
     return d.toISOString().split("T")[0];
@@ -1765,7 +1792,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   const capTrend = last7Days.map(date => {
     const dayDeals = (crgDeals || []).filter(d => d.date === date);
     return {
-      date: date.slice(5), // "02-19"
+      date: date.slice(5),
       cap: dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
       ftd: dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0),
       started: dayDeals.filter(d => d.started).length,
@@ -1773,7 +1800,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   });
   const maxCap = Math.max(...capTrend.map(d => d.cap), 1);
 
-  // ── Top Agents Today (by CAP managed) ──
+  // Top Agents Today (by CAP)
   const agentCapMap = {};
   todayCrg.forEach(d => {
     const agent = (d.manageAff || "").trim();
@@ -1781,101 +1808,42 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
   });
   const topAgents = Object.entries(agentCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  // ── Monthly Agent CAP totals (for targets) ──
+  // Monthly Agent CAP (for targets)
   const agentMonthCap = {};
   monthCrg.forEach(d => {
     const agent = (d.manageAff || "").trim();
     if (agent) agentMonthCap[agent] = (agentMonthCap[agent] || 0) + (parseInt(d.cap) || 0);
   });
 
-  const handlePayMove = (id, direction) => {
-    setPayments(prev => {
-      const arr = [...prev];
-      const idx = arr.findIndex(p => p.id === id);
-      if (idx < 0) return prev;
-      if (direction === "up" && idx > 0) [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
-      if (direction === "down" && idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
-      return arr;
-    });
-  };
+  // 30-Day CAP Trend for monthly chart
+  const last30Days = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (29 - i));
+    return d.toISOString().split("T")[0];
+  });
+  const capTrend30 = last30Days.map(date => {
+    const dayDeals = (crgDeals || []).filter(d => d.date === date);
+    return {
+      date: date.slice(5),
+      cap: dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
+    };
+  });
+  const maxCap30 = Math.max(...capTrend30.map(d => d.cap), 1);
 
-  const handlePaySortAlpha = () => {
-    if (paySort === "alpha") { setPaySort("manual"); return; }
-    setPaySort("alpha");
-    setPayments(prev => [...prev].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true })));
-  };
+  // Conversion rate
+  const todayConv = todayStarted > 0 ? ((todayFtd / todayStarted) * 100).toFixed(1) : "0";
+  const monthConv = monthStarted > 0 ? ((monthFtd / monthStarted) * 100).toFixed(1) : "0";
 
-  const handleStatusChange = (id, newStatus) => {
-    setPayments(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      const updated = { ...p, status: newStatus };
-      if (newStatus === "Paid") {
-        updated.month = month;
-        updated.year = year;
-        if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // Notification sent by server - removed duplicate from frontend
-      } else {
-        telegramNotify(`🔄 Payment #${p.invoice} status → ${newStatus} by ${user.name}`);
-      }
-      return updated;
-    }));
-  };
-
-  const matchSearch = p => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
-  };
-
-  // Open payments: any payment NOT "Paid"
-  const openPayments = payments.filter(p => OPEN_STATUSES.includes(p.status) && matchSearch(p));
-  // Paid payments: filtered by selected month
-  const paidPayments = payments.filter(p => p.status === "Paid" && p.month === month && p.year === year && matchSearch(p));
-
-  const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const paidTotal = paidPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-
-  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
-
-  const handleSave = form => { 
-    if (editPay) { 
-      const updated = { ...editPay, ...form }; 
-      // Send telegram notification when status changes to Paid
-      if (form.status === "Paid" && editPay.status !== "Paid") { 
-        updated.month = month; 
-        
-        updated.year = year; 
-        if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
-        // Send detailed payment notification
-        telegramNotify(`💰 PAYMENT #${form.invoice} marked as PAID 💰\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Paid by: ${user.name}\nPayment Hash: ${form.paymentHash || 'N/A'}`);
-      } else if (form.status !== "Paid") {
-        // Notify for other status changes
-        telegramNotify(`🔄 Payment #${form.invoice} updated to ${form.status} by ${user.name}`);
-      }
-      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
-    } else { 
-      // New payment added
-      const newPayment = { ...form, id: genId(), month, year };
-      setPayments(prev => [...prev, newPayment]);
-      // Send notification for new payment
-      telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Invoice: #${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
-    } 
-    setModalOpen(false); 
-    setEditPay(null); 
-  };
-
-  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <BlitzHeader user={user} activePage="dashboard" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
+      <BlitzHeader user={user} activePage="overview" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
-      <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
-        {/* ═══ KPI Overview ═══ */}
-        <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Today's Overview</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+      <main className="blitz-main" style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 32px" }}>
+        {/* ═══ KPI Cards ═══ */}
+        <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 800, color: "#334155" }}>📊 Dashboard</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 20 }}>
           {[
             { label: "CAP", today: todayCap.toLocaleString(), month: monthCap.toLocaleString(), accent: "#6366F1", bg: "#EEF2FF", icon: "📊" },
             { label: "Started", today: `${todayStarted}/${todayCrg.length}`, month: `${monthStarted}/${monthCrg.length}`, accent: "#10B981", bg: "#ECFDF5", icon: "🚀" },
@@ -1883,6 +1851,8 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
             { label: "Paid Amount", today: `$${todayPaidTotal.toLocaleString()}`, month: `$${monthPaidTotal.toLocaleString()}`, accent: "#10B981", bg: "#ECFDF5", icon: "💰" },
             { label: "Customer Payments", today: `$${todayCpTotal.toLocaleString()}`, month: `$${monthCpTotal.toLocaleString()}`, accent: "#0EA5E9", bg: "#EFF6FF", icon: "🏦" },
             { label: "New CRG Deals", today: todayNewDeals, month: monthNewDeals, accent: "#F59E0B", bg: "#FFFBEB", icon: "📝" },
+            { label: "Conversion", today: `${todayConv}%`, month: `${monthConv}%`, accent: todayFtd > 0 ? "#10B981" : "#94A3B8", bg: "#F0FDF4", icon: "📈" },
+            { label: "Open Payments", today: openPayments.length, month: `$${openPaymentsTotal.toLocaleString()}`, accent: "#EF4444", bg: "#FEF2F2", icon: "⏳" },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: c.accent }} />
@@ -1903,9 +1873,8 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
         </div>
 
         {/* ═══ 7-Day CAP Trend + Top Agents ═══ */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 28 }}>
-          {/* Chart */}
-          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 20 }}>
+          <div style={cardStyle}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 16 }}>7-Day CAP Trend</div>
             <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
               {capTrend.map((d, i) => {
@@ -1926,16 +1895,15 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
               <span style={{ fontSize: 11, color: "#64748B" }}>Started: <b style={{ color: "#10B981" }}>{capTrend.reduce((s, d) => s + d.started, 0)}</b></span>
             </div>
           </div>
-          {/* Top Agents */}
-          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+          <div style={cardStyle}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>Top Agents Today</div>
             {topAgents.length === 0 && <div style={{ color: "#94A3B8", fontSize: 13 }}>No data yet today</div>}
             {topAgents.map(([name, cap], i) => {
-              const pct = maxCap > 0 ? (cap / topAgents[0][1]) * 100 : 0;
+              const pct = topAgents[0][1] > 0 ? (cap / topAgents[0][1]) * 100 : 0;
               return (
                 <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
-                  <span style={{ display: "inline-block", padding: "4px 0", borderRadius: 0, background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12, textAlign: "center", width: 70, borderRadius: 4 }}>{name}</span>
+                  <span style={{ display: "inline-block", padding: "4px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12, textAlign: "center", width: 70, borderRadius: 4 }}>{name}</span>
                   <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
                     <div style={{ height: "100%", width: `${pct}%`, background: i === 0 ? "linear-gradient(90deg, #F59E0B, #FBBF24)" : "linear-gradient(90deg, #CBD5E1, #E2E8F0)", borderRadius: 4, transition: "width 0.3s" }} />
                   </div>
@@ -1943,6 +1911,27 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* ═══ 30-Day Monthly CAP Trend ═══ */}
+        <div style={{ ...cardStyle, marginBottom: 20 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 16 }}>30-Day CAP Trend</div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80 }}>
+            {capTrend30.map((d, i) => {
+              const h = maxCap30 > 0 ? (d.cap / maxCap30) * 100 : 0;
+              const isToday = i === capTrend30.length - 1;
+              return (
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${d.date}: ${d.cap} CAP`}>
+                  <div style={{ width: "100%", height: `${Math.max(h, 2)}%`, background: isToday ? "#6366F1" : d.cap > 0 ? "#93C5FD" : "#F1F5F9", borderRadius: "3px 3px 0 0", minHeight: 2, transition: "height 0.3s" }} />
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+            <span style={{ fontSize: 9, color: "#94A3B8" }}>{capTrend30[0]?.date}</span>
+            <span style={{ fontSize: 9, color: "#94A3B8" }}>30d total: <b style={{ color: "#6366F1" }}>{capTrend30.reduce((s, d) => s + d.cap, 0).toLocaleString()}</b> CAP</span>
+            <span style={{ fontSize: 9, color: "#6366F1", fontWeight: 700 }}>{capTrend30[capTrend30.length - 1]?.date}</span>
           </div>
         </div>
 
@@ -1963,7 +1952,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
           const allAgents = [...new Set([...Object.keys(targets), ...Object.keys(agentMonthCap)])].sort();
 
           return allAgents.length > 0 || isAdmin(user.email) ? (
-            <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 28, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ ...cardStyle, marginBottom: 20 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} CAP Targets vs Actual</div>
                 {isAdmin(user.email) && (
@@ -2019,6 +2008,307 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
           ) : null;
         })()}
 
+        {/* ═══ Quick Links ═══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+          {[
+            { label: "Payments", desc: `${openPayments.length} open`, key: "payments", accent: "#0EA5E9", icon: "💳" },
+            { label: "Customer Payments", desc: `${todayCp.length} today`, key: "customers", accent: "#0EA5E9", icon: "🏦" },
+            { label: "CRG Deals", desc: `${todayNewDeals} today`, key: "crg", accent: "#F59E0B", icon: "📋" },
+            { label: "Daily Cap", desc: `${activeAgents} agents`, key: "dailycap", accent: "#8B5CF6", icon: "📊" },
+            { label: "Offers", desc: `${monthNewDeals} this month`, key: "deals", accent: "#10B981", icon: "🤝" },
+          ].map((q, i) => (
+            <button key={i} onClick={() => onNav(q.key)} style={{ ...cardStyle, cursor: "pointer", border: `1px solid #E2E8F0`, textAlign: "left", display: "flex", alignItems: "center", gap: 12, transition: "all 0.2s" }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = q.accent; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; e.currentTarget.style.transform = "none"; }}
+            >
+              <span style={{ fontSize: 28 }}>{q.icon}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>{q.label}</div>
+                <div style={{ fontSize: 12, color: "#64748B" }}>{q.desc}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS PAGE — All configurable settings
+// ═══════════════════════════════════════════════════════════════
+function SettingsPage({ user, onLogout, onNav, userAccess }) {
+  const now = new Date();
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [diagData, setDiagData] = useState(null);
+
+  const fetchHealth = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/diagnostics`, { headers: authHeaders() });
+      if (res.ok) setDiagData(await res.json());
+    } catch {}
+  };
+  useEffect(() => { if (isAdmin(user.email)) fetchHealth(); }, []);
+
+  const handleBackup = async () => {
+    setBackupStatus("creating...");
+    try {
+      const res = await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) setBackupStatus(`✅ ${data.backup}`);
+      else setBackupStatus("❌ Failed");
+    } catch (e) { setBackupStatus("❌ " + e.message); }
+  };
+
+  const handleDedup = async () => {
+    if (!confirm("Remove duplicate CRG deals and Daily Cap entries?")) return;
+    try {
+      const res = await fetch(`${API_BASE}/admin/dedup`, { method: "POST", headers: authHeaders() });
+      const data = await res.json();
+      if (data.ok) {
+        const r = data.results;
+        alert(`Dedup complete!\n\nCRG Deals: ${r["crg-deals"]?.removed || 0} removed\nDaily Cap: ${r["daily-cap"]?.removed || 0} removed`);
+      }
+    } catch (e) { alert("Failed: " + e.message); }
+  };
+
+  const sectionStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+  const sectionTitle = { fontSize: 15, fontWeight: 700, color: "#334155", marginBottom: 12 };
+  const btnStyle = (bg) => ({ padding: "8px 16px", borderRadius: 8, background: bg, border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 });
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="settings" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#64748B" />
+
+      <main className="blitz-main" style={{ maxWidth: 800, margin: "0 auto", padding: "28px 32px" }}>
+        <h2 style={{ margin: "0 0 20px", fontSize: 20, fontWeight: 800, color: "#334155" }}>⚙️ Settings</h2>
+
+        {/* ═══ Data Management ═══ */}
+        <div style={sectionStyle}>
+          <div style={sectionTitle}>💾 Data Management</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+            <button onClick={handleBackup} style={btnStyle("linear-gradient(135deg,#8B5CF6,#A78BFA)")}>💾 Create Backup Now</button>
+            {isAdmin(user.email) && <button onClick={handleDedup} style={btnStyle("linear-gradient(135deg,#F59E0B,#FBBF24)")}>🧹 Dedup Data</button>}
+            {isAdmin(user.email) && <button onClick={async () => {
+              try {
+                const res = await fetch(`${API_BASE}/telegram/screenshot/all`, { method: "POST", headers: authHeaders() });
+                const data = await res.json();
+                alert(data.ok ? "✅ Screenshots sent!" : "❌ " + (data.error || "Failed"));
+              } catch (e) { alert("❌ " + e.message); }
+            }} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>📸 Send All Screenshots</button>}
+          </div>
+          {backupStatus && <div style={{ fontSize: 12, color: "#64748B", padding: "6px 10px", background: "#F8FAFC", borderRadius: 6 }}>Backup: {backupStatus}</div>}
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run automatically every hour and on every server restart. Always create a manual backup before deploying a new version.</div>
+        </div>
+
+        {/* ═══ CAP Targets ═══ */}
+        {isAdmin(user.email) && (() => {
+          const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
+          const savedTargets = JSON.parse(localStorage.getItem(targetKey) || '{}');
+          const [targets, setTargets] = useState(savedTargets);
+
+          const saveTargets = () => {
+            localStorage.setItem(targetKey, JSON.stringify(targets));
+            alert("✅ Targets saved for " + MONTHS[now.getMonth()]);
+          };
+
+          return (
+            <div style={sectionStyle}>
+              <div style={sectionTitle}>🎯 Monthly CAP Targets — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
+              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 12 }}>Set monthly CAP goals per agent. Progress will be shown on the Dashboard.</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+                {Object.keys(targets).length === 0 && <div style={{ color: "#94A3B8", fontSize: 12 }}>No targets set yet. They'll appear here once agents have CRG deals this month.</div>}
+                {Object.entries(targets).sort().map(([agent, val]) => (
+                  <div key={agent} style={{ display: "flex", alignItems: "center", gap: 6, background: "#F8FAFC", padding: "6px 10px", borderRadius: 8 }}>
+                    <span style={{ display: "inline-block", padding: "2px 8px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{agent}</span>
+                    <input value={val || ""} onChange={e => setTargets(p => ({ ...p, [agent]: e.target.value }))}
+                      style={{ width: 70, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} placeholder="CAP target" />
+                    <button onClick={() => setTargets(p => { const n = {...p}; delete n[agent]; return n; })} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 14 }}>×</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => {
+                  const name = prompt("Agent name:");
+                  if (name && name.trim()) setTargets(p => ({ ...p, [name.trim()]: "" }));
+                }} style={btnStyle("#0EA5E9")}>+ Add Agent</button>
+                <button onClick={saveTargets} style={btnStyle("#10B981")}>Save Targets</button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══ Server Health ═══ */}
+        {isAdmin(user.email) && diagData && (
+          <div style={sectionStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={sectionTitle}>🖥️ Server Health</div>
+              <button onClick={fetchHealth} style={{ padding: "4px 10px", borderRadius: 6, background: "#F1F5F9", border: "1px solid #E2E8F0", cursor: "pointer", fontSize: 11, color: "#64748B" }}>Refresh</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
+              {[
+                { label: "Uptime", value: diagData.uptime ? `${Math.floor(diagData.uptime / 3600)}h ${Math.floor((diagData.uptime % 3600) / 60)}m` : "N/A", color: "#10B981" },
+                { label: "Heap Used", value: diagData.memory?.heapUsed ? `${Math.round(diagData.memory.heapUsed / 1048576)}MB` : "N/A", color: diagData.memory?.heapUsed > 200000000 ? "#EF4444" : "#10B981" },
+                { label: "RSS Memory", value: diagData.memory?.rss ? `${Math.round(diagData.memory.rss / 1048576)}MB` : "N/A", color: "#0EA5E9" },
+                { label: "WS Clients", value: diagData.wsClients ?? "N/A", color: "#8B5CF6" },
+                { label: "Sessions", value: diagData.sessions ?? "N/A", color: "#F59E0B" },
+                { label: "TG Errors", value: diagData.telegramErrors ?? "0", color: (diagData.telegramErrors || 0) > 5 ? "#EF4444" : "#10B981" },
+              ].map((c, i) => (
+                <div key={i} style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${c.color}` }}>
+                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ About ═══ */}
+        <div style={sectionStyle}>
+          <div style={sectionTitle}>ℹ️ About</div>
+          <div style={{ fontSize: 12, color: "#64748B", lineHeight: 1.8 }}>
+            <div><b>Version:</b> {VERSION}</div>
+            <div><b>User:</b> {user.name} ({user.email})</div>
+            <div><b>Role:</b> {isAdmin(user.email) ? "Admin" : "User"}</div>
+            <div><b>Pages:</b> {(userAccess || []).join(", ")}</div>
+          </div>
+        </div>
+
+        {/* ═══ Navigation ═══ */}
+        {isAdmin(user.email) && (
+          <div style={sectionStyle}>
+            <div style={sectionTitle}>🔧 Admin Quick Access</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => onNav("admin")} style={btnStyle("#DC2626")}>👥 User Management</button>
+              <button onClick={async () => {
+                try {
+                  const res = await fetch(`${API_BASE}/admin/logs/download`, { headers: authHeaders() });
+                  const blob = await res.blob();
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a"); a.href = url; a.download = `blitz-logs-${new Date().toISOString().split("T")[0]}.json`; a.click();
+                } catch (e) { alert("Failed: " + e.message); }
+              }} style={btnStyle("#0EA5E9")}>📥 Download Logs</button>
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, userAccess }) {
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editPay, setEditPay] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [paySort, setPaySort] = useState("manual");
+  const availStatuses = getAvailableStatuses(user.email);
+
+  const handlePayMove = (id, direction) => {
+    setPayments(prev => {
+      const arr = [...prev];
+      const idx = arr.findIndex(p => p.id === id);
+      if (idx < 0) return prev;
+      if (direction === "up" && idx > 0) [arr[idx], arr[idx - 1]] = [arr[idx - 1], arr[idx]];
+      if (direction === "down" && idx < arr.length - 1) [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+      return arr;
+    });
+  };
+
+  const handlePaySortAlpha = () => {
+    if (paySort === "alpha") { setPaySort("manual"); return; }
+    setPaySort("alpha");
+    setPayments(prev => [...prev].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true })));
+  };
+
+  const handleStatusChange = (id, newStatus) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const updated = { ...p, status: newStatus };
+      if (newStatus === "Paid") {
+        updated.month = month;
+        updated.year = year;
+        if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
+        // Notification sent by server - removed duplicate from frontend
+      } else {
+        telegramNotify(`🔄 Payment (Aff ${p.invoice}) status → ${newStatus} by ${user.name}`);
+      }
+      return updated;
+    }));
+  };
+
+  const matchSearch = p => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
+  };
+
+  // Open payments: any payment NOT "Paid"
+  const openPayments = payments.filter(p => OPEN_STATUSES.includes(p.status) && matchSearch(p));
+  // Paid payments: filtered by selected month
+  const paidPayments = payments.filter(p => p.status === "Paid" && p.month === month && p.year === year && matchSearch(p));
+
+  const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const paidTotal = paidPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  const prevMonth = () => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); };
+  const nextMonth = () => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); };
+
+  const handleSave = form => { 
+    if (editPay) { 
+      const updated = { ...editPay, ...form }; 
+      // Send telegram notification when status changes to Paid
+      if (form.status === "Paid" && editPay.status !== "Paid") { 
+        updated.month = month; 
+        
+        updated.year = year; 
+        if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
+        // Send detailed payment notification
+        telegramNotify(`💰 PAYMENT Aff ${form.invoice} marked as PAID 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Paid by: ${user.name}\nPayment Hash: ${form.paymentHash || 'N/A'}`);
+      } else if (form.status !== "Paid") {
+        // Notify for other status changes
+        telegramNotify(`🔄 Payment (Aff ${form.invoice}) updated to ${form.status} by ${user.name}`);
+      }
+      setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
+    } else { 
+      // New payment added
+      const newPayment = { ...form, id: genId(), month, year };
+      setPayments(prev => [...prev, newPayment]);
+      // Send notification for new payment
+      telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
+    } 
+    setModalOpen(false); 
+    setEditPay(null); 
+  };
+
+  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+
+  // Bulk actions
+  const handleBulkDuplicate = (ids) => {
+    setPayments(prev => {
+      const copies = [];
+      ids.forEach(id => {
+        const orig = prev.find(p => p.id === id);
+        if (orig) copies.push({ ...orig, id: genId(), status: "Open", paymentHash: "", paidDate: new Date().toISOString().split("T")[0], updatedAt: Date.now() });
+      });
+      return [...prev, ...copies];
+    });
+  };
+  const handleBulkArchive = (ids) => {
+    if (!confirm(`Archive ${ids.length} invoice(s)? They will be marked as Archived.`)) return;
+    setPayments(prev => prev.map(p => ids.includes(p.id) ? { ...p, status: "Archived", updatedAt: Date.now() } : p));
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="payments" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
+
+      <main className="blitz-main" style={{ maxWidth: 1240, margin: "0 auto", padding: "28px 32px" }}>
         {/* ═══ Payments Section ═══ */}
         <h2 style={{ margin: "0 0 16px", fontSize: 18, fontWeight: 700, color: "#334155" }}>Payments</h2>
         {/* Top bar */}
@@ -2069,12 +2359,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, crgD
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -2315,48 +2605,7 @@ const CP_STATUS_COLORS = {
 
 const CP_TYPE_OPTIONS = ["Brand Payment", "Affiliate Refund"];
 
-const CP_INITIAL = [
-  { id: genId(), invoice: "Swin", paidDate: "2026-02-02", status: "Received", amount: "21436", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "12Mark", paidDate: "2026-02-02", status: "Received", amount: "8120", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Tdex", paidDate: "2026-02-02", status: "Received", amount: "5150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Miltonia", paidDate: "2026-02-02", status: "Received", amount: "3537", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "No limit", paidDate: "2026-02-03", status: "Received", amount: "23514", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "GLB", paidDate: "2026-02-03", status: "Received", amount: "500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Legion", paidDate: "2026-02-03", status: "Received", amount: "1760", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "EMP313", paidDate: "2026-02-03", status: "Received", amount: "2500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Bettebrandz", paidDate: "2026-02-03", status: "Received", amount: "272", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Bettebrandz", paidDate: "2026-02-03", status: "Received", amount: "2200", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Capitan", paidDate: "2026-02-04", status: "Received", amount: "25023", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Z", paidDate: "2026-02-04", status: "Received", amount: "1290", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Captain", paidDate: "2026-02-04", status: "Received", amount: "6806", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Glb", paidDate: "2026-02-04", status: "Received", amount: "2467", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Imperius", paidDate: "2026-02-04", status: "Received", amount: "1200", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Legion", paidDate: "2026-02-04", status: "Received", amount: "1465", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Legion", paidDate: "2026-02-04", status: "Received", amount: "690", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "EMP", paidDate: "2026-02-04", status: "Received", amount: "3700", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Clickbait", paidDate: "2026-02-04", status: "Received", amount: "1500", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "212", paidDate: "2026-02-05", status: "Refund", amount: "-650", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "TRADETRADITION", paidDate: "2026-02-05", status: "Refund", amount: "-1322", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "WhiteRhino", paidDate: "2026-02-05", status: "Received", amount: "2030", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "GLB", paidDate: "2026-02-05", status: "Received", amount: "2102", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Medianova", paidDate: "2026-02-06", status: "Received", amount: "5300", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Media now", paidDate: "2026-02-06", status: "Received", amount: "1600", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Unit", paidDate: "2026-02-06", status: "Received", amount: "2400", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "12Mark", paidDate: "2026-02-06", status: "Received", amount: "10150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Ucases Tdex", paidDate: "2026-02-09", status: "Received", amount: "10000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Tdex FR", paidDate: "2026-02-09", status: "Received", amount: "2935", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "fintrix", paidDate: "2026-02-09", status: "Received", amount: "3000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Swin", paidDate: "2026-02-10", status: "Received", amount: "6845", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "madnet", paidDate: "2026-02-10", status: "Received", amount: "367", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Capitan", paidDate: "2026-02-10", status: "Received", amount: "33505", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "capitan", paidDate: "2026-02-10", status: "Received", amount: "342", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "swin", paidDate: "2026-02-10", status: "Received", amount: "11731", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Avelux", paidDate: "2026-02-10", status: "Received", amount: "3000", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "celestia", paidDate: "2026-02-10", status: "Received", amount: "1863", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Z", paidDate: "2026-02-11", status: "Received", amount: "2700", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "Glb", paidDate: "2026-02-11", status: "Received", amount: "527", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-  { id: genId(), invoice: "12Mark", paidDate: "2026-02-11", status: "Received", amount: "10150", openBy: "Rose", instructions: "", month: 1, year: 2026 },
-];
+const CP_INITIAL = []; // REMOVED: hardcoded demo data caused production data loss
 
 function CPForm({ payment, onSave, onClose, userName }) {
   const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
@@ -2372,7 +2621,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
   return (
     <>
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
-        <Field label="Invoice (Name)"><input style={inp} value={f.invoice} onChange={e => s("invoice", e.target.value)} placeholder="e.g. Swin, 12Mark" /></Field>
+        <Field label="Brand Name"><input style={inp} value={f.invoice} onChange={e => s("invoice", e.target.value)} placeholder="e.g. Swin, 12Mark" /></Field>
         <Field label="Invoice Amount ($)"><input style={inp} type="number" value={f.amount} onChange={e => s("amount", e.target.value)} placeholder="0.00" /></Field>
         <Field label="Fee (number or %)">
           <input style={inp} value={f.fee || ""} onChange={e => s("fee", e.target.value)} placeholder="e.g. 2% or 50" />
@@ -2413,12 +2662,17 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove }) {
+function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
+  const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
     ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
     : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
   const total = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const toggleSelect = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = () => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(p => p.id)));
+  const clearSelection = () => setSelected(new Set());
+  const selArr = [...selected];
   const dates = payments.filter(p => p.paidDate).map(p => new Date(p.paidDate)).sort((a, b) => a - b);
   const fmtShort = d => { const m = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return `${m[d.getMonth()]} ${d.getDate()}`; };
   const dateRange = dates.length > 0 ? (dates.length === 1 ? fmtShort(dates[0]) : `${fmtShort(dates[0])} - ${fmtShort(dates[dates.length - 1])}`) : "";
@@ -2482,13 +2736,14 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
         <colgroup>
+          <col style={{ width: "3%" }} />
           <col style={{ width: "6%" }} />
           <col style={{ width: "7%" }} />
-          <col style={{ width: "9%" }} />
+          <col style={{ width: "8%" }} />
           <col style={{ width: "10%" }} />
           <col style={{ width: "8%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "8%" }} />
+          <col style={{ width: "5%" }} />
+          <col style={{ width: "7%" }} />
           <col style={{ width: "14%" }} />
           <col style={{ width: "14%" }} />
           <col style={{ width: "10%" }} />
@@ -2496,17 +2751,26 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
-            {["Invoice","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+            <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
+              <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
+            </th>
+            {["Brand Name","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
         <tbody>
-          {sorted.map((p, i) => (
-            <tr key={p.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
+          {sorted.map((p, i) => {
+            const isSel = selected.has(p.id);
+            return (
+            <tr key={p.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s", background: isSel ? "rgba(14,165,233,0.1)" : "transparent", borderLeft: isSel ? "3px solid #0EA5E9" : "3px solid transparent" }}
               onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+              onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#F8FAFC"; }}
+              onMouseLeave={e => e.currentTarget.style.background = isSel ? "rgba(14,165,233,0.1)" : "transparent"}
             >
+              <td style={{ padding: "4px 4px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
+                <input type="checkbox" checked={isSel} onChange={() => toggleSelect(p.id)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
+              </td>
               <td style={{ padding: "7px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
@@ -2548,7 +2812,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
                 </div>
               </td>
             </tr>
-          ))}
+          );})}
         </tbody>
       </table>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, padding: "12px 20px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", flexWrap: "wrap" }}>
@@ -2557,6 +2821,11 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{total.toLocaleString("en-US")}$</span>
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
+      <BulkActionBar count={selected.size} onClear={clearSelection}
+        onDelete={() => { if (confirm(`Delete ${selected.size} selected?`)) { selArr.forEach(id => onDelete(id)); clearSelection(); } }}
+        onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
+        onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
+      />
     </div>
   );
 }
@@ -2621,6 +2890,18 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
 
   const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
+  const handleCpBulkDuplicate = (ids) => {
+    setPayments(prev => {
+      const copies = [];
+      ids.forEach(id => { const o = prev.find(p => p.id === id); if (o) copies.push({ ...o, id: genId(), status: "Open", paymentHash: "", updatedAt: Date.now() }); });
+      return [...prev, ...copies];
+    });
+  };
+  const handleCpBulkArchive = (ids) => {
+    if (!confirm(`Archive ${ids.length} invoice(s)?`)) return;
+    setPayments(prev => prev.map(p => ids.includes(p.id) ? { ...p, status: "Archived", updatedAt: Date.now() } : p));
+  };
+
   const handleCpStatusChange = (id, newStatus) => {
     setPayments(prev => prev.map(p => {
       if (p.id !== id) return p;
@@ -2683,11 +2964,11 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -2710,36 +2991,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
 }
 
 /* ── CRG Deals Page ── */
-const CRG_INITIAL = [
-  // 13/02 Friday
-  { id: genId(), affiliate: "122 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "5", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "123 DE", brokerCap: "Ave 15", manageAff: "Katie", cap: "15", madeSale: "Katie", started: true, capReceived: "4", ftd: "", hours: "10-19 gmt+3", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "134 GCC", brokerCap: "Capex 8", manageAff: "Katie", cap: "8", madeSale: "Katie", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+3", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 10", manageAff: "Joy", cap: "10", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "10-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 10", manageAff: "Joy", cap: "10", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 20", manageAff: "Joy", cap: "20", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 15", manageAff: "Alex", cap: "15", madeSale: "Oksana", started: true, capReceived: "15", ftd: "2", hours: "11-19 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "GLB 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "15", ftd: "1", hours: "12-18 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Leadstream 10", manageAff: "Alex", cap: "10", madeSale: "Joy", started: true, capReceived: "10", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "MN FR 20", manageAff: "Alex", cap: "20", madeSale: "Katie", started: true, capReceived: "20", ftd: "1", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "211 UK", brokerCap: "Capitan 10", manageAff: "Katie", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "10-16 gmt+2", deal: "", funnel: "", date: "2026-02-13" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", deal: "", funnel: "", date: "2026-02-13" },
-  // 19/02 Thursday
-  { id: genId(), affiliate: "33 AU", brokerCap: "Swin 15", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "5", ftd: "", hours: "04-13 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "47 DE", brokerCap: "Capitan 20", manageAff: "Katie", cap: "20", madeSale: "Alex", started: true, capReceived: "1", ftd: "", hours: "11-17 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "64 MY", brokerCap: "12Mark 10", manageAff: "Oksana", cap: "10", madeSale: "Oksana", started: true, capReceived: "8", ftd: "1", hours: "03-14 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "EMP 15", manageAff: "Joy", cap: "15", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-22 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Nexus 11", manageAff: "Joy", cap: "11", madeSale: "Oksana", started: false, capReceived: "", ftd: "", hours: "10-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "168 SI", brokerCap: "Unit 20", manageAff: "Joy", cap: "20", madeSale: "John", started: false, capReceived: "", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "171 AU", brokerCap: "Swin 5", manageAff: "Joy", cap: "10", madeSale: "Alex", started: true, capReceived: "10", ftd: "1", hours: "04-11:30 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 AU", brokerCap: "Swin 10", manageAff: "Alex", cap: "15", madeSale: "John", started: true, capReceived: "1", ftd: "", hours: "04-13 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "Avelux 20", manageAff: "Alex", cap: "20", madeSale: "Oksana", started: true, capReceived: "3", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "196 HR", brokerCap: "EMP 15", manageAff: "Oksana", cap: "15", madeSale: "Oksana", started: true, capReceived: "8", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "196 HR", brokerCap: "Imperious 10", manageAff: "Oksana", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "211 FR", brokerCap: "Avelux 10", manageAff: "Katie", cap: "10", madeSale: "Oksana", started: true, capReceived: "10", ftd: "", hours: "10-19 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "211 UK", brokerCap: "Swin 10", manageAff: "Katie", cap: "10", madeSale: "John", started: true, capReceived: "3", ftd: "", hours: "10-18 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-  { id: genId(), affiliate: "175 FR", brokerCap: "FPmarket 9", manageAff: "Alex", cap: "9", madeSale: "Oksana", started: true, capReceived: "1", ftd: "", hours: "11-20 gmt+2", deal: "", funnel: "", date: "2026-02-19" },
-];
+const CRG_INITIAL = []; // REMOVED: hardcoded demo data caused production data loss
 
 
 function CRGForm({ deal, allDeals, onSave, onClose, defaultDate }) {
@@ -3588,23 +3840,10 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 }
 
 /* ── Deals Page ── */
-const DEALS_INITIAL = [
-  { id: genId(), affiliate: "17", country: "DE", price: "1800", crg: "15", dealType: "CRG", deduction: "Upto 5%", funnels: "Immediate mix", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "17", country: "JP", price: "1450", crg: "112", dealType: "CRG", deduction: "Upto 10%", funnels: "Quantum", source: "Twitter", date: "2026-02-22" },
-  { id: genId(), affiliate: "14", country: "BR", price: "750", crg: "4", dealType: "CRG", deduction: "Upto 5%", funnels: "Trade Pro Air", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "71", country: "FR", price: "1250", crg: "10", dealType: "CRG", deduction: "Upto 10%", funnels: "Bitradeproai", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "71", country: "KR", price: "1300", crg: "8", dealType: "CRG", deduction: "", funnels: "Immediaterise", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "86", country: "PL", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Google Finance AI", source: "", date: "2026-02-22" },
-  { id: genId(), affiliate: "86", country: "DK", price: "1450", crg: "13", dealType: "CRG", deduction: "", funnels: "Google Finance AI", source: "", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "IT", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "AU", price: "1350", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "SE", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "NL", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
-  { id: genId(), affiliate: "28", country: "FI", price: "1450", crg: "12", dealType: "CRG", deduction: "", funnels: "Passive income", source: "Google", date: "2026-02-22" },
-];
+const DEALS_INITIAL = []; // REMOVED: hardcoded demo data caused production data loss
 
-function DealsForm({ deal, allDeals, onSave, onClose }) {
-  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", source: "", deduction: "", date: new Date().toISOString().split("T")[0] });
+function DealsForm({ deal, allDeals, onSave, onClose, userName }) {
+  const [f, setF] = useState(deal || { affiliate: "", country: "", price: "", crg: "", dealType: "CRG", funnels: "", source: "", deduction: "", date: new Date().toISOString().split("T")[0], openBy: userName || "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -3661,6 +3900,9 @@ function DealsForm({ deal, allDeals, onSave, onClose }) {
         </Field>
         <Field label="Date">
           <input style={inp} type="date" value={f.date || ""} onChange={e => s("date", e.target.value)} />
+        </Field>
+        <Field label="Open By">
+          <NameCombo value={f.openBy || ""} onChange={v => s("openBy", v)} placeholder="e.g. Sophia" />
         </Field>
       </div>
       {dupWarning && <div style={{ color: "#B45309", fontSize: 13, padding: "8px 12px", background: "#FFFBEB", borderRadius: 8, marginBottom: 8, border: "1px solid #FDE68A", fontWeight: 600 }}>{dupWarning}</div>}
@@ -3732,7 +3974,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
   const matchSearch = d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [d.affiliate, d.country, d.funnels, d.source, d.dealType, d.deduction].some(v => (v || "").toLowerCase().includes(q));
+    return [d.affiliate, d.country, d.funnels, d.source, d.dealType, d.deduction, d.openBy].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const filtered = deals.filter(matchSearch);
@@ -3800,6 +4042,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
                     { key: "funnels", label: "Funnels" },
                     { key: "source", label: "Source" },
                     { key: "date", label: "Date" },
+                    { key: "openBy", label: "Open By" },
                     { key: null, label: "Actions" },
                   ].map(h =>
                     <th key={h.label} onClick={h.key ? () => handleColumnSort(h.key) : undefined}
@@ -3818,7 +4061,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={10} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No offers yet. Click "New Offer" to add one.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No offers yet. Click "New Offer" to add one.</td></tr>
                 )}
                 {sorted.map((d, i) => (
                   <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
@@ -3880,6 +4123,10 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
                     <td style={{ padding: "12px 14px", textAlign: "center", fontSize: 12, color: "#64748B", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>
                       {d.date ? (() => { const dt = new Date(d.date + "T00:00:00"); return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${dt.getFullYear()}`; })() : ""}
                     </td>
+                    {/* Open By */}
+                    <td style={{ padding: "12px 14px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
+                      {d.openBy ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(d.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{d.openBy}</span> : <span style={{ color: "#CBD5E1" }}>—</span>}
+                    </td>
                     {/* Actions */}
                     <td style={{ padding: "8px 8px" }}>
                       <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center" }}>
@@ -3908,7 +4155,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
 
       {modalOpen && (
         <Modal title={editDeal ? "Edit Offer" : "New Offer"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
-          <DealsForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} />
+          <DealsForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} userName={user.name} />
         </Modal>
       )}
       {delConfirm && (
@@ -3983,7 +4230,7 @@ function AppInner() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
-  const [page, setPage] = useState("dashboard");
+  const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
   const skipSave = useRef(true);
   const serverFetchDone = useRef(false); // CRITICAL: block saves until first server fetch completes
@@ -4093,12 +4340,12 @@ function AppInner() {
 
           // DATA TABLES \u2014 merge by ID
           const tables = [
-            { key: 'payments', srv: sp, setter: setPayments, fallback: INITIAL },
-            { key: 'customer-payments', srv: scp, setter: setCpPayments, fallback: CP_INITIAL },
-            { key: 'crg-deals', srv: scrg, setter: setCrgDeals, fallback: CRG_INITIAL },
-            { key: 'daily-cap', srv: sdc, setter: setDcEntries, fallback: DC_INITIAL },
-            { key: 'deals', srv: sdl, setter: setDealsData, fallback: DEALS_INITIAL },
-            { key: 'wallets', srv: swl, setter: setWalletsData, fallback: null },
+            { key: 'payments', srv: sp, setter: setPayments },
+            { key: 'customer-payments', srv: scp, setter: setCpPayments },
+            { key: 'crg-deals', srv: scrg, setter: setCrgDeals },
+            { key: 'daily-cap', srv: sdc, setter: setDcEntries },
+            { key: 'deals', srv: sdl, setter: setDealsData },
+            { key: 'wallets', srv: swl, setter: setWalletsData },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -4109,9 +4356,8 @@ function AppInner() {
             } else if (local[t.key] && local[t.key].length > 0) {
               t.setter(local[t.key]);
               pushTasks.push(apiSave(t.key, local[t.key], user?.email));
-            } else if (t.fallback && t.fallback.length > 0) {
-              t.setter(t.fallback);
             }
+            // NO FALLBACK — if both server and localStorage empty, state stays [] (safe)
           }
 
           if (pushTasks.length > 0) await Promise.all(pushTasks);
@@ -4192,7 +4438,7 @@ function AppInner() {
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && dealsData.length > 0 && JSON.stringify(dealsData) !== initialDealsRef.current) apiSave('deals', dealsData, user?.email); }, [dealsData]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
 
-  const handleLogout = () => { clearSession(); setUser(null); setPage("dashboard"); };
+  const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
   if (!loaded) return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans',sans-serif" }}>
@@ -4213,7 +4459,7 @@ function AppInner() {
 
   const userAccess = getPageAccess(user);
   const canAccess = pg => userAccess.includes(pg);
-  const firstPage = userAccess[0] || "dashboard";
+  const firstPage = userAccess[0] || "overview";
 
   // Redirect to first allowed page if current page is blocked
   if (page !== "admin" && !canAccess(page)) {
@@ -4222,11 +4468,13 @@ function AppInner() {
   }
 
   if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
+  if (page === "payments" && canAccess("payments")) return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} userAccess={userAccess} /></>);
   if (page === "customers" && canAccess("customers")) return (<><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
-  return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
+  if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
+  return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
 }
 
 export default function App() {
