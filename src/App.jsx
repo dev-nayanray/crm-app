@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.06.1";
+const VERSION = "5.06.2";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1062,7 +1062,7 @@ function BulkActionBar({ count, onDelete, onDuplicate, onArchive, onClear }) {
   );
 }
 
-function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive }) {
+function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
@@ -1248,7 +1248,7 @@ function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, st
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
       <BulkActionBar count={selected.size} onClear={clearSelection}
-        onDelete={() => { if (confirm(`Delete ${selected.size} selected invoice(s)?`)) { selArr.forEach(id => onDelete(id)); clearSelection(); } }}
+        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected payment(s)?`)) { selArr.forEach(id => onBulkDelete(id)); clearSelection(); } } : null}
         onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
         onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
       />
@@ -2359,12 +2359,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -2662,7 +2662,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive }) {
+function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
@@ -2822,7 +2822,7 @@ function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, em
         <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase" }}>sum</span>
       </div>
       <BulkActionBar count={selected.size} onClear={clearSelection}
-        onDelete={() => { if (confirm(`Delete ${selected.size} selected?`)) { selArr.forEach(id => onDelete(id)); clearSelection(); } }}
+        onDelete={onBulkDelete ? () => { if (confirm(`Delete ${selected.size} selected?`)) { selArr.forEach(id => onBulkDelete(id)); clearSelection(); } } : null}
         onDuplicate={onDuplicate ? () => { onDuplicate(selArr); clearSelection(); } : null}
         onArchive={onArchive ? () => { onArchive(selArr); clearSelection(); } : null}
       />
@@ -2964,11 +2964,11 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
       </main>
 
