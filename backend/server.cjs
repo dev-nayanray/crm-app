@@ -37,7 +37,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "5.00";
+const VERSION = "5.05";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -110,7 +110,7 @@ const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
-const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-4744920512";
+const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
 const MONITORING_GROUP_CHAT_ID = process.env.MONITORING_CHAT_ID || "-1002832299846";
 
 // Helper function to validate and normalize chat ID for supergroups
@@ -443,10 +443,10 @@ function cleanupBackups() {
   }
 }
 
-// Backup every 15 minutes
-setInterval(createBackup, 15 * 60 * 1000);
-// Backup on startup
-setTimeout(createBackup, 5000);
+// Backup every 1 hour
+setInterval(createBackup, 60 * 60 * 1000);
+// Backup on startup — CRITICAL: creates a snapshot before any new client code can write
+setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)), 2000);
 
 // ═══════════════════════════════════════════════════════════════
 // 6. EXPRESS + SECURITY MIDDLEWARE
@@ -861,6 +861,15 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected`);
         return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
       }
+    }
+
+    // ═══ DATA SHRINKAGE PROTECTION ═══
+    // If client sends significantly fewer records than server has, it likely has stale/demo data.
+    // Create a safety backup BEFORE merging so we can always recover.
+    const existingBeforeMerge = readJSON(file, []);
+    if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5) {
+      console.log(`🛡️ SHRINKAGE WARNING [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Creating safety backup.`);
+      createBackup(`safety-${ep}-${Date.now()}`);
     }
 
     // SPECIAL HANDLING: customer-payments status change notifications
@@ -1960,39 +1969,31 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     // 15. SCREENSHOT FUNCTIONALITY FOR MONITORING
     // ═══════════════════════════════════════════════════════════════
     
-    // /todaycrgcap - Send CRG Deals screenshot
+    // /todaycrgcap - Send CRG Deals report
     bot.onText(/\/todaycrgcap/, async (msg) => {
-      bot.sendMessage(msg.chat.id, "📸 Capturing CRG Deals screenshot...");
+      bot.sendMessage(msg.chat.id, "📸 Generating CRG report...");
       try {
-        const screenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
-        if (screenshot) {
-          await bot.sendPhoto(msg.chat.id, screenshot, { caption: `📊 CRG Deals Report - ${new Date().toLocaleDateString()}` });
-        } else {
-          bot.sendMessage(msg.chat.id, "❌ Failed to capture screenshot");
-        }
+        const result = await screenshotModule.sendReport(bot, msg.chat.id, 'crg', readJSON);
+        console.log(`CRG report sent via ${result.method}`);
       } catch (err) {
-        console.error('Screenshot error:', err);
+        console.error('Report error:', err);
         bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
       }
     });
     
-    // /todayagentscap - Send Daily Cap screenshot
+    // /todayagentscap - Send Daily Cap report
     bot.onText(/\/todayagentscap/, async (msg) => {
-      bot.sendMessage(msg.chat.id, "📸 Capturing Daily Agents Cap screenshot...");
+      bot.sendMessage(msg.chat.id, "📸 Generating Agents report...");
       try {
-        const screenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
-        if (screenshot) {
-          await bot.sendPhoto(msg.chat.id, screenshot, { caption: `📊 Daily Agents Cap Report - ${new Date().toLocaleDateString()}` });
-        } else {
-          bot.sendMessage(msg.chat.id, "❌ Failed to capture screenshot");
-        }
+        const result = await screenshotModule.sendReport(bot, msg.chat.id, 'agents', readJSON);
+        console.log(`Agents report sent via ${result.method}`);
       } catch (err) {
-        console.error('Screenshot error:', err);
+        console.error('Report error:', err);
         bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
       }
     });
     
-    // Initialize scheduled screenshot service
+    // Initialize scheduled reports
     screenshotModule.setupScheduledScreenshots(bot, TELEGRAM_TOKEN, MONITORING_GROUP_CHAT_ID, readJSON, screenshotModule.captureDataScreenshot);
     console.log("📸 Screenshot functionality enabled");
   } catch (err) {
@@ -2111,18 +2112,11 @@ app.get("/api/telegram/test", (req, res) => {
 app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
-    const screenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
-    if (screenshot) {
-      // Send to monitoring group
-      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, screenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
-      // Also send to finance group
-      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, screenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
-      res.json({ ok: true, message: "CRG screenshot sent to Telegram" });
-    } else {
-      res.json({ ok: false, error: "Failed to capture screenshot" });
-    }
+    const result = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'crg', readJSON);
+    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
+    res.json({ ok: true, message: `CRG report sent (${result.method})` });
   } catch (err) {
-    console.error('CRG screenshot error:', err);
+    console.error('CRG report error:', err);
     res.json({ ok: false, error: err.message });
   }
 });
@@ -2131,18 +2125,11 @@ app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
 app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
-    const screenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
-    if (screenshot) {
-      // Send to monitoring group
-      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, screenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
-      // Also send to finance group
-      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, screenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
-      res.json({ ok: true, message: "Agents screenshot sent to Telegram" });
-    } else {
-      res.json({ ok: false, error: "Failed to capture screenshot" });
-    }
+    const result = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'agents', readJSON);
+    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
+    res.json({ ok: true, message: `Agents report sent (${result.method})` });
   } catch (err) {
-    console.error('Agents screenshot error:', err);
+    console.error('Agents report error:', err);
     res.json({ ok: false, error: err.message });
   }
 });
@@ -2151,30 +2138,13 @@ app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
 app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
-    const crgScreenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
-    const agentsScreenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
-    
-    const results = [];
-    
-    if (crgScreenshot) {
-      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, crgScreenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
-      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, crgScreenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
-      results.push("CRG");
-    }
-    
-    if (agentsScreenshot) {
-      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, agentsScreenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
-      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, agentsScreenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
-      results.push("Agents");
-    }
-    
-    if (results.length > 0) {
-      res.json({ ok: true, message: `Screenshots sent: ${results.join(', ')}` });
-    } else {
-      res.json({ ok: false, error: "Failed to capture screenshots" });
-    }
+    const r1 = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'crg', readJSON);
+    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
+    const r2 = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'agents', readJSON);
+    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
+    res.json({ ok: true, message: `Reports sent: CRG (${r1.method}), Agents (${r2.method})` });
   } catch (err) {
-    console.error('Screenshot error:', err);
+    console.error('Report error:', err);
     res.json({ ok: false, error: err.message });
   }
 });
@@ -2585,6 +2555,15 @@ async function handleOfferMessage(bot, msg, messageText) {
 
 // ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
+// MANUAL BACKUP — trigger from Admin panel before deploying new version
+// ═══════════════════════════════════════════════════════════════
+app.post("/api/admin/backup", requireAdmin, async (req, res) => {
+  const label = "manual-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const ts = createBackup(label);
+  console.log(`📦 Manual backup triggered by ${req.userSession.email}: ${ts}`);
+  res.json({ ok: true, backup: ts, message: "Backup created successfully" });
+});
+
 // DATA DEDUPLICATION — clean existing duplicates (admin only)
 // ═══════════════════════════════════════════════════════════════
 app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
