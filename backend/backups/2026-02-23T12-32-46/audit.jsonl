@@ -1,4 +1,0 @@
-{"timestamp":"2026-02-23T11:48:17.082Z","table":"auth","action":"login_success","user":"y0505300530@gmail.com","details":"IP: 127.0.0.1","ip":null}
-{"timestamp":"2026-02-23T11:48:30.763Z","table":"payments","action":"conflict_lww","user":"test","details":"Client v1 < Server v1771847190810. Last-writer-wins applied.","ip":null}
-{"timestamp":"2026-02-23T11:48:30.765Z","table":"payments","action":"update","user":"test","details":"1 records","ip":null}
-{"timestamp":"2026-02-23T11:48:48.132Z","table":"payments","action":"update","user":"test","details":"1 records","ip":null}

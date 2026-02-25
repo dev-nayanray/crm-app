@@ -18,6 +18,7 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
+const screenshotModule = require("./screenshot.cjs");
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -104,9 +105,65 @@ seedUsers();
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
-const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-2183891044";
+const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
 const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
+const MONITORING_GROUP_CHAT_ID = process.env.MONITORING_CHAT_ID || "-1002832299846";
+
+// Helper function to validate and normalize chat ID for supergroups
+function normalizeChatId(chatId) {
+  if (!chatId) return null;
+  const idStr = String(chatId).trim();
+  
+  // Check if it's a valid numeric ID
+  if (!/^-?\d+$/.test(idStr)) {
+    return null;
+  }
+  
+  // For supergroups in Telegram, the format should be -100XXXXXXXXXX
+  // If the ID starts with just - (not -100), it's likely a supergroup that needs -100 prefix
+  let normalizedId = idStr;
+  if (idStr.startsWith('-') && !idStr.startsWith('-100')) {
+    // Extract the numeric part and add -100 prefix
+    const numericPart = idStr.substring(1); // Remove the leading -
+    normalizedId = `-100${numericPart}`;
+    console.log(`🔧 Normalized chat ID: ${idStr} -> ${normalizedId}`);
+  }
+  
+  return normalizedId;
+}
+
+// Get all possible chat ID formats for comparison
+function getChatIdVariants(chatId) {
+  const idStr = String(chatId).replace(/-/g, '');
+  return [
+    chatId,                           // Original
+    `-100${idStr}`,                   // With -100 prefix
+    `-${idStr.replace(/^100/, '')}`, // Without -100 if present
+  ];
+}
+
+// Test and log all configured chat IDs on startup
+function testChatIds() {
+  const groups = [
+    { name: 'Finance', id: FINANCE_GROUP_CHAT_ID },
+    { name: 'Brands', id: BRANDS_GROUP_CHAT_ID },
+    { name: 'Offer', id: OFFER_GROUP_CHAT_ID },
+    { name: 'Open Payment', id: OPEN_PAYMENT_GROUP_CHAT_ID },
+    { name: 'Customer Payment', id: CUSTOMER_PAYMENT_GROUP_CHAT_ID },
+    { name: 'Monitoring', id: MONITORING_GROUP_CHAT_ID },
+  ];
+  
+  console.log("\n📱 Configured Telegram Groups:");
+  groups.forEach(g => {
+    const variants = getChatIdVariants(g.id);
+    console.log(`   ${g.name}: ${g.id} (variants: ${variants.join(', ')})`);
+  });
+  console.log("");
+}
+
+// Run chat ID diagnostics
+testChatIds();
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
@@ -707,9 +764,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (!oldP) {
       // New payment - notify based on status
       if (p.status === "Paid") {
-        // Send to Customer Payment group (Brands) -1002796530029
-        sendTelegramNotification(formatPaidPaymentMessage(p), CUSTOMER_PAYMENT_GROUP_CHAT_ID);
-        // Send to Affiliate group -1002830517753
+        // Send to Affiliate group ONLY -1002830517753
+        // Removed: send to Brands group for Paid status
         sendAffiliatePaymentNotification(p, true);
 } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
         // Send to Customer Payment group (Brands) only - removed Affiliate group notification
@@ -721,9 +777,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       }
     } else if (oldP.status !== p.status) {
       if (p.status === "Paid" && oldP.status !== "Paid") {
-        // Send to Customer Payment group (Brands) -1002796530029
-        sendTelegramNotification(formatPaidPaymentMessage(p), CUSTOMER_PAYMENT_GROUP_CHAT_ID);
-        // Send to Affiliate group -1002830517753
+        // Send to Affiliate group ONLY -1002830517753
+        // Removed: send to Brands group for Paid status
         sendAffiliatePaymentNotification(p, true);
       }
       // Re-opening a previously paid payment notification
@@ -1461,6 +1516,9 @@ function formatNewOfferMessage(affiliateId, country, brand) {
   let msg = `📋 Added a new offer:
 Affiliate ${affiliateId}
 Country ${country}`;
+  if (brand) {
+    msg += `\nBrand: ${brand}`;
+  }
   return msg;
 }
 
@@ -1726,7 +1784,13 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
                           chatIdStr === OFFER_GROUP_CHAT_ID.replace('-100', '-') ||
                           chatIdStr === OFFER_GROUP_CHAT_ID.replace('-', '-100');
       
-      if (isOfferGroup && (offerLower.startsWith('offer:') || offerLower.startsWith('offers:'))) {
+      // Check if message is from offer group and contains offer data
+      // Format 1: "Offer: 191 AU ..." (with Offer: prefix)
+      // Format 2: "191\nAU 1400+14..." (first line is just affiliate ID number)
+      const isOfferFormat = offerLower.startsWith('offer:') || offerLower.startsWith('offers:') ||
+                           (/^\d+$/.test(offerMessageText.trim().split('\n')[0] || ''));
+      
+      if (isOfferGroup && isOfferFormat) {
         console.log("✅ Detected offer message in group!");
         try {
           await handleOfferMessage(bot, msg, offerMessageText);
@@ -1883,12 +1947,51 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
         confirmMsg += `\n📊 Status: <b>${status}</b>`;
         bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-        bot.sendMessage(CUSTOMER_PAYMENT_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
       } // close if (isFinanceGroup)
     });
 
     console.log("✅ USDT hash detection enabled");
+    
+    // ═══════════════════════════════════════════════════════════════
+    // 15. SCREENSHOT FUNCTIONALITY FOR MONITORING
+    // ═══════════════════════════════════════════════════════════════
+    
+    // /todaycrgcap - Send CRG Deals screenshot
+    bot.onText(/\/todaycrgcap/, async (msg) => {
+      bot.sendMessage(msg.chat.id, "📸 Capturing CRG Deals screenshot...");
+      try {
+        const screenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
+        if (screenshot) {
+          await bot.sendPhoto(msg.chat.id, screenshot, { caption: `📊 CRG Deals Report - ${new Date().toLocaleDateString()}` });
+        } else {
+          bot.sendMessage(msg.chat.id, "❌ Failed to capture screenshot");
+        }
+      } catch (err) {
+        console.error('Screenshot error:', err);
+        bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+      }
+    });
+    
+    // /todayagentscap - Send Daily Cap screenshot
+    bot.onText(/\/todayagentscap/, async (msg) => {
+      bot.sendMessage(msg.chat.id, "📸 Capturing Daily Agents Cap screenshot...");
+      try {
+        const screenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
+        if (screenshot) {
+          await bot.sendPhoto(msg.chat.id, screenshot, { caption: `📊 Daily Agents Cap Report - ${new Date().toLocaleDateString()}` });
+        } else {
+          bot.sendMessage(msg.chat.id, "❌ Failed to capture screenshot");
+        }
+      } catch (err) {
+        console.error('Screenshot error:', err);
+        bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+      }
+    });
+    
+    // Initialize scheduled screenshot service
+    screenshotModule.setupScheduledScreenshots(bot, TELEGRAM_TOKEN, MONITORING_GROUP_CHAT_ID, readJSON, screenshotModule.captureDataScreenshot);
+    console.log("📸 Screenshot functionality enabled");
   } catch (err) {
     console.log("⚠️ Failed to init Telegram bot:", err.message);
   }
@@ -1999,6 +2102,78 @@ app.get("/api/telegram/test", (req, res) => {
   });
   r.on('error', err => { console.error("TG test error:", err.message); res.json({ status: "error", error: "Connection failed" }); });
   r.end();
+});
+
+// API endpoint to send CRG screenshot on demand
+app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
+  if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
+  try {
+    const screenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
+    if (screenshot) {
+      // Send to monitoring group
+      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, screenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
+      // Also send to finance group
+      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, screenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
+      res.json({ ok: true, message: "CRG screenshot sent to Telegram" });
+    } else {
+      res.json({ ok: false, error: "Failed to capture screenshot" });
+    }
+  } catch (err) {
+    console.error('CRG screenshot error:', err);
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// API endpoint to send Agents screenshot on demand
+app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
+  if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
+  try {
+    const screenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
+    if (screenshot) {
+      // Send to monitoring group
+      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, screenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
+      // Also send to finance group
+      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, screenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
+      res.json({ ok: true, message: "Agents screenshot sent to Telegram" });
+    } else {
+      res.json({ ok: false, error: "Failed to capture screenshot" });
+    }
+  } catch (err) {
+    console.error('Agents screenshot error:', err);
+    res.json({ ok: false, error: err.message });
+  }
+});
+
+// API endpoint to send both screenshots on demand
+app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
+  if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
+  try {
+    const crgScreenshot = await screenshotModule.captureDataScreenshot('crg', readJSON);
+    const agentsScreenshot = await screenshotModule.captureDataScreenshot('agents', readJSON);
+    
+    const results = [];
+    
+    if (crgScreenshot) {
+      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, crgScreenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
+      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, crgScreenshot, { caption: `📊 CRG Report - ${new Date().toLocaleDateString()} (On Demand)` });
+      results.push("CRG");
+    }
+    
+    if (agentsScreenshot) {
+      await bot.sendPhoto(MONITORING_GROUP_CHAT_ID, agentsScreenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
+      await bot.sendPhoto(FINANCE_GROUP_CHAT_ID, agentsScreenshot, { caption: `📊 Daily Agents Cap - ${new Date().toLocaleDateString()} (On Demand)` });
+      results.push("Agents");
+    }
+    
+    if (results.length > 0) {
+      res.json({ ok: true, message: `Screenshots sent: ${results.join(', ')}` });
+    } else {
+      res.json({ ok: false, error: "Failed to capture screenshots" });
+    }
+  } catch (err) {
+    console.error('Screenshot error:', err);
+    res.json({ ok: false, error: err.message });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
