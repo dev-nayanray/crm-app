@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.09";
+const VERSION = "5.13";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -518,8 +518,10 @@ function getAndClearDeletes(table) {
 
 async function apiSave(endpoint, data, userEmail) {
   // FIX C1: Debounce — don't save same table within 1 second
+  // EXCEPTION: Always save if there are pending deletes (critical for empty array case)
   const now = Date.now();
-  if (lastSaveTimestamps[endpoint] && now - lastSaveTimestamps[endpoint] < 1000) {
+  const hasPendingDeletes = deletedIDs[endpoint] && deletedIDs[endpoint].size > 0;
+  if (!hasPendingDeletes && lastSaveTimestamps[endpoint] && now - lastSaveTimestamps[endpoint] < 1000) {
     return true; // Skip, too soon after last save
   }
   lastSaveTimestamps[endpoint] = now;
@@ -556,7 +558,13 @@ async function apiSave(endpoint, data, userEmail) {
       pendingSaves.delete(endpoint); // Don't retry stale data
       return false;
     }
-    if (!res.ok) throw new Error('save failed');
+    if (!res.ok) {
+      // Log but don't crash on 400 errors (e.g. empty array protection)
+      const errBody = await res.json().catch(() => ({}));
+      console.warn(`⚠️ apiSave ${endpoint} got ${res.status}:`, errBody.error || 'unknown');
+      if (res.status === 400) return false; // Don't retry 400s
+      throw new Error('save failed');
+    }
     const json = await res.json();
     if (json.version) {
       dataVersions[endpoint] = json.version;
@@ -572,7 +580,7 @@ async function apiSave(endpoint, data, userEmail) {
       await new Promise(r => setTimeout(r, 2000));
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown' }),
+        body: JSON.stringify({ data, version: dataVersions[endpoint] || 0, user: userEmail || 'unknown', deleted }),
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) { 
@@ -728,6 +736,17 @@ const inp = {
 /* ── Components ── */
 const TEAM_NAMES_DEFAULT = ["Alex", "John", "Katie", "Joy", "Oksana", "Donald"];
 const TEAM_NAMES_REF = { current: [...TEAM_NAMES_DEFAULT] };
+
+// ── Agent name normalization — merge aliases into canonical names ──
+const AGENT_ALIASES = {
+  "john leon": "John", "johnleon": "John", "john l": "John",
+  "kate": "Katie", "katey": "Katie",
+};
+function normalizeAgent(name) {
+  if (!name) return name;
+  const key = name.trim().toLowerCase();
+  return AGENT_ALIASES[key] || name.trim();
+}
 
 const PEOPLE_COLORS = {
   Alex: "#579BFC", Katie: "#E2445C", Oksana: "#A25DDC", Joy: "#00C875", John: "#7F5347", Donald: "#FDAB3D",
@@ -1063,7 +1082,8 @@ function BulkActionBar({ count, onDelete, onDuplicate, onArchive, onClear }) {
   );
 }
 
-function PaymentTable({ payments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+  const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
@@ -1415,7 +1435,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
         >{I.back}<span>Back to Dashboard</span></button>
       </header>
 
-      <main style={{ maxWidth: 800, margin: "0 auto", padding: "36px 32px" }}>
+      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 32px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>User Management</h1>
           <button onClick={() => setAddOpen(true)}
@@ -1423,50 +1443,67 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
           >{I.plus} Add User</button>
         </div>
 
-        {/* Users List */}
+        {/* Users Table */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
-          {users.map((u, i) => (
-            <div key={u.email} style={{
-              display: "flex", alignItems: "center", padding: "18px 24px",
-              borderBottom: i < users.length - 1 ? "1px solid rgba(148,163,184,0.08)" : "none",
-              transition: "background 0.15s",
-            }}
-              onMouseEnter={e => e.currentTarget.style.background = "rgba(56,189,248,0.03)"}
-              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-            >
-              <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 700, fontSize: 16 }}>{u.name}</span>
-                  {isAdmin(u.email) && (
-                    <span style={{ padding: "2px 8px", borderRadius: 10, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.3)", fontSize: 10, fontWeight: 700, color: "#F87171", textTransform: "uppercase", letterSpacing: 0.5 }}>Admin</span>
-                  )}
-                </div>
-                <div style={{ fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace" }}>{u.email}</div>
-                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4 }}>Password: <span style={{ color: "#64748B" }}>••••••••</span> <span style={{ fontSize: 10, color: "#CBD5E1" }}>(hashed)</span></div>
-                <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                  🕐 Last login: <span style={{ color: u.lastLogin ? "#64748B" : "#CBD5E1", fontFamily: "'JetBrains Mono',monospace" }}>
-                    {u.lastLogin ? (() => { const d = new Date(u.lastLogin); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "Never"}
-                  </span>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 8 }}>
-                  {ALL_PAGES.map(pg => {
-                    const hasAccess = isAdmin(u.email) || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
-                    return <span key={pg.key} style={{ padding: "2px 8px", borderRadius: 6, fontSize: 10, fontWeight: 600, background: hasAccess ? `${pg.color}15` : "#F1F5F9", color: hasAccess ? pg.color : "#CBD5E1", border: `1px solid ${hasAccess ? pg.color + "30" : "#E2E8F0"}` }}>{pg.label}</span>;
-                  })}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => setEditUser({ ...u, originalEmail: u.email })} title="Edit"
-                  style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", color: "#38BDF8", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
-                >{I.edit} Edit</button>
-                {!isAdmin(u.email) && (
-                  <button onClick={() => setDelConfirm(u.email)} title="Delete"
-                    style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)", borderRadius: 8, padding: "8px 14px", cursor: "pointer", color: "#F87171", fontSize: 13, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
-                  >{I.trash} Remove</button>
-                )}
-              </div>
+          {(!users || users.length === 0) ? (
+            <div style={{ padding: "40px 24px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
+              Loading users... If this persists, check server connection.
             </div>
-          ))}
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0" }}>
+                  <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Name</th>
+                  <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Email</th>
+                  <th style={{ padding: "10px 16px", textAlign: "left", fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Last Login</th>
+                  <th style={{ padding: "10px 16px", textAlign: "center", fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Access</th>
+                  <th style={{ padding: "10px 16px", textAlign: "right", fontWeight: 700, fontSize: 11, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {users.map((u, i) => (
+                  <tr key={u.email} style={{ borderBottom: i < users.length - 1 ? "1px solid #F1F5F9" : "none" }}
+                    onMouseEnter={e => e.currentTarget.style.background = "rgba(56,189,248,0.03)"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <td style={{ padding: "10px 16px", whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{u.name}</span>
+                        {isAdmin(u.email) && (
+                          <span style={{ padding: "1px 6px", borderRadius: 6, background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.3)", fontSize: 9, fontWeight: 700, color: "#F87171", textTransform: "uppercase" }}>Admin</span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#64748B" }}>{u.email}</td>
+                    <td style={{ padding: "10px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: u.lastLogin ? "#64748B" : "#CBD5E1", whiteSpace: "nowrap" }}>
+                      {u.lastLogin ? (() => { const d = new Date(u.lastLogin); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; })() : "Never"}
+                    </td>
+                    <td style={{ padding: "10px 16px" }}>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 3, justifyContent: "center" }}>
+                        {ALL_PAGES.map(pg => {
+                          const hasAccess = isAdmin(u.email) || (u.pageAccess || ALL_PAGES.map(p => p.key)).includes(pg.key);
+                          return hasAccess ? <span key={pg.key} style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 600, background: `${pg.color}15`, color: pg.color }}>{pg.label}</span> : null;
+                        })}
+                      </div>
+                    </td>
+                    <td style={{ padding: "10px 16px", textAlign: "right", whiteSpace: "nowrap" }}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button onClick={() => setEditUser({ ...u, originalEmail: u.email })} title="Edit"
+                          style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "#38BDF8", fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+                        >{I.edit}</button>
+                        {!isAdmin(u.email) && (
+                          <button onClick={() => setDelConfirm(u.email)} title="Remove"
+                            style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "#F87171", fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
+                          >{I.trash}</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Telegram Bot Section */}
@@ -1809,7 +1846,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments, crgDeals, dcEntrie
   // Top Agents Today (by CAP)
   const agentCapMap = {};
   todayCrg.forEach(d => {
-    const agent = (d.manageAff || "").trim();
+    const agent = normalizeAgent((d.manageAff || "").trim());
     if (agent) agentCapMap[agent] = (agentCapMap[agent] || 0) + (parseInt(d.cap) || 0);
   });
   const topAgents = Object.entries(agentCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -1817,7 +1854,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments, crgDeals, dcEntrie
   // Monthly Agent CAP (for targets)
   const agentMonthCap = {};
   monthCrg.forEach(d => {
-    const agent = (d.manageAff || "").trim();
+    const agent = normalizeAgent((d.manageAff || "").trim());
     if (agent) agentMonthCap[agent] = (agentMonthCap[agent] || 0) + (parseInt(d.cap) || 0);
   });
 
@@ -2254,9 +2291,9 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, user
   };
 
   // Open payments: any payment NOT "Paid"
-  const openPayments = payments.filter(p => OPEN_STATUSES.includes(p.status) && matchSearch(p));
+  const openPayments = (payments || []).filter(p => OPEN_STATUSES.includes(p.status) && matchSearch(p));
   // Paid payments: filtered by selected month
-  const paidPayments = payments.filter(p => p.status === "Paid" && p.month === month && p.year === year && matchSearch(p));
+  const paidPayments = (payments || []).filter(p => p.status === "Paid" && p.month === month && p.year === year && matchSearch(p));
 
   const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const paidTotal = paidPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
@@ -2672,7 +2709,8 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+  const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
   const sorted = sortMode === "alpha"
@@ -2873,8 +2911,8 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayment
     return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress].some(v => (v || "").toLowerCase().includes(q));
   };
 
-  const openPayments = payments.filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
-  const receivedPayments = payments.filter(p => ["Received", "Refund"].includes(p.status) && p.month === month && p.year === year && matchSearch(p));
+  const openPayments = (payments || []).filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
+  const receivedPayments = (payments || []).filter(p => ["Received", "Refund"].includes(p.status) && p.month === month && p.year === year && matchSearch(p));
 
   const openTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
   const receivedTotal = receivedPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
@@ -3521,7 +3559,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
       // manageAff → affiliates
       const mAff = (deal.manageAff || "").trim();
       if (mAff) {
-        const normAff = mAff.charAt(0).toUpperCase() + mAff.slice(1).toLowerCase();
+        const normAff = normalizeAgent(mAff.charAt(0).toUpperCase() + mAff.slice(1).toLowerCase());
         if (!capMap[date][normAff]) capMap[date][normAff] = { affiliates: 0, brands: 0 };
         capMap[date][normAff].affiliates += capVal;
       }
@@ -3529,7 +3567,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
       // madeSale → brands
       const mSale = (deal.madeSale || "").trim();
       if (mSale) {
-        const normSale = mSale.charAt(0).toUpperCase() + mSale.slice(1).toLowerCase();
+        const normSale = normalizeAgent(mSale.charAt(0).toUpperCase() + mSale.slice(1).toLowerCase());
         if (!capMap[date][normSale]) capMap[date][normSale] = { affiliates: 0, brands: 0 };
         capMap[date][normSale].brands += capVal;
       }
@@ -3538,6 +3576,8 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     // Now update/create entries (case-insensitive dedup)
     setEntries(prev => {
       const updated = [...prev];
+      // Normalize agent names in existing entries
+      updated.forEach((e, i) => { if (e && e.agent) updated[i] = { ...e, agent: normalizeAgent(e.agent) }; });
       const existingMap = {};
       updated.forEach((e, i) => {
         const key = `${e.date}__${(e.agent || "").trim().toLowerCase()}`;
@@ -3656,12 +3696,19 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
 
   const filtered = entries.filter(matchSearch);
 
-  // Group by date
+  // Group by date — merge entries with same normalized agent name
   const grouped = {};
   filtered.forEach(d => {
     const key = d.date || "Unknown";
+    const normAgent = normalizeAgent(d.agent);
     if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(d);
+    const existing = grouped[key].find(e => (e.agent || "").toLowerCase() === (normAgent || "").toLowerCase());
+    if (existing) {
+      existing.affiliates = String((parseInt(existing.affiliates) || 0) + (parseInt(d.affiliates) || 0));
+      existing.brands = String((parseInt(existing.brands) || 0) + (parseInt(d.brands) || 0));
+    } else {
+      grouped[key].push({ ...d, agent: normAgent });
+    }
   });
   const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a)); // newest first
 
