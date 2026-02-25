@@ -37,7 +37,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "4.00";
+const VERSION = "5.00";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -110,7 +110,7 @@ const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
-const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-1002796530029";
+const CUSTOMER_PAYMENT_GROUP_CHAT_ID = process.env.CUSTOMER_PAYMENT_CHAT_ID || "-4744920512";
 const MONITORING_GROUP_CHAT_ID = process.env.MONITORING_CHAT_ID || "-1002832299846";
 
 // Helper function to validate and normalize chat ID for supergroups
