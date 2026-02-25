@@ -3,11 +3,26 @@
 
 let puppeteer = null;
 let PUPPETEER_AVAILABLE = false;
+let CHROMIUM_PATH = null;
 
 // Try to load puppeteer
 try {
   puppeteer = require('puppeteer');
   PUPPETEER_AVAILABLE = true;
+  
+  // Try to use system Chromium
+  const { execSync } = require('child_process');
+  try {
+    CHROMIUM_PATH = execSync('which chromium', { encoding: 'utf8' }).trim();
+    if (!CHROMIUM_PATH) {
+      // Try chromium-browser
+      CHROMIUM_PATH = execSync('which chromium-browser', { encoding: 'utf8' }).trim();
+    }
+    console.log("📸 System Chromium found at:", CHROMIUM_PATH);
+  } catch (e) {
+    console.log("⚠️ System Chromium not found, will try bundled Chrome");
+  }
+  
   console.log("📸 Puppeteer loaded successfully");
 } catch (e) {
   console.log("⚠️  Puppeteer not installed — screenshot functionality disabled");
@@ -65,7 +80,18 @@ async function captureDataScreenshot(type, readJSON) {
   
   let browser;
   try {
-    browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    const launchOptions = { 
+      headless: 'new', 
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] 
+    };
+    
+    // Use system Chromium if available
+    if (CHROMIUM_PATH) {
+      launchOptions.executablePath = CHROMIUM_PATH;
+      console.log("📸 Using system Chromium:", CHROMIUM_PATH);
+    }
+    
+    browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
     await page.setViewport({ width: 800, height: 600 });
     await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
