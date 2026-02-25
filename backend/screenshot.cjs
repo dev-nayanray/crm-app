@@ -120,7 +120,33 @@ function setupScheduledScreenshots(bot, TELEGRAM_TOKEN, MONITORING_GROUP_CHAT_ID
   console.log('⏰ Scheduled screenshots enabled: 10:00 - 22:00 every hour');
 }
 
+// Send report function - captures screenshot and sends to Telegram
+async function sendReport(bot, chatId, type, readJSON) {
+  if (!PUPPETEER_AVAILABLE || !puppeteer) {
+    throw new Error("Screenshot functionality not available - Puppeteer not installed");
+  }
+  
+  console.log(`📸 Generating ${type} report for chat ${chatId}...`);
+  
+  // Capture the screenshot
+  const screenshot = await captureDataScreenshot(type, readJSON);
+  
+  if (!screenshot) {
+    throw new Error("Failed to capture screenshot");
+  }
+  
+  // Send to Telegram
+  const caption = type === 'crg' 
+    ? '📊 CRG Deals Report - ' + new Date().toLocaleDateString()
+    : '📊 Daily Agents Cap Report - ' + new Date().toLocaleDateString();
+  
+  await bot.sendPhoto(chatId, screenshot, { caption: caption });
+  
+  return { success: true, method: 'screenshot' };
+}
+
 module.exports = {
   captureDataScreenshot: captureDataScreenshot,
-  setupScheduledScreenshots: setupScheduledScreenshots
+  setupScheduledScreenshots: setupScheduledScreenshots,
+  sendReport: sendReport
 };
