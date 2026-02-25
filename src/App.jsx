@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.13";
+const VERSION = "5.15";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -420,7 +420,7 @@ async function apiGet(endpoint) {
           const json = await retry.json();
           const data = json.data || json;
           if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
-          if (Array.isArray(data) && data.length > 0) lsSave(endpoint, data);
+          if (Array.isArray(data)) lsSave(endpoint, data);
           return data;
         }
         // Still 401 after retry — don't kill session, just return null
@@ -440,8 +440,8 @@ async function apiGet(endpoint) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
     }
-    if (Array.isArray(data) && data.length > 0) {
-      lsSave(endpoint, data);
+    if (Array.isArray(data)) {
+      lsSave(endpoint, data); // Always save, even empty arrays (important after deletes)
     }
     return data;
   } catch (e) { serverOnline = false; return null; }
@@ -621,7 +621,7 @@ function connectWebSocket() {
         if (msg.type === 'update') {
           // Real-time update from another user
           if (msg.version) dataVersions[msg.table] = msg.version;
-          if (Array.isArray(msg.data) && msg.data.length > 0) {
+          if (Array.isArray(msg.data)) {
             lsSave(msg.table, msg.data);
           }
           // Notify all listeners
@@ -4318,7 +4318,10 @@ function AppInner() {
   // ═══════════════════════════════════════════════════════════════
 
   function mergeByID(localArr, serverArr, tableName) {
-    if (!serverArr || serverArr.length === 0) return localArr || [];
+    // Server returned null = fetch failed, keep local
+    if (serverArr === null || serverArr === undefined) return localArr || [];
+    // Server returned [] = intentionally empty (e.g. all records deleted) — respect it
+    if (serverArr.length === 0) return [];
     if (!localArr || localArr.length === 0) return serverArr;
     const merged = new Map();
     serverArr.forEach(r => { if (r && r.id) merged.set(r.id, r); });
@@ -4367,12 +4370,12 @@ function AppInner() {
         'daily-cap': lsGet('daily-cap', null), deals: lsGet('deals', null), wallets: lsGet('wallets', null),
       };
       if (local.users && local.users.length > 0) setUsers(local.users);
-      if (local.payments && local.payments.length > 0) setPayments(local.payments);
-      if (local['customer-payments'] && local['customer-payments'].length > 0) setCpPayments(local['customer-payments']);
-      if (local['crg-deals'] && local['crg-deals'].length > 0) setCrgDeals(local['crg-deals']);
-      if (local['daily-cap'] && local['daily-cap'].length > 0) setDcEntries(local['daily-cap']);
-      if (local.deals && local.deals.length > 0) setDealsData(local.deals);
-      if (local.wallets && local.wallets.length > 0) setWalletsData(local.wallets);
+      if (Array.isArray(local.payments)) setPayments(local.payments);
+      if (Array.isArray(local['customer-payments'])) setCpPayments(local['customer-payments']);
+      if (Array.isArray(local['crg-deals'])) setCrgDeals(local['crg-deals']);
+      if (Array.isArray(local['daily-cap'])) setDcEntries(local['daily-cap']);
+      if (Array.isArray(local.deals)) setDealsData(local.deals);
+      if (Array.isArray(local.wallets)) setWalletsData(local.wallets);
 
       // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
@@ -4446,7 +4449,7 @@ function AppInner() {
     if (!loaded || !getSessionToken()) return;
     connectWebSocket();
     const unsub = onWsUpdate((msg) => {
-      if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data) || msg.data.length === 0) return;
+      if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data)) return;
       skipSave.current = true;
       const setters = {
         users: setUsers, payments: setPayments, 'customer-payments': setCpPayments,
@@ -4479,7 +4482,7 @@ function AppInner() {
         { d: swl, s: setWalletsData, k: 'wallets' },
       ];
       for (const t of all) {
-        if (t.d !== null && t.d.length > 0) {
+        if (t.d !== null) {
           t.s(prev => {
             const merged = mergeByID(prev, t.d, t.k);
             if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(t.k, merged); return merged; }
