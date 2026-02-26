@@ -13,3 +13,7 @@
 {"timestamp":"2026-02-26T13:44:19.263Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 770s, heap: 22MB","ip":null}
 {"timestamp":"2026-02-26T13:44:19.726Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 770s, heap: 22MB","ip":null}
 {"timestamp":"2026-02-26T13:44:20.161Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 771s, heap: 22MB","ip":null}
+{"timestamp":"2026-02-26T13:46:37.651Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 50s, heap: 22MB","ip":null}
+{"timestamp":"2026-02-26T13:46:38.808Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 51s, heap: 22MB","ip":null}
+{"timestamp":"2026-02-26T13:46:39.194Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 51s, heap: 22MB","ip":null}
+{"timestamp":"2026-02-26T13:46:39.489Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 52s, heap: 22MB","ip":null}
