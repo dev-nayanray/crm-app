@@ -1,0 +1,9 @@
+{"timestamp":"2026-02-26T13:09:58.752Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 96s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:09:59.595Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 97s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:09:59.967Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 97s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:15:35.686Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 165s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:15:36.555Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 166s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:15:36.984Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 167s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:15:37.574Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 167s, heap: 20MB","ip":null}
+{"timestamp":"2026-02-26T13:18:47.795Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 183s, heap: 23MB","ip":null}
+{"timestamp":"2026-02-26T13:18:48.904Z","table":"system","action":"shutdown","user":"system","details":"SIGINT — uptime: 184s, heap: 23MB","ip":null}

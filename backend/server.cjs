@@ -1,3 +1,6 @@
+// Load environment variables
+require("dotenv").config();
+
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
@@ -103,7 +106,8 @@ seedUsers();
 
 // Telegram Bot Configuration
 // SECURITY: Use environment variables only. Never hardcode tokens!
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
+// NOTE: Using hardcoded token as fallback since user prefers not to use .env file
+const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 if (!TELEGRAM_TOKEN) {
   console.log("⚠️  TELEGRAM_TOKEN not set — Telegram bot disabled");
   console.log("   Set environment variable: export TELEGRAM_TOKEN='8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA'");
@@ -785,7 +789,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         // Send to Affiliate group ONLY -1002830517753
         // Removed: send to Brands group for Paid status
         sendAffiliatePaymentNotification(p, true);
-} else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
+      } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
         // Send to Customer Payment group (Brands) only - removed Affiliate group notification
         sendBrandPaymentNotification(p, false);
         // Send Approved to pay notification with tag to Open Payment group
@@ -1958,6 +1962,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
       // USDT hash detection (Brands group)
       const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID;
+      const isFinanceGroup = chatId.toString() === FINANCE_GROUP_CHAT_ID;
       
       // Handle payment messages from Brands group with payment links
       if (isBrandsGroup) {
@@ -2042,54 +2047,54 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         }
       }
       
-    //   // USDT hash detection (finance group only)
-    //   if (isFinanceGroup) {
-    //   const messageText = msg.text || '';
-    //   const hashes = extractAllUsdtHashes(messageText);
-    //   const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
-    //   if (txHashes.length === 0) return;
+      // USDT hash detection (finance group only)
+      if (isFinanceGroup) {
+      const messageText = msg.text || '';
+      const hashes = extractAllUsdtHashes(messageText);
+      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
+      if (txHashes.length === 0) return;
 
-    //   const amounts = [];
-    //   const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-    //   let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
-    //   const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
-    //   while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      const amounts = [];
+      const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
+      let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+      const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
+      while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
 
-    //   const wallets = readJSON("wallets.json", []);
+      const wallets = readJSON("wallets.json", []);
 
-    //   for (let i = 0; i < txHashes.length; i++) {
-    //     const { hash, type } = txHashes[i];
-    //     let txResult = { success: false };
-    //     if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
-    //     else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
+      for (let i = 0; i < txHashes.length; i++) {
+        const { hash, type } = txHashes[i];
+        let txResult = { success: false };
+        if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
+        else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
 
-    //     const amount = (amounts[i] || txResult.amount || "0").toString();
-    //     const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-    //     const status = walletVerify.matched ? "Received" : "Pending";
-    //     const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
+        const amount = (amounts[i] || txResult.amount || "0").toString();
+        const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
+        const status = walletVerify.matched ? "Received" : "Pending";
+        const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
 
-    //     const newPayment = {
-    //       id: crypto.randomBytes(5).toString('hex'),
-    //       invoice, amount, fee: "", status, type: "Customer Payment",
-    //       openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
-    //       paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
-    //       ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
-    //       month: new Date().getMonth(), year: new Date().getFullYear()
-    //     };
+        const newPayment = {
+          id: crypto.randomBytes(5).toString('hex'),
+          invoice, amount, fee: "", status, type: "Customer Payment",
+          openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
+          paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
+          ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+          month: new Date().getMonth(), year: new Date().getFullYear()
+        };
 
-    //     const cp = readJSON("customer-payments.json", []);
-    //     cp.unshift(newPayment);
-    //     await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
-    //     broadcastUpdate("customer-payments", cp);
+        const cp = readJSON("customer-payments.json", []);
+        cp.unshift(newPayment);
+        await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
+        broadcastUpdate("customer-payments", cp);
 
-    //     let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
-    //     confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
-    //     confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
-    //     confirmMsg += `\n📊 Status: <b>${status}</b>`;
-    //     bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-    //   }
-    //   } // close if (isFinanceGroup)
-    // });
+        let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
+        confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
+        confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
+        confirmMsg += `\n📊 Status: <b>${status}</b>`;
+        bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+      }
+      } // close if (isFinanceGroup)
+    }); // <-- FIX: Added missing closing brace and parenthesis for bot.on('message') handler
 
     console.log("✅ USDT hash detection enabled");
     
@@ -2863,7 +2868,7 @@ function gracefulShutdown(signal) {
   writeAuditLog("system", "shutdown", "system", `${signal} — uptime: ${Math.round(process.uptime())}s, heap: ${Math.round(process.memoryUsage().heapUsed/1024/1024)}MB`);
   setTimeout(() => process.exit(0), 2000);
 }
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));https://etherscan.io/tx/0x206175cd46e79d6f3510a5b1e57d6a135d05144fc61c4ee281f8b11e12e807e5
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ═══════════════════════════════════════════════════════════════
