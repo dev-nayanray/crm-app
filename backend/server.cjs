@@ -1723,16 +1723,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
     console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
     
-    // Test bot access to offer group on startup
+    // Test bot access to offer group on startup - silent check only (no message sent)
     setTimeout(() => {
-      bot.sendMessage(OFFER_GROUP_CHAT_ID, "🤖 Bot connected successfully!")
-        .then(() => console.log("✅ Bot has access to offer group"))
+      bot.getMe()
+        .then(() => console.log("✅ Bot has access to Telegram API"))
         .catch(err => {
-          console.log("❌ Bot cannot access offer group:", err.message);
-          console.log("⚠️ Please check:");
-          console.log("   1. Bot is an admin in the group");
-          console.log("   2. Bot has permission to read messages");
-          console.log("   3. Group is not a private supergroup");
+          console.log("❌ Bot cannot access Telegram:", err.message);
         });
     }, 5000); // Wait 5 seconds after startup
     
@@ -2013,12 +2009,34 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         
         if (newTxHashes.length > 0) {
           // Process payment hashes from Brands group
+          const messageText = msg.text || '';
+          
+          // Extract ALL dollar amounts from the message - improved regex to handle more formats
           const amounts = [];
+          // Pattern 1: $500, $1,000, $1,000.00
           const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
-          let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+          let m;
+          while ((m = p1.exec(messageText)) !== null) {
+            amounts.push(m[1].replace(/,/g, ''));
+          }
+          // Pattern 2: 500$, 1000$, 1000.50$ (amount before $)
           const p2 = /(\d+(?:,\d{3})*(?:\.\d{2})?)\$/g;
-          while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
-
+          while ((m = p2.exec(messageText)) !== null) {
+            amounts.push(m[1].replace(/,/g, ''));
+          }
+          // Pattern 3: Just numbers that look like amounts (standalone numbers that could be dollars)
+          // This helps when the $ sign is on a different line
+          const p3 = /(?:^|\n)\s*(\d{3,})\s*(?:\n|$)/gm;
+          while ((m = p3.exec(messageText)) !== null) {
+            // Only add if it's not already in amounts and looks like a dollar amount
+            const val = m[1].replace(/,/g, '');
+            if (!amounts.includes(val) && parseInt(val) > 0) {
+              amounts.push(val);
+            }
+          }
+          
+          console.log("💰 Found amounts:", amounts);
+          
           const wallets = readJSON("wallets.json", []);
 
           for (let i = 0; i < newTxHashes.length; i++) {
@@ -2028,6 +2046,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
             // BTC doesn't have verification yet, just record it
 
+            // Use amounts[i] if available, otherwise fallback to blockchain amount, then to "0"
             const amount = (amounts[i] || txResult.amount || "0").toString();
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
             const status = walletVerify.matched ? "Received" : "Pending";
