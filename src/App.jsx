@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.02";
+const VERSION = "6.03";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -4390,8 +4390,11 @@ function AppInner() {
     return session ? { email: session.email, name: session.name, pageAccess: session.pageAccess } : null;
   });
   const [users, setUsers] = useState(() => lsGet('users', null) || []);
-  const [payments, setPayments] = useState(() => lsGet('payments', null) || []);
-  const [cpPayments, setCpPayments] = useState(() => lsGet('customer-payments', null) || []);
+  const [payments, _setPayments] = useState(() => lsGet('payments', null) || []);
+  const [cpPayments, _setCpPayments] = useState(() => lsGet('customer-payments', null) || []);
+  // Safe setters — never allow null/undefined state (prevents white screen crashes)
+  const setPayments = (v) => _setPayments(prev => { const next = typeof v === 'function' ? v(prev || []) : v; return Array.isArray(next) ? next : prev || []; });
+  const setCpPayments = (v) => _setCpPayments(prev => { const next = typeof v === 'function' ? v(prev || []) : v; return Array.isArray(next) ? next : prev || []; });
   const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', null) || []);
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
@@ -4656,17 +4659,42 @@ function AppInner() {
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
 }
 
+// ── Error Boundary — prevents white screen crashes ──
+class ErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, info) { console.error("🔴 ErrorBoundary caught:", error, info); }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans',sans-serif" } },
+        React.createElement("div", { style: { textAlign: "center", padding: 40, background: "#FFF", borderRadius: 16, border: "1px solid #E2E8F0", maxWidth: 500, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" } },
+          React.createElement("div", { style: { fontSize: 48, marginBottom: 16 } }, "⚠️"),
+          React.createElement("h2", { style: { margin: "0 0 12px", color: "#0F172A", fontSize: 22 } }, "Something went wrong"),
+          React.createElement("p", { style: { color: "#64748B", fontSize: 14, marginBottom: 20 } }, String(this.state.error?.message || "An unexpected error occurred")),
+          React.createElement("div", { style: { display: "flex", gap: 12, justifyContent: "center" } },
+            React.createElement("button", { onClick: () => this.setState({ hasError: false, error: null }), style: { padding: "10px 24px", borderRadius: 8, background: "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 } }, "Try Again"),
+            React.createElement("button", { onClick: () => window.location.reload(), style: { padding: "10px 24px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 } }, "Reload Page")
+          )
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [dark, setDark] = useState(() => { const stored = localStorage.getItem('blitz_dark'); return stored === null ? true : stored === 'true'; });
   const toggle = () => setDark(prev => { const n = !prev; localStorage.setItem('blitz_dark', n); return n; });
 
   return (
-    <ThemeContext.Provider value={{ dark, toggle }}>
-      <ToastProvider>
-        <div className={dark ? "dark-mode" : ""}>
-          <AppInner />
-        </div>
-      </ToastProvider>
-    </ThemeContext.Provider>
+    <ErrorBoundary>
+      <ThemeContext.Provider value={{ dark, toggle }}>
+        <ToastProvider>
+          <div className={dark ? "dark-mode" : ""}>
+            <AppInner />
+          </div>
+        </ToastProvider>
+      </ThemeContext.Provider>
+    </ErrorBoundary>
   );
 }
