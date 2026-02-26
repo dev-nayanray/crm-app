@@ -40,7 +40,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "6.0";
+const VERSION = "7.0";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1013,7 +1013,10 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     });
 
     if (success) {
-      broadcastUpdate(ep, deduped);
+      // Only broadcast if data actually changed (prevents save loops between clients)
+      if (deduped.length !== serverData.length || clientNew > 0 || deleteSet.size > 0) {
+        broadcastUpdate(ep, deduped);
+      }
       res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true });
     } else {
       res.status(500).json({ error: "Write failed" });
@@ -1062,6 +1065,13 @@ app.post("/api/users", requireAuth, async (req, res) => {
     mergedMap.set(u.email, u);
   } });
   const mergedUsers = Array.from(mergedMap.values());
+
+  // Skip write if data hasn't actually changed (prevents save loops)
+  const existingStr = JSON.stringify(existing.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
+  const mergedStr = JSON.stringify(mergedUsers.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
+  if (existingStr === mergedStr) {
+    return res.json({ ok: true, count: mergedUsers.length, version: getVersion("users"), unchanged: true });
+  }
 
   const success = await lockedWrite("users.json", mergedUsers, {
     action: "update", user: userEmail || "system", details: `${mergedUsers.length} users saved (merged)`
