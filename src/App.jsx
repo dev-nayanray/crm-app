@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.03";
+const VERSION = "6.04";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -485,7 +485,7 @@ async function flushPendingSaves() {
     try {
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ data: save.data, version: dataVersions[endpoint] || 0, user: save.userEmail || 'unknown' }),
+        body: JSON.stringify({ data: save.data, version: dataVersions[endpoint] || 0, user: save.userEmail || 'unknown', deleted: save.deleted || [] }),
         signal: AbortSignal.timeout(5000),
       });
       if (res.ok) {
@@ -497,6 +497,9 @@ async function flushPendingSaves() {
         // Conflict — our pending data is stale, discard it
         pendingSaves.delete(endpoint);
         console.log(`⚠️ Discarded stale pending save for ${endpoint}`);
+      } else if (res.status === 400) {
+        pendingSaves.delete(endpoint);
+        console.log(`⚠️ Removed blocked pending save for ${endpoint}`);
       }
     } catch {}
   }
@@ -544,7 +547,7 @@ async function apiSave(endpoint, data, userEmail) {
         localStorage.removeItem('blitz_session');
         sessionExpiredFlag = true;
       }
-      pendingSaves.set(endpoint, { data, userEmail });
+      pendingSaves.set(endpoint, { data, userEmail, deleted });
       return false;
     }
     if (res.status === 409) {
@@ -595,7 +598,7 @@ async function apiSave(endpoint, data, userEmail) {
       }
     } catch (e2) {}
     // Both attempts failed — queue for later retry
-    pendingSaves.set(endpoint, { data, userEmail });
+    pendingSaves.set(endpoint, { data, userEmail, deleted });
     console.log(`⚠️ Queued pending save: ${endpoint} (will retry in 30s)`);
     return false;
   }
@@ -1792,7 +1795,11 @@ function ServerDiagnostics() {
 // ═══════════════════════════════════════════════════════════════
 // OVERVIEW DASHBOARD — Dedicated analytics & KPI page
 // ═══════════════════════════════════════════════════════════════
-function OverviewDashboard({ user, onLogout, onNav, payments, crgDeals, dcEntries, cpPayments, userAccess }) {
+function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crgDeals: rawOvCrg, dcEntries: rawOvDc, cpPayments: rawOvCp, userAccess }) {
+  const payments = Array.isArray(rawOvPayments) ? rawOvPayments : [];
+  const crgDeals = Array.isArray(rawOvCrg) ? rawOvCrg : [];
+  const dcEntries = Array.isArray(rawOvDc) ? rawOvDc : [];
+  const cpPayments = Array.isArray(rawOvCp) ? rawOvCp : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
   const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -2240,7 +2247,8 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
   );
 }
 
-function Dashboard({ user, onLogout, onAdmin, onNav, payments, setPayments, userAccess }) {
+function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setPayments, userAccess }) {
+  const payments = Array.isArray(rawPayments) ? rawPayments : [];
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -2878,7 +2886,8 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
   );
 }
 
-function CustomerPayments({ user, onLogout, onNav, onAdmin, payments, setPayments, userAccess }) {
+function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayments, setPayments, userAccess }) {
+  const payments = Array.isArray(rawCpPayments) ? rawCpPayments : [];
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
@@ -3145,7 +3154,8 @@ function InlineCell({ value, onSave, style, type = "text", placeholder = "" }) {
   );
 }
 
-function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess }) {
+function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, userAccess }) {
+  const deals = Array.isArray(rawDeals) ? rawDeals : [];
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -3637,7 +3647,9 @@ function DCForm({ entry, allEntries, onSave, onClose, defaultDate }) {
   );
 }
 
-function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeals, userAccess }) {
+function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntries, crgDeals: rawCrgDeals, userAccess }) {
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  const crgDeals = Array.isArray(rawCrgDeals) ? rawCrgDeals : [];
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editEntry, setEditEntry] = useState(null);
@@ -4081,7 +4093,8 @@ function DealsForm({ deal, allDeals, onSave, onClose, userName }) {
   );
 }
 
-function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess }) {
+function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDeals, userAccess }) {
+  const deals = Array.isArray(rawDealsPage) ? rawDealsPage : [];
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -4390,11 +4403,13 @@ function AppInner() {
     return session ? { email: session.email, name: session.name, pageAccess: session.pageAccess } : null;
   });
   const [users, setUsers] = useState(() => lsGet('users', null) || []);
-  const [payments, _setPayments] = useState(() => lsGet('payments', null) || []);
-  const [cpPayments, _setCpPayments] = useState(() => lsGet('customer-payments', null) || []);
-  // Safe setters — never allow null/undefined state (prevents white screen crashes)
-  const setPayments = (v) => _setPayments(prev => { const next = typeof v === 'function' ? v(prev || []) : v; return Array.isArray(next) ? next : prev || []; });
-  const setCpPayments = (v) => _setCpPayments(prev => { const next = typeof v === 'function' ? v(prev || []) : v; return Array.isArray(next) ? next : prev || []; });
+  const [_payments, _setPayments] = useState(() => lsGet('payments', null) || []);
+  const [_cpPayments, _setCpPayments] = useState(() => lsGet('customer-payments', null) || []);
+  // Safe wrappers: NEVER allow state to become null/undefined (prevents crash on empty delete)
+  const payments = Array.isArray(_payments) ? _payments : [];
+  const cpPayments = Array.isArray(_cpPayments) ? _cpPayments : [];
+  const setPayments = useCallback((v) => _setPayments(prev => { const a = Array.isArray(prev) ? prev : []; const n = typeof v === 'function' ? v(a) : v; return Array.isArray(n) ? n : a; }), []);
+  const setCpPayments = useCallback((v) => _setCpPayments(prev => { const a = Array.isArray(prev) ? prev : []; const n = typeof v === 'function' ? v(a) : v; return Array.isArray(n) ? n : a; }), []);
   const [crgDeals, setCrgDeals] = useState(() => lsGet('crg-deals', null) || []);
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
@@ -4613,8 +4628,8 @@ function AppInner() {
   const initialDealsRef = useRef(JSON.stringify([]));
 
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0) apiSave('users', users, user?.email); }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(payments) !== initialPaymentsRef.current) { initialPaymentsRef.current = JSON.stringify(payments); apiSave('payments', payments, user?.email); } }, [payments]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(cpPayments) !== initialCpRef.current) { initialCpRef.current = JSON.stringify(cpPayments); apiSave('customer-payments', cpPayments, user?.email); } }, [cpPayments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_payments) !== initialPaymentsRef.current) { initialPaymentsRef.current = JSON.stringify(_payments); apiSave('payments', _payments, user?.email); } }, [_payments]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_cpPayments) !== initialCpRef.current) { initialCpRef.current = JSON.stringify(_cpPayments); apiSave('customer-payments', _cpPayments, user?.email); } }, [_cpPayments]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(crgDeals) !== initialCrgRef.current) { initialCrgRef.current = JSON.stringify(crgDeals); apiSave('crg-deals', crgDeals, user?.email); } }, [crgDeals]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dcEntries) !== initialDcRef.current) { initialDcRef.current = JSON.stringify(dcEntries); apiSave('daily-cap', dcEntries, user?.email); } }, [dcEntries]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dealsData) !== initialDealsRef.current) { initialDealsRef.current = JSON.stringify(dealsData); apiSave('deals', dealsData, user?.email); } }, [dealsData]);
@@ -4660,20 +4675,41 @@ function AppInner() {
 }
 
 // ── Error Boundary — prevents white screen crashes ──
-class ErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+class CrashGuard extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false, error: null, errorInfo: null }; }
   static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, info) { console.error("🔴 ErrorBoundary caught:", error, info); }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    console.error("🔴 CrashGuard caught:", error, errorInfo);
+  }
   render() {
     if (this.state.hasError) {
-      return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans',sans-serif" } },
-        React.createElement("div", { style: { textAlign: "center", padding: 40, background: "#FFF", borderRadius: 16, border: "1px solid #E2E8F0", maxWidth: 500, boxShadow: "0 4px 20px rgba(0,0,0,0.08)" } },
-          React.createElement("div", { style: { fontSize: 48, marginBottom: 16 } }, "⚠️"),
-          React.createElement("h2", { style: { margin: "0 0 12px", color: "#0F172A", fontSize: 22 } }, "Something went wrong"),
-          React.createElement("p", { style: { color: "#64748B", fontSize: 14, marginBottom: 20 } }, String(this.state.error?.message || "An unexpected error occurred")),
-          React.createElement("div", { style: { display: "flex", gap: 12, justifyContent: "center" } },
-            React.createElement("button", { onClick: () => this.setState({ hasError: false, error: null }), style: { padding: "10px 24px", borderRadius: 8, background: "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 } }, "Try Again"),
-            React.createElement("button", { onClick: () => window.location.reload(), style: { padding: "10px 24px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 } }, "Reload Page")
+      const err = this.state.error;
+      const info = this.state.errorInfo;
+      const stack = err?.stack || "";
+      const componentStack = info?.componentStack || "";
+      return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F172A", fontFamily: "monospace", color: "#E2E8F0", padding: 20 } },
+        React.createElement("div", { style: { maxWidth: 700, width: "100%" } },
+          React.createElement("h1", { style: { color: "#EF4444", fontSize: 24, marginBottom: 8 } }, "⚠️ Blitz CRM Crash Report"),
+          React.createElement("p", { style: { color: "#94A3B8", fontSize: 14, marginBottom: 20 } }, "Copy this info and send it for debugging:"),
+          React.createElement("div", { style: { background: "#1E293B", border: "1px solid #334155", borderRadius: 8, padding: 16, marginBottom: 16, fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 300, overflow: "auto" } },
+            "Error: " + String(err?.message || err) + "\n\n" +
+            "Stack:\n" + stack.split("\n").slice(0, 8).join("\n") + "\n\n" +
+            "Component:\n" + componentStack.split("\n").slice(0, 10).join("\n")
+          ),
+          React.createElement("div", { style: { display: "flex", gap: 12 } },
+            React.createElement("button", {
+              onClick: () => { try { navigator.clipboard.writeText("Error: " + String(err?.message || err) + "\nStack: " + stack + "\nComponent: " + componentStack); } catch(e) {} },
+              style: { padding: "10px 24px", borderRadius: 8, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }
+            }, "📋 Copy Error"),
+            React.createElement("button", {
+              onClick: () => this.setState({ hasError: false, error: null, errorInfo: null }),
+              style: { padding: "10px 24px", borderRadius: 8, background: "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }
+            }, "🔄 Try Again"),
+            React.createElement("button", {
+              onClick: () => window.location.reload(),
+              style: { padding: "10px 24px", borderRadius: 8, background: "transparent", border: "1px solid #475569", color: "#94A3B8", cursor: "pointer", fontSize: 14 }
+            }, "Reload Page")
           )
         )
       );
@@ -4687,14 +4723,14 @@ export default function App() {
   const toggle = () => setDark(prev => { const n = !prev; localStorage.setItem('blitz_dark', n); return n; });
 
   return (
-    <ErrorBoundary>
-      <ThemeContext.Provider value={{ dark, toggle }}>
-        <ToastProvider>
-          <div className={dark ? "dark-mode" : ""}>
-            <AppInner />
-          </div>
-        </ToastProvider>
-      </ThemeContext.Provider>
-    </ErrorBoundary>
+    React.createElement(CrashGuard, null,
+      React.createElement(ThemeContext.Provider, { value: { dark, toggle } },
+        React.createElement(ToastProvider, null,
+          React.createElement("div", { className: dark ? "dark-mode" : "" },
+            React.createElement(AppInner, null)
+          )
+        )
+      )
+    )
   );
 }
