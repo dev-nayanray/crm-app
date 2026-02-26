@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.08";
+const VERSION = "6.09";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -529,13 +529,32 @@ function getAndClearDeletes(table) {
   return ids;
 }
 
+// Track last known record counts per table to detect data loss
+const lastKnownCounts = {};
+
 async function apiSave(endpoint, data, userEmail) {
   // SAFETY: Never save empty array to server unless there are explicit deletes
-  // This prevents accidental data wipes from crashes or render errors
   const hasPendingDeletes = deletedIDs[endpoint] && deletedIDs[endpoint].size > 0;
+  const pendingDeleteCount = hasPendingDeletes ? deletedIDs[endpoint].size : 0;
   if (Array.isArray(data) && data.length === 0 && !hasPendingDeletes && endpoint !== 'users') {
     console.warn(`⚠️ BLOCKED empty save to ${endpoint} — no pending deletes, likely a bug`);
     return false;
+  }
+
+  // SAFETY v2: Block saves that lose too many records at once (crash protection)
+  // If we previously had N records and now have much fewer, something went wrong
+  if (Array.isArray(data) && lastKnownCounts[endpoint] > 0) {
+    const prev = lastKnownCounts[endpoint];
+    const curr = data.length;
+    const maxAllowedDrop = Math.max(prev * 0.5, pendingDeleteCount + 5); // Allow 50% drop or explicit deletes + small buffer
+    if (prev - curr > maxAllowedDrop) {
+      console.error(`🛑 BLOCKED suspicious save to ${endpoint}: ${prev} → ${curr} records (drop of ${prev - curr}, only ${pendingDeleteCount} explicit deletes). This looks like a crash-induced data loss.`);
+      return false;
+    }
+  }
+  // Update last known count after safety check passes
+  if (Array.isArray(data) && data.length > 0) {
+    lastKnownCounts[endpoint] = data.length;
   }
 
   // FIX C1: Debounce — don't save same table within 1 second
@@ -2111,10 +2130,52 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
     try {
       const res = await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() });
       const data = await res.json();
-      if (data.ok) setBackupStatus(`✅ ${data.backup}`);
+      if (data.ok) { setBackupStatus(`✅ ${data.backup}`); fetchBackups(); }
       else setBackupStatus("❌ Failed");
     } catch (e) { setBackupStatus("❌ " + e.message); }
   };
+
+  // ── Backup Restore System ──
+  const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState(null);
+
+  const fetchBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/admin/backups`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setBackups((data.backups || []).slice(0, 3));
+      }
+    } catch (e) { console.error("Failed to fetch backups:", e); }
+    setBackupsLoading(false);
+  };
+
+  const handleRestore = async (backupName) => {
+    if (!confirm(`⚠️ RESTORE DATABASE\n\nThis will replace ALL current data with the backup:\n${backupName}\n\nThis cannot be undone. A safety backup of current data will be created first.\n\nAre you sure?`)) return;
+    if (!confirm(`FINAL CONFIRMATION\n\nRestore from: ${backupName}\n\nAll current data will be overwritten. Continue?`)) return;
+    setRestoreStatus(`Restoring ${backupName}...`);
+    try {
+      const res = await fetch(`${API_BASE}/admin/restore`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ backup: backupName })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRestoreStatus(`✅ Restored from ${backupName}! Reloading...`);
+        // Clear localStorage so fresh data loads from server
+        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setRestoreStatus(`❌ Restore failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) { setRestoreStatus(`❌ Restore failed: ${e.message}`); }
+  };
+
+  useEffect(() => { if (isAdmin(user.email)) fetchBackups(); }, []);
 
   const handleDedup = async () => {
     if (!confirm("Remove duplicate CRG deals and Daily Cap entries?")) return;
@@ -2156,6 +2217,107 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
           </div>
           {backupStatus && <div style={{ fontSize: 12, color: "#64748B", padding: "6px 10px", background: "#F8FAFC", borderRadius: 6 }}>Backup: {backupStatus}</div>}
           <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run automatically every hour and on every server restart. Always create a manual backup before deploying a new version.</div>
+
+          {/* ── Restore from Backup ── */}
+          {isAdmin(user.email) && (
+            <div style={{ marginTop: 16, padding: "16px 18px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#92400E", marginBottom: 12 }}>🔄 Restore Database</div>
+
+              {/* Server backups */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E" }}>Server Backups (last 3)</span>
+                  <button onClick={fetchBackups} style={{ padding: "4px 12px", borderRadius: 6, background: "#F59E0B", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                    {backupsLoading ? "Loading..." : "↻ Load Backups"}
+                  </button>
+                </div>
+                {backups.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {backups.map((b, i) => (
+                      <div key={b.name || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#FFF", border: "1px solid #FDE68A", borderRadius: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" }}>{b.name}</div>
+                          <div style={{ fontSize: 11, color: "#64748B" }}>
+                            {b.date ? new Date(b.date).toLocaleString() : ""}{b.size ? ` • ${b.size}` : ""}
+                          </div>
+                        </div>
+                        <button onClick={() => handleRestore(b.name)}
+                          style={{ padding: "6px 14px", borderRadius: 6, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                          ⏪ Restore
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {backups.length === 0 && !backupsLoading && (
+                  <div style={{ fontSize: 11, color: "#B45309", padding: "8px 12px", background: "#FFF", borderRadius: 8, border: "1px dashed #FDE68A" }}>Click "Load Backups" to fetch server backups, or use file upload below.</div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
+                <span style={{ fontSize: 11, color: "#B45309", fontWeight: 600 }}>OR</span>
+                <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
+              </div>
+
+              {/* File upload restore */}
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E", display: "block", marginBottom: 8 }}>Restore from Backup File</span>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 16px", background: "#FFF", border: "2px dashed #FDE68A", borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#F59E0B"; e.currentTarget.style.background = "#FFFEF5"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#FDE68A"; e.currentTarget.style.background = "#FFF"; }}
+                >
+                  <span style={{ fontSize: 20 }}>📂</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#92400E" }}>Choose backup JSON file...</span>
+                  <input type="file" accept=".json" style={{ display: "none" }} onChange={async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    try {
+                      const text = await file.text();
+                      const data = JSON.parse(text);
+                      const tables = ['users', 'payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets'];
+                      const found = tables.filter(t => data[t] && Array.isArray(data[t]));
+                      if (found.length === 0) { alert("❌ Invalid backup file — no data tables found."); return; }
+                      const summary = found.map(t => `  ${t}: ${data[t].length} records`).join("\n");
+                      if (!confirm(`📦 Backup file: ${file.name}\n\nContains:\n${summary}\n\n⚠️ This will OVERWRITE all current data.\n\nContinue?`)) return;
+                      if (!confirm("FINAL CONFIRMATION — Restore now? This cannot be undone.")) return;
+                      setRestoreStatus("Uploading and restoring...");
+                      // First create safety backup
+                      try { await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() }); } catch {}
+                      // Then push each table to server
+                      let ok = 0;
+                      for (const t of found) {
+                        try {
+                          const res = await fetch(`${API_BASE}/${t}`, {
+                            method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                            body: JSON.stringify({ data: data[t], version: 0, user: user?.email || "restore", forceOverwrite: true })
+                          });
+                          if (res.ok) ok++;
+                        } catch {}
+                      }
+                      if (ok > 0) {
+                        setRestoreStatus(`✅ Restored ${ok}/${found.length} tables from ${file.name}! Reloading...`);
+                        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+                        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+                        setTimeout(() => window.location.reload(), 1500);
+                      } else {
+                        setRestoreStatus("❌ Restore failed — no tables were saved successfully.");
+                      }
+                    } catch (err) { setRestoreStatus("❌ Invalid file: " + err.message); }
+                  }} />
+                </label>
+              </div>
+
+              {restoreStatus && (
+                <div style={{ marginTop: 8, fontSize: 12, color: restoreStatus.startsWith("✅") ? "#16A34A" : restoreStatus.startsWith("❌") ? "#DC2626" : "#92400E", padding: "8px 12px", background: "#FFF", borderRadius: 6, fontWeight: 500 }}>
+                  {restoreStatus}
+                </div>
+              )}
+              <div style={{ fontSize: 10, color: "#B45309", marginTop: 8 }}>⚠️ Restoring will overwrite ALL current data. A safety backup is created automatically first.</div>
+            </div>
+          )}
         </div>
 
         {/* ═══ CAP Targets ═══ */}
@@ -4556,10 +4718,12 @@ function AppInner() {
               const merged = mergeByID(local[t.key], t.srv, t.key);
               t.setter(merged);
               lsSave(t.key, merged);
+              lastKnownCounts[t.key] = merged.length; // Set baseline for data loss protection
               if (t.ref) t.ref.current = JSON.stringify(merged);
               if (merged.length > t.srv.length) pushTasks.push(apiSave(t.key, merged, user?.email));
             } else if (local[t.key] && local[t.key].length > 0) {
               t.setter(local[t.key]);
+              lastKnownCounts[t.key] = local[t.key].length; // Set baseline for data loss protection
               if (t.ref) t.ref.current = JSON.stringify(local[t.key]);
               pushTasks.push(apiSave(t.key, local[t.key], user?.email));
             }
