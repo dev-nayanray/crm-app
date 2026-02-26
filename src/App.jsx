@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "5.15";
+const VERSION = "6.0";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -3047,7 +3047,7 @@ const CRG_INITIAL = []; // REMOVED: hardcoded demo data caused production data l
 
 
 function CRGForm({ deal, allDeals, onSave, onClose, defaultDate }) {
-  const [f, setF] = useState(deal || { affiliate: "", deal: "", brokerCap: "", manageAff: "", cap: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", funnel: "", date: defaultDate || new Date().toISOString().split("T")[0] });
+  const [f, setF] = useState(deal || { affiliate: "", deal: "", brokerCap: "", manageAff: "", cap: "", affOverride: "", madeSale: "", started: false, capReceived: "", ftd: "", hours: "", funnel: "", date: defaultDate || new Date().toISOString().split("T")[0] });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -3092,6 +3092,7 @@ function CRGForm({ deal, allDeals, onSave, onClose, defaultDate }) {
         <Field label="Broker / Cap"><input style={inp} value={f.brokerCap} onChange={e => s("brokerCap", e.target.value)} placeholder="e.g. Swin 15" /></Field>
         <Field label="Manage the AFF"><NameCombo value={f.manageAff} onChange={v => s("manageAff", v)} /></Field>
         <Field label="CAP"><input style={inp} type="number" value={f.cap} onChange={e => s("cap", e.target.value)} placeholder="0" /></Field>
+        <Field label="Aff Override"><input style={inp} type="number" value={f.affOverride || ""} onChange={e => s("affOverride", e.target.value)} placeholder="12" /></Field>
         <Field label="Made the SALE"><NameCombo value={f.madeSale} onChange={v => s("madeSale", v)} /></Field>
         <Field label="Started">
           <div onClick={() => s("started", !f.started)} style={{ ...inp, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
@@ -3108,7 +3109,7 @@ function CRGForm({ deal, allDeals, onSave, onClose, defaultDate }) {
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
-        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(245,158,11,0.3)" }}>{deal ? "Save Changes" : "Add Affiliate"}</button>
+        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(245,158,11,0.3)" }}>{deal ? "Save Changes" : "Add Deal"}</button>
       </div>
     </>
   );
@@ -3173,6 +3174,8 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
       .map(d => ({
         ...d, id: genId(), date: targetDate,
         started: false, capReceived: "", ftd: "", funnel: "",
+        status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false,
+        rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now(),
       }));
     if (newEntries.length === 0) return;
     setDeals(prev => [...prev, ...newEntries]);
@@ -3237,10 +3240,10 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
   const matchSearch = d => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [d.affiliate, d.deal, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.funnel].some(v => (v || "").toLowerCase().includes(q));
+    return [d.affiliate, d.deal, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.funnel, d.affOverride].some(v => (v || "").toLowerCase().includes(q));
   };
 
-  const filtered = deals.filter(matchSearch);
+  const filtered = activeDeals.filter(matchSearch);
 
   // Group by date
   const grouped = {};
@@ -3261,9 +3264,10 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
 
   const handleSave = form => {
     if (editDeal) {
-      setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form } : d));
+      setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
-      setDeals(prev => [...prev, { ...form, id: genId() }]);
+      // New deals start as "pending" — need 3 confirmations before going live
+      setDeals(prev => [...prev, { ...form, id: genId(), status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false, rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -3282,8 +3286,34 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
     });
   };
 
-  // Summary totals — TODAY ONLY
-  const todayDeals = filtered.filter(d => d.date === today);
+  // ── Confirmation workflow — role-based approvals ──
+  const userEmail = (user?.email || "").toLowerCase();
+  const canConfirmRotation = ["zack@blitz-affiliates.marketing", "alehandro@blitz-affiliates.marketing", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
+  const canConfirmCap = ["kazarian.oleksandra.v@gmail.com", "kate@blitz-affiliates.marketing", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
+  const canConfirmFinance = ["sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
+
+  const handleConfirmToggle = (dealId, field) => {
+    setDeals(prev => prev.map(d => {
+      if (d.id !== dealId) return d;
+      const newVal = !d[field];
+      const byField = field === "confirmRotation" ? "rotationBy" : field === "confirmCap" ? "capBy" : "financeBy";
+      const updated = { ...d, [field]: newVal, [byField]: newVal ? (user?.name || user?.email) : "", updatedAt: Date.now() };
+      // Auto-promote to active when all 3 confirmed
+      if (updated.confirmRotation && updated.confirmCap && updated.confirmFinance) {
+        updated.status = "active";
+      } else if (updated.status === "active") {
+        updated.status = "pending"; // Un-confirm reverts to pending
+      }
+      return updated;
+    }));
+  };
+
+  // Separate pending deals from active/confirmed deals
+  const pendingDeals = (deals || []).filter(d => d.status === "pending");
+  const activeDeals = (deals || []).filter(d => d.status !== "pending");
+
+  // Summary totals — TODAY ONLY (active deals only)
+  const todayDeals = activeDeals.filter(d => d.date === today && matchSearch(d));
   const totalCap = todayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
   const totalCapRec = todayDeals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
   const startedCount = todayDeals.filter(d => d.started).length;
@@ -3309,7 +3339,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
             </div>
             <button onClick={() => { setEditDeal(null); setNewDayDate(today); setModalOpen(true); }}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(245,158,11,0.3)", whiteSpace: "nowrap" }}
-            >{I.plus} New Affiliate</button>
+            >{I.plus} New Deal</button>
           </div>
         </div>
 
@@ -3357,6 +3387,80 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
           ))}
         </div>
 
+        {/* ═══ Waiting for Confirmation ═══ */}
+        {pendingDeals.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <span style={{ fontSize: 20 }}>⏳</span>
+              <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#B45309" }}>Waiting for Confirmation</h2>
+              <span style={{ padding: "3px 10px", borderRadius: 20, background: "#FEF3C7", color: "#92400E", fontSize: 12, fontWeight: 700 }}>{pendingDeals.length}</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+              {pendingDeals.map(d => {
+                const allDone = d.confirmRotation && d.confirmCap && d.confirmFinance;
+                return (
+                  <div key={d.id} style={{ background: "#FFF", border: allDone ? "2px solid #10B981" : "1px solid #E2E8F0", borderRadius: 12, padding: "16px 18px", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", transition: "all 0.2s" }}>
+                    {/* Header */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontWeight: 800, fontSize: 16, color: "#0F172A" }}>{d.affiliate || "—"}</div>
+                        <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>{d.brokerCap || "—"}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 4, cursor: "pointer", color: "#2563EB", display: "flex", fontSize: 11 }}>{I.edit}</button>
+                        <button onClick={() => setDelConfirm(d.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
+                      </div>
+                    </div>
+                    {/* Info grid */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 12, color: "#475569", marginBottom: 12 }}>
+                      <div><span style={{ color: "#94A3B8" }}>Aff:</span> <strong>{d.cap || "—"}</strong></div>
+                      <div><span style={{ color: "#94A3B8" }}>Aff override:</span> <strong>{d.affOverride || "—"}</strong></div>
+                      <div><span style={{ color: "#94A3B8" }}>Cap:</span> <strong style={{ color: parseInt(d.cap) >= 100 ? "#DC2626" : "#0F172A" }}>{d.cap || "—"}</strong></div>
+                      <div><span style={{ color: "#94A3B8" }}>WH:</span> <strong>{d.hours || "—"}</strong></div>
+                      <div style={{ gridColumn: "1 / -1" }}><span style={{ color: "#94A3B8" }}>Funnel:</span> <strong>{d.funnel || "—"}</strong></div>
+                    </div>
+                    {/* 3 Confirmation checkboxes */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {[
+                        { field: "confirmRotation", label: "Rotation set", can: canConfirmRotation, by: d.rotationBy, who: "Zack / Sasha" },
+                        { field: "confirmCap", label: "Cap ordered", can: canConfirmCap, by: d.capBy, who: "Alex / Katie" },
+                        { field: "confirmFinance", label: "Finance approved", can: canConfirmFinance, by: d.financeBy, who: "Sophia" },
+                      ].map(c => {
+                        const checked = !!d[c.field];
+                        return (
+                          <div key={c.field}
+                            onClick={() => c.can && handleConfirmToggle(d.id, c.field)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8, cursor: c.can ? "pointer" : "default",
+                              background: checked ? "#F0FDF4" : c.can ? "#FAFAFA" : "#F8FAFC",
+                              border: `1px solid ${checked ? "#86EFAC" : "#E2E8F0"}`,
+                              opacity: c.can || checked ? 1 : 0.6,
+                              transition: "all 0.15s",
+                            }}
+                          >
+                            <div style={{
+                              width: 20, height: 20, borderRadius: 4, flexShrink: 0,
+                              border: checked ? "none" : "2px solid #CBD5E1",
+                              background: checked ? "#10B981" : "#FFF",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              color: "#FFF", fontSize: 13, fontWeight: 700,
+                            }}>{checked ? "✓" : ""}</div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: checked ? "#166534" : "#475569" }}>{c.label}</div>
+                              {checked && c.by && <div style={{ fontSize: 10, color: "#6B7280" }}>by {c.by}</div>}
+                            </div>
+                            {!checked && !c.can && <span style={{ fontSize: 9, color: "#94A3B8" }}>{c.who}</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Grouped by date */}
         {sortedDates.map(dateKey => {
           const items = grouped[dateKey];
@@ -3374,7 +3478,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "#FFFFFF" }}>
-                      {["Affiliate","Deal","Broker / Cap","Manage AFF","CAP","Made SALE","Started","CAP Rec.","FTD","Hours","Funnel","Actions"].map(h =>
+                      {["Affiliate","Deal","Broker / Cap","Manage AFF","CAP","Aff OVR","Made SALE","Started","CAP Rec.","FTD","Hours","Funnel","Actions"].map(h =>
                         <th key={h} style={{ padding: "8px 12px", textAlign: "center", color: "#676879", fontSize: 12, fontWeight: 600, borderBottom: "2px solid #94A3B8", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", ...(h === "Affiliate" ? { textAlign: "left", paddingLeft: 14 } : {}) }}>{h}</th>
                       )}
                     </tr>
@@ -3396,6 +3500,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.manageAff || ""}</span>
                         </td>
                         <InlineCell value={d.cap} onSave={v => updateField(d.id, "cap", v)} type="number" style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 14, borderRight: "1px solid #CBD5E1", textAlign: "center", color: "#323338" }} />
+                        <InlineCell value={d.affOverride} onSave={v => updateField(d.id, "affOverride", v)} type="number" style={{ padding: "0 10px", fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 13, borderRight: "1px solid #CBD5E1", textAlign: "center", color: d.affOverride ? "#323338" : "#C5C7D0" }} />
                         <td style={{ padding: 0, borderRight: "1px solid #CBD5E1", background: d.madeSale ? getPersonColor(d.madeSale) : "transparent", textAlign: "center" }}>
                           <span style={{ color: "#FFF", fontWeight: 600, fontSize: 13, letterSpacing: 0.2 }}>{d.madeSale || ""}</span>
                         </td>
@@ -3426,7 +3531,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
                   style={{ width: "100%", padding: "8px 16px", background: "transparent", border: "none", borderTop: "1px dashed #E6E9EF", color: "#F59E0B", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, transition: "background 0.15s" }}
                   onMouseEnter={e => e.currentTarget.style.background = "#FFFBEB"}
                   onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                >{I.plus} Add Affiliate</button>
+                >{I.plus} Add Deal</button>
                 {/* Day footer */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 20, padding: "8px 16px", background: "#FFFFFF", borderTop: "1px solid #E6E9EF", flexWrap: "wrap" }}>
                   {/* Color bars for Manage AFF */}
@@ -3451,16 +3556,16 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
           );
         })}
 
-        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No offers yet. Click "New Affiliate" to add one.</div>}
+        {sortedDates.length === 0 && <div style={{ padding: "60px 16px", textAlign: "center", color: "#94A3B8", fontSize: 15 }}>No deals yet. Click "New Deal" to add one.</div>}
       </main>
 
       {modalOpen && (
-        <Modal title={editDeal ? "Edit Affiliate" : "New Affiliate"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
+        <Modal title={editDeal ? "Edit Deal" : "New Deal"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
           <CRGForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); setNewDayDate(null); }} defaultDate={newDayDate} />
         </Modal>
       )}
       {delConfirm && (
-        <Modal title="Delete Affiliate" onClose={() => setDelConfirm(null)}>
+        <Modal title="Delete Deal" onClose={() => setDelConfirm(null)}>
           <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
             <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
