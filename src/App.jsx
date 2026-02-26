@@ -337,12 +337,22 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.04";
+const VERSION = "6.06";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
 const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets' };
 const LS_VERSIONS_KEY = 'blitz_data_versions';
+
+// ── Version change detection: clear stale localStorage on upgrade ──
+const PREV_VERSION_KEY = 'blitz_app_version';
+const prevVersion = localStorage.getItem(PREV_VERSION_KEY);
+if (prevVersion !== VERSION) {
+  console.log(`🔄 Version upgrade: ${prevVersion || 'unknown'} → ${VERSION} — clearing localStorage cache`);
+  Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+  try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+  localStorage.setItem(PREV_VERSION_KEY, VERSION);
+}
 
 function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
 function lsSave(key, data) {
@@ -491,7 +501,6 @@ async function flushPendingSaves() {
       if (res.ok) {
         const json = await res.json();
         if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
-        if (save.deleted && save.deleted.length > 0) clearDeletedIDs(endpoint, save.deleted);
         pendingSaves.delete(endpoint);
         console.log(`✅ Flushed pending save: ${endpoint}`);
       } else if (res.status === 409) {
@@ -516,20 +525,21 @@ function trackDelete(table, id) {
 }
 function getAndClearDeletes(table) {
   const ids = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
-  // NOTE: Don't clear here — cleared only after server confirms save
+  if (deletedIDs[table]) deletedIDs[table].clear();
   return ids;
-}
-function clearDeletedIDs(table, ids) {
-  if (deletedIDs[table]) {
-    ids.forEach(id => deletedIDs[table].delete(id));
-  }
 }
 
 async function apiSave(endpoint, data, userEmail) {
-  // FIX C1: Debounce — don't save same table within 1 second
-  // EXCEPTION: Always save if there are pending deletes (critical for empty array case)
-  const now = Date.now();
+  // SAFETY: Never save empty array to server unless there are explicit deletes
+  // This prevents accidental data wipes from crashes or render errors
   const hasPendingDeletes = deletedIDs[endpoint] && deletedIDs[endpoint].size > 0;
+  if (Array.isArray(data) && data.length === 0 && !hasPendingDeletes && endpoint !== 'users') {
+    console.warn(`⚠️ BLOCKED empty save to ${endpoint} — no pending deletes, likely a bug`);
+    return false;
+  }
+
+  // FIX C1: Debounce — don't save same table within 1 second
+  const now = Date.now();
   if (!hasPendingDeletes && lastSaveTimestamps[endpoint] && now - lastSaveTimestamps[endpoint] < 1000) {
     return true; // Skip, too soon after last save
   }
@@ -581,7 +591,6 @@ async function apiSave(endpoint, data, userEmail) {
     }
     serverOnline = true;
     pendingSaves.delete(endpoint);
-    if (deleted.length > 0) clearDeletedIDs(endpoint, deleted);
     return true;
   } catch (e) {
     serverOnline = false;
@@ -601,7 +610,6 @@ async function apiSave(endpoint, data, userEmail) {
         }
         serverOnline = true;
         pendingSaves.delete(endpoint);
-        if (deleted.length > 0) clearDeletedIDs(endpoint, deleted);
         return true; 
       }
     } catch (e2) {}
@@ -1425,8 +1433,8 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
 
   const handleDeleteUser = (email) => {
     if (isAdmin(email)) return; // can't delete admin
+    setUsers(prev => prev.filter(u => u.email !== email));
     setDelConfirm(null);
-    setTimeout(() => { setUsers(prev => prev.filter(u => u.email !== email)); }, 0);
   };
 
   return (
@@ -2344,7 +2352,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
     setEditPay(null); 
   };
 
-  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); }, 0); };
+  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   // Bulk actions
   const handleBulkDelete = (ids) => {
@@ -2953,7 +2961,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
     setEditPay(null);
   };
 
-  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); }, 0); };
+  const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
 
   const handleBulkDelete = (ids) => {
     ids.forEach(id => trackDelete('customer-payments', id));
@@ -3296,7 +3304,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); }, 0); };
+  const handleDelete = id => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
@@ -3854,7 +3862,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); }, 0); };
+  const handleDelete = id => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   const updateField = (id, field, value) => {
     setEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
@@ -4146,7 +4154,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
     setEditDeal(null);
   };
 
-  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); }, 0); };
+  const handleDelete = id => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
