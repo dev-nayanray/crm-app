@@ -108,7 +108,7 @@ if (!TELEGRAM_TOKEN) {
   console.log("⚠️  TELEGRAM_TOKEN not set — Telegram bot disabled");
   console.log("   Set environment variable: export TELEGRAM_TOKEN='8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA'");
 }
-const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-4744920512";
+const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002830517753";
 const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
