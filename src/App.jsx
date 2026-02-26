@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.0";
+const VERSION = "6.02";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -3154,16 +3154,16 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
   const [crgSort, setCrgSort] = useState("manual"); // "manual" | "alpha"
 
   // Get the latest date in deals
-  const allDates = [...new Set(deals.map(d => d.date).filter(Boolean))].sort();
+  const allDates = [...new Set((deals || []).map(d => d.date).filter(Boolean))].sort();
   const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
 
   const handleCopyPrevDay = (targetDate) => {
-    const prevDayEntries = deals.filter(d => d.date === latestDate);
+    const prevDayEntries = (deals || []).filter(d => d.date === latestDate);
     if (prevDayEntries.length === 0) return;
     // CHECK: if target date already has records, don't duplicate
-    const existingForDate = deals.filter(d => d.date === targetDate);
+    const existingForDate = (deals || []).filter(d => d.date === targetDate);
     if (existingForDate.length > 0) {
       if (!confirm(`${targetDate} already has ${existingForDate.length} entries. Copy anyway? (existing entries will be kept)`)) return;
     }
@@ -3243,6 +3243,10 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
     return [d.affiliate, d.deal, d.brokerCap, d.manageAff, d.madeSale, d.hours, d.funnel, d.affOverride].some(v => (v || "").toLowerCase().includes(q));
   };
 
+  // Separate pending deals from active/confirmed deals
+  const pendingDeals = (deals || []).filter(d => d.status === "pending");
+  const activeDeals = (deals || []).filter(d => d.status !== "pending");
+
   const filtered = activeDeals.filter(matchSearch);
 
   // Group by date
@@ -3307,10 +3311,6 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess 
       return updated;
     }));
   };
-
-  // Separate pending deals from active/confirmed deals
-  const pendingDeals = (deals || []).filter(d => d.status === "pending");
-  const activeDeals = (deals || []).filter(d => d.status !== "pending");
 
   // Summary totals — TODAY ONLY (active deals only)
   const todayDeals = activeDeals.filter(d => d.date === today && matchSearch(d));
@@ -3734,7 +3734,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     syncFromCRG();
   }, [crgDeals]);
 
-  const allDates = [...new Set(entries.map(d => d.date).filter(Boolean))].sort();
+  const allDates = [...new Set((entries || []).map(d => d.date).filter(Boolean))].sort();
   const latestDate = allDates[allDates.length - 1] || new Date().toISOString().split("T")[0];
   const today = new Date().toISOString().split("T")[0];
   const tomorrow = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })();
@@ -3743,7 +3743,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     const prevDayEntries = entries.filter(d => d.date === latestDate);
     if (prevDayEntries.length === 0) return;
     // CHECK: if target date already has records, don't duplicate
-    const existingForDate = entries.filter(d => d.date === targetDate);
+    const existingForDate = (entries || []).filter(d => d.date === targetDate);
     if (existingForDate.length > 0) {
       if (!confirm(`${targetDate} already has ${existingForDate.length} entries. Copy anyway? (existing entries will be kept)`)) return;
     }
@@ -3799,7 +3799,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries, setEntries, crgDeal
     return (d.agent || "").toLowerCase().includes(search.toLowerCase());
   };
 
-  const filtered = entries.filter(matchSearch);
+  const filtered = (entries || []).filter(matchSearch);
 
   // Group by date — merge entries with same normalized agent name
   const grouped = {};
@@ -4143,7 +4143,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals, setDeals, userAccess
     return [d.affiliate, d.country, d.funnels, d.source, d.dealType, d.deduction, d.openBy].some(v => (v || "").toLowerCase().includes(q));
   };
 
-  const filtered = deals.filter(matchSearch);
+  const filtered = (deals || []).filter(matchSearch);
   const sorted = (() => {
     if (!sortCol) return filtered;
     const arr = [...filtered];
