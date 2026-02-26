@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.06";
+const VERSION = "6.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1433,8 +1433,8 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
 
   const handleDeleteUser = (email) => {
     if (isAdmin(email)) return; // can't delete admin
+    if (!confirm("Are you sure you want to remove this user? They will no longer be able to log in.")) return;
     setUsers(prev => prev.filter(u => u.email !== email));
-    setDelConfirm(null);
   };
 
   return (
@@ -1512,7 +1512,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                           style={{ background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.2)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "#38BDF8", fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
                         >{I.edit}</button>
                         {!isAdmin(u.email) && (
-                          <button onClick={() => setDelConfirm(u.email)} title="Remove"
+                          <button onClick={() => handleDeleteUser(u.email)} title="Remove"
                             style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.15)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", color: "#F87171", fontSize: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 4 }}
                           >{I.trash}</button>
                         )}
@@ -1676,15 +1676,6 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
       <ServerDiagnostics />
 
       {/* Delete Confirm */}
-      {delConfirm && (
-        <Modal title="Remove User" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure you want to remove this user? They will no longer be able to log in.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDeleteUser(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Remove</button>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }
@@ -2352,7 +2343,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
     setEditPay(null); 
   };
 
-  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); };
 
   // Bulk actions
   const handleBulkDelete = (ids) => {
@@ -2430,12 +2421,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -2443,15 +2434,6 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
       {modalOpen && (
         <Modal title={editPay ? "Edit Payment" : "New Payment"} onClose={() => { setModalOpen(false); setEditPay(null); }}>
           <PaymentForm payment={editPay} onSave={handleSave} onClose={() => { setModalOpen(false); setEditPay(null); }} userEmail={user.email} userName={user.name} />
-        </Modal>
-      )}
-      {delConfirm && (
-        <Modal title="Delete Payment" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
-          </div>
         </Modal>
       )}
     </div>
@@ -2961,7 +2943,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
     setEditPay(null);
   };
 
-  const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); };
 
   const handleBulkDelete = (ids) => {
     ids.forEach(id => trackDelete('customer-payments', id));
@@ -3041,26 +3023,17 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={id => setDelConfirm(id)} onBulkDelete={handleBulkDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
       </main>
 
       {modalOpen && (
         <Modal title={editPay ? "Edit Invoice" : "New Customer Invoice"} onClose={() => { setModalOpen(false); setEditPay(null); }}>
           <CPForm payment={editPay} onSave={handleSave} onClose={() => { setModalOpen(false); setEditPay(null); }} userName={user.name} />
-        </Modal>
-      )}
-      {delConfirm && (
-        <Modal title="Delete Invoice" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
-          </div>
         </Modal>
       )}
     </div>
@@ -3304,7 +3277,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
@@ -3434,7 +3407,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
                       </div>
                       <div style={{ display: "flex", gap: 4 }}>
                         <button onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 4, cursor: "pointer", color: "#2563EB", display: "flex", fontSize: 11 }}>{I.edit}</button>
-                        <button onClick={() => setDelConfirm(d.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
+                        <button onClick={() => handleDelete(d.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
                       </div>
                     </div>
                     {/* Info grid */}
@@ -3545,7 +3518,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
                             </>}
                             <button onClick={() => handleDuplicate(d)} title="Duplicate" style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6, padding: 5, cursor: "pointer", color: "#16A34A", display: "flex", fontSize: 12 }}>⧉</button>
                             <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                            <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                            <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                           </div>
                         </td>
                       </tr>
@@ -3588,15 +3561,6 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
       {modalOpen && (
         <Modal title={editDeal ? "Edit Deal" : "New Deal"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
           <CRGForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); setNewDayDate(null); }} defaultDate={newDayDate} />
-        </Modal>
-      )}
-      {delConfirm && (
-        <Modal title="Delete Deal" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
-          </div>
         </Modal>
       )}
     </div>
@@ -3862,7 +3826,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); };
 
   const updateField = (id, field, value) => {
     setEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
@@ -3993,7 +3957,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
                                   style={{ background: "none", border: "1px solid #E2E8F0", borderRadius: 4, padding: "2px 4px", cursor: rowIdx === sortedItems.length - 1 ? "default" : "pointer", color: rowIdx === sortedItems.length - 1 ? "#E2E8F0" : "#64748B", display: "flex", fontSize: 11 }}>▼</button>
                               </>}
                               <button onClick={() => { setEditEntry(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                              <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                              <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                             </div>
                           </td>
                         </tr>
@@ -4018,15 +3982,6 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
       {modalOpen && (
         <Modal title={editEntry ? "Edit Agent" : "New Agent"} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }}>
           <DCForm entry={editEntry} allEntries={entries} onSave={handleSave} onClose={() => { setModalOpen(false); setEditEntry(null); setNewDayDate(null); }} defaultDate={newDayDate} />
-        </Modal>
-      )}
-      {delConfirm && (
-        <Modal title="Delete Agent" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
-          </div>
         </Modal>
       )}
     </div>
@@ -4154,7 +4109,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
     setEditDeal(null);
   };
 
-  const handleDelete = id => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
@@ -4369,7 +4324,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
                         </>}
                         <button onClick={() => handleDuplicate(d)} title="Duplicate" style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 6, padding: 5, cursor: "pointer", color: "#16A34A", display: "flex", fontSize: 12 }}>⧉</button>
                         <button onClick={() => { setEditDeal(d); setModalOpen(true); }} title="Edit" style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
-                        <button onClick={() => setDelConfirm(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
+                        <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
                       </div>
                     </td>
                   </tr>
@@ -4394,15 +4349,6 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
       {modalOpen && (
         <Modal title={editDeal ? "Edit Offer" : "New Offer"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
           <DealsForm deal={editDeal} allDeals={deals} onSave={handleSave} onClose={() => { setModalOpen(false); setEditDeal(null); }} userName={user.name} />
-        </Modal>
-      )}
-      {delConfirm && (
-        <Modal title="Delete Offer" onClose={() => setDelConfirm(null)}>
-          <p style={{ color: "#475569", marginBottom: 24, fontSize: 15 }}>Are you sure? This can't be undone.</p>
-          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
-            <button onClick={() => setDelConfirm(null)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>Delete</button>
-          </div>
         </Modal>
       )}
     </div>
