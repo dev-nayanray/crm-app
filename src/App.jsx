@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.07";
+const VERSION = "6.08";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1105,6 +1105,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
   const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
+  const mobile = useMobile();
   const sorted = sortMode === "alpha"
     ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
     : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
@@ -1134,8 +1135,6 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
     };
     return styles[status] || { background: "#F1F5F9", color: "#475569" };
   };
-
-  const mobile = useMobile();
 
   if (mobile) {
     return (
@@ -2719,6 +2718,7 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
   const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
+  const mobile = useMobile();
   const sorted = sortMode === "alpha"
     ? [...payments].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true }))
     : [...payments].sort((a, b) => (a.paidDate || "").localeCompare(b.paidDate || ""));
@@ -2735,8 +2735,6 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
   const getColor = name => { let h = 0; for (let i = 0; i < (name||"").length; i++) h = name.charCodeAt(i) + ((h << 5) - h); return openByColors[Math.abs(h) % openByColors.length]; };
 
   if (payments.length === 0) return <div style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>{emptyMsg}</div>;
-
-  const mobile = useMobile();
 
   if (mobile) {
     return (
