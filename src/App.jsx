@@ -341,7 +341,7 @@ const VERSION = "6.09";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
-const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets' };
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers' };
 const LS_VERSIONS_KEY = 'blitz_data_versions';
 
 // ── Version change detection: clear stale localStorage on upgrade ──
@@ -4834,7 +4834,6 @@ function AppInner() {
   // Redirect to first allowed page if current page is blocked
   if (page !== "admin" && !canAccess(page)) {
     setPage(firstPage);
-    return null;
   }
 
   if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
