@@ -491,6 +491,7 @@ async function flushPendingSaves() {
       if (res.ok) {
         const json = await res.json();
         if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
+        if (save.deleted && save.deleted.length > 0) clearDeletedIDs(endpoint, save.deleted);
         pendingSaves.delete(endpoint);
         console.log(`✅ Flushed pending save: ${endpoint}`);
       } else if (res.status === 409) {
@@ -515,8 +516,13 @@ function trackDelete(table, id) {
 }
 function getAndClearDeletes(table) {
   const ids = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
-  if (deletedIDs[table]) deletedIDs[table].clear();
+  // NOTE: Don't clear here — cleared only after server confirms save
   return ids;
+}
+function clearDeletedIDs(table, ids) {
+  if (deletedIDs[table]) {
+    ids.forEach(id => deletedIDs[table].delete(id));
+  }
 }
 
 async function apiSave(endpoint, data, userEmail) {
@@ -575,6 +581,7 @@ async function apiSave(endpoint, data, userEmail) {
     }
     serverOnline = true;
     pendingSaves.delete(endpoint);
+    if (deleted.length > 0) clearDeletedIDs(endpoint, deleted);
     return true;
   } catch (e) {
     serverOnline = false;
@@ -594,6 +601,7 @@ async function apiSave(endpoint, data, userEmail) {
         }
         serverOnline = true;
         pendingSaves.delete(endpoint);
+        if (deleted.length > 0) clearDeletedIDs(endpoint, deleted);
         return true; 
       }
     } catch (e2) {}
@@ -1417,8 +1425,8 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
 
   const handleDeleteUser = (email) => {
     if (isAdmin(email)) return; // can't delete admin
-    setUsers(prev => prev.filter(u => u.email !== email));
     setDelConfirm(null);
+    setTimeout(() => { setUsers(prev => prev.filter(u => u.email !== email)); }, 0);
   };
 
   return (
@@ -2336,7 +2344,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
     setEditPay(null); 
   };
 
-  const handleDelete = id => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('payments', id); setPayments(prev => prev.filter(p => p.id !== id)); }, 0); };
 
   // Bulk actions
   const handleBulkDelete = (ids) => {
@@ -2945,7 +2953,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
     setEditPay(null);
   };
 
-  const handleDelete = id => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('customer-payments', id); setPayments(prev => prev.filter(p => p.id !== id)); }, 0); };
 
   const handleBulkDelete = (ids) => {
     ids.forEach(id => trackDelete('customer-payments', id));
@@ -3288,7 +3296,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); }, 0); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
@@ -3846,7 +3854,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
     setNewDayDate(null);
   };
 
-  const handleDelete = id => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('daily-cap', id); setEntries(prev => prev.filter(d => d.id !== id)); }, 0); };
 
   const updateField = (id, field, value) => {
     setEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
@@ -4102,6 +4110,10 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
   const [sortCol, setSortCol] = useState(null);
   const [sortDir, setSortDir] = useState("asc");
   const [inlineEdit, setInlineEdit] = useState(null); // { id, field } for inline editing
+  const [selected, setSelected] = useState(new Set());
+
+  const toggleSelect = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const clearSelection = () => setSelected(new Set());
 
   const handleColumnSort = col => {
     if (sortCol === col) {
@@ -4134,7 +4146,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
     setEditDeal(null);
   };
 
-  const handleDelete = id => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); setDelConfirm(null); };
+  const handleDelete = id => { setDelConfirm(null); setTimeout(() => { trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); }, 0); };
 
   const handleDuplicate = deal => {
     const dup = { ...deal, id: genId() };
@@ -4144,6 +4156,30 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
       arr.splice(idx + 1, 0, dup);
       return arr;
     });
+  };
+
+  const handleBulkDelete = (ids) => {
+    ids.forEach(id => trackDelete('deals', id));
+    setDeals(prev => prev.filter(d => !ids.includes(d.id)));
+    clearSelection();
+  };
+
+  const handleBulkDuplicate = (ids) => {
+    setDeals(prev => {
+      const arr = [...prev];
+      const newItems = [];
+      ids.forEach(id => {
+        const orig = arr.find(d => d.id === id);
+        if (orig) newItems.push({ ...orig, id: genId() });
+      });
+      return [...arr, ...newItems];
+    });
+    clearSelection();
+  };
+
+  const handleBulkArchive = (ids) => {
+    setDeals(prev => prev.map(d => ids.includes(d.id) ? { ...d, archived: true } : d));
+    clearSelection();
   };
 
   const handleInlineChange = (id, field, value) => {
@@ -4211,6 +4247,10 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
                 <tr style={{ background: "#F8FAFC" }}>
+                  <th style={{ padding: "12px 8px", width: 40, textAlign: "center", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1" }}>
+                    <input type="checkbox" checked={sorted.length > 0 && selected.size === sorted.length} onChange={() => setSelected(prev => prev.size === sorted.length ? new Set() : new Set(sorted.map(d => d.id)))}
+                      style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0EA5E9" }} />
+                  </th>
                   {[
                     { key: "affiliate", label: "Affiliate ID" },
                     { key: "country", label: "Country" },
@@ -4240,12 +4280,16 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
               </thead>
               <tbody>
                 {sorted.length === 0 && (
-                  <tr><td colSpan={11} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No offers yet. Click "New Offer" to add one.</td></tr>
+                  <tr><td colSpan={12} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No offers yet. Click "New Offer" to add one.</td></tr>
                 )}
                 {sorted.map((d, i) => (
-                  <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
-                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                  <tr key={d.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s", background: selected.has(d.id) ? "#EFF6FF" : "transparent" }}
+                    onMouseEnter={e => { if (!selected.has(d.id)) e.currentTarget.style.background = "#F8FAFC"; }}
+                    onMouseLeave={e => { if (!selected.has(d.id)) e.currentTarget.style.background = "transparent"; }}>
+                    <td style={{ padding: "12px 8px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
+                      <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)}
+                        style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0EA5E9" }} />
+                    </td>
                     {/* Client: affiliate + country */}
                     <td style={{ padding: "12px 14px", textAlign: "center", fontWeight: 700, fontSize: 15, borderRight: "1px solid #CBD5E1" }}>
                       <span onClick={() => { setEditDeal(d); setModalOpen(true); }} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
@@ -4331,6 +4375,13 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
           </div>
         </div>
       </main>
+
+      <BulkActionBar count={selected.size}
+        onDelete={() => { if (confirm(`Delete ${selected.size} selected offer(s)?`)) { handleBulkDelete([...selected]); } }}
+        onDuplicate={() => { handleBulkDuplicate([...selected]); }}
+        onArchive={() => { handleBulkArchive([...selected]); }}
+        onClear={clearSelection}
+      />
 
       {modalOpen && (
         <Modal title={editDeal ? "Edit Offer" : "New Offer"} onClose={() => { setModalOpen(false); setEditDeal(null); }}>
@@ -4446,8 +4497,14 @@ function AppInner() {
     // Server returned [] = intentionally empty (e.g. all records deleted) — respect it
     if (serverArr.length === 0) return [];
     if (!localArr || localArr.length === 0) return serverArr;
+
+    // FIX: Respect locally deleted records — don't resurrect them from server data
+    const localDeletedSet = deletedIDs[tableName] || new Set();
+
     const merged = new Map();
-    serverArr.forEach(r => { if (r && r.id) merged.set(r.id, r); });
+    serverArr.forEach(r => {
+      if (r && r.id && !localDeletedSet.has(r.id)) merged.set(r.id, r);
+    });
     let added = 0, updated = 0;
     localArr.forEach(r => {
       if (!r || !r.id) return;
