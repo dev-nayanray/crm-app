@@ -1725,7 +1725,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     
     // Test bot access to offer group on startup
     setTimeout(() => {
-      bot.sendMessage(OFFER_GROUP_CHAT_ID, "")
+      bot.sendMessage(OFFER_GROUP_CHAT_ID, "🤖 Bot connected successfully!")
         .then(() => console.log("✅ Bot has access to offer group"))
         .catch(err => {
           console.log("❌ Bot cannot access offer group:", err.message);
