@@ -1948,6 +1948,14 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // Skip hash detection if in ANY waiting state
       if (st) return;
 
+      // Prevent duplicate processing: check recently processed hashes (last 30 seconds)
+      const now = Date.now();
+      if (!bot._processedHashes) bot._processedHashes = new Map();
+      // Clean old entries (older than 30 seconds)
+      for (const [hash, timestamp] of bot._processedHashes) {
+        if (now - timestamp > 30000) bot._processedHashes.delete(hash);
+      }
+
       // USDT hash detection (Brands group)
       const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID;
       
@@ -1974,7 +1982,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         }
         const uniqueTxHashes = Array.from(uniqueHashesMap.values());
         
-        if (uniqueTxHashes.length > 0) {
+        // Filter out recently processed hashes to prevent duplicate processing
+        const newTxHashes = uniqueTxHashes.filter(h => !bot._processedHashes.has(h.hash));
+        
+        if (newTxHashes.length > 0) {
           // Process payment hashes from Brands group
           const amounts = [];
           const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
@@ -1984,8 +1995,8 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
           const wallets = readJSON("wallets.json", []);
 
-          for (let i = 0; i < uniqueTxHashes.length; i++) {
-            const { hash, type } = uniqueTxHashes[i];
+          for (let i = 0; i < newTxHashes.length; i++) {
+            const { hash, type } = newTxHashes[i];
             let txResult = { success: false };
             if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
@@ -2011,6 +2022,9 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             cp.unshift(newPayment);
             await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash (Brands group)` });
             broadcastUpdate("customer-payments", cp);
+            
+            // Mark hash as processed to prevent duplicates
+            bot._processedHashes.set(hash, Date.now());
 
             // Send notification to both groups
             let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
