@@ -105,20 +105,16 @@ function seedUsers() {
 seedUsers();
 
 // Telegram Bot Configuration
-// SECURITY: Use environment variables only. Never hardcode tokens!
-// NOTE: Using hardcoded token as fallback since user prefers not to use .env file
-const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN || "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
-if (!TELEGRAM_TOKEN) {
-  console.log("⚠️  TELEGRAM_TOKEN not set — Telegram bot disabled");
-  console.log("   Set environment variable: export TELEGRAM_TOKEN='8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA'");
-}
-const FINANCE_GROUP_CHAT_ID = process.env.FINANCE_CHAT_ID || "-1002830517753";
-const BRANDS_GROUP_CHAT_ID = process.env.BRANDS_CHAT_ID || "-1002796530029"; // Finance | Brands group
-const OFFER_GROUP_CHAT_ID = process.env.OFFER_CHAT_ID || "-1002183891044"; // Fixed: Added -100 prefix for supergroup
-const OPEN_PAYMENT_GROUP_CHAT_ID = process.env.OPEN_PAYMENT_CHAT_ID || "-1002830517753";
-const CRG_GROUP_CHAT_ID = process.env.CRG_CHAT_ID || "-1002560408661"; // CRG Deals Telegram Group
-// CUSTOMER_PAYMENT_GROUP_CHAT_ID - removed as it's the same as BRANDS_GROUP_CHAT_ID (caused duplicate messages)
-const MONITORING_GROUP_CHAT_ID = process.env.MONITORING_CHAT_ID || "-1002832299846";
+// Using hardcoded token (no .env required)
+const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
+
+// Telegram Group Chat IDs (hardcoded)
+const FINANCE_GROUP_CHAT_ID = "-1002830517753";
+const BRANDS_GROUP_CHAT_ID = "-1002796530029";        // Finance | Brands group
+const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
+const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
+const CRG_GROUP_CHAT_ID = "-1002560408661";           // CRG Deals Telegram Group
+const MONITORING_GROUP_CHAT_ID = "-1002832299846";
 
 // Helper function to validate and normalize chat ID for supergroups
 function normalizeChatId(chatId) {
@@ -176,7 +172,7 @@ testChatIds();
 
 // Crypto verification APIs
 const TRONSCAN_API = "https://apilist.tronscan.org";
-const ETHERSCAN_API_KEY = process.env.ETHERSCAN_API_KEY || "2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET";
+const ETHERSCAN_API_KEY ="2CAM7DNEFBXX2515FXGZGUF6C8SIKNR7ET";
 const ETHERSCAN_API = "https://api.etherscan.io/api";
 const ETHERSCAN_V2_API = "https://api.etherscan.io/v2/api";
 const TRC20_HASH_REGEX = /^[a-zA-Z0-9]{64}$/;
@@ -1689,6 +1685,31 @@ function sendNewCRGDealNotification(deal) {
 let bot;
 const userStates = {};
 
+// Track processed message IDs to prevent duplicates (30 second window)
+const processedMessageIds = new Map();
+const MESSAGE_ID_CLEANUP_INTERVAL = 30000; // 30 seconds
+
+// Cleanup old message IDs periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [msgId, timestamp] of processedMessageIds) {
+    if (now - timestamp > MESSAGE_ID_CLEANUP_INTERVAL) {
+      processedMessageIds.delete(msgId);
+    }
+  }
+}, MESSAGE_ID_CLEANUP_INTERVAL);
+
+// Helper to check and mark message as processed
+function isMessageProcessed(msgId) {
+  if (!msgId) return false;
+  return processedMessageIds.has(msgId.toString());
+}
+
+function markMessageProcessed(msgId) {
+  if (!msgId) return;
+  processedMessageIds.set(msgId.toString(), Date.now());
+}
+
 if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   try {
     bot = new TelegramBot(TELEGRAM_TOKEN, { 
@@ -2295,6 +2316,15 @@ app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
 
 async function handleOfferMessage(bot, msg, messageText) {
   try {
+    // Check for duplicate message using message ID
+    if (msg.message_id) {
+      if (isMessageProcessed(msg.message_id)) {
+        console.log("⏭️ Skipping duplicate offer message:", msg.message_id);
+        return;
+      }
+      markMessageProcessed(msg.message_id);
+    }
+    
     console.log("📝 Received offer message:", messageText);
     
     // Parse the BLITZ offer format:
