@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "6.09";
+const VERSION = "7.0";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -468,18 +468,20 @@ function registerConflictSetter(table, setter) { conflictSetters[table] = setter
 function handleConflictResolution(endpoint, serverData, serverVersion) {
   // 1. Update version so next save uses correct version
   if (serverVersion) { dataVersions[endpoint] = serverVersion; savePersistedVersions(dataVersions); }
-  // 2. Save server data to localStorage
-  lsSave(endpoint, serverData);
-  // 3. Merge into React state (if setter registered) — THIS is the critical fix
+  // 2. Merge with localStorage and compare before touching React state
+  const lsData = lsGet(endpoint, null) || [];
   const setter = conflictSetters[endpoint];
   if (setter && typeof mergeByIDGlobal === 'function') {
-    setter(prev => {
-      const merged = mergeByIDGlobal(prev, serverData, endpoint);
-      lsSave(endpoint, merged);
-      return merged;
-    });
-    console.log(`🔄 Conflict on ${endpoint} — merged server v${serverVersion} into state`);
+    const merged = mergeByIDGlobal(lsData, serverData, endpoint);
+    lsSave(endpoint, merged);
+    if (JSON.stringify(merged) !== JSON.stringify(lsData)) {
+      setter(merged);
+      console.log(`🔄 Conflict on ${endpoint} — merged server v${serverVersion} into state (changed)`);
+    } else {
+      console.log(`🔄 Conflict on ${endpoint} — server v${serverVersion} same as local, no state update`);
+    }
   } else {
+    lsSave(endpoint, serverData);
     console.log(`🔄 Conflict on ${endpoint} — saved server v${serverVersion} to localStorage (no setter)`);
   }
 }
@@ -1425,6 +1427,11 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
   const [editingWallet, setEditingWallet] = useState(null); // null or wallet id being edited
   const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "" });
 
+  // Cache last valid users list — prevents "Loading..." flicker during sync
+  const usersCache = useRef(users && users.length > 0 ? users : []);
+  if (users && users.length > 0) usersCache.current = users;
+  const displayUsers = usersCache.current;
+
   const handleAddUser = () => {
     if (!newUser.email || !newUser.password || !newUser.name) return;
     if (users.some(u => u.email === newUser.email)) return;
@@ -1482,7 +1489,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
 
         {/* Users Table */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
-          {(!users || users.length === 0) ? (
+          {(!displayUsers || displayUsers.length === 0) ? (
             <div style={{ padding: "40px 24px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>👥</div>
               Loading users... If this persists, check server connection.
@@ -1499,7 +1506,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u, i) => (
+                {displayUsers.map((u, i) => (
                   <tr key={u.email} style={{ borderBottom: i < users.length - 1 ? "1px solid #F1F5F9" : "none" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(56,189,248,0.03)"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}
@@ -1690,10 +1697,154 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
         </Modal>
       )}
 
+      {/* ── Restore Database (Admin only) ── */}
+      <RestoreDatabase user={user} />
+
       {/* Server Diagnostics — Admin only */}
       <ServerDiagnostics />
 
       {/* Delete Confirm */}
+    </div>
+  );
+}
+
+/* ── Restore Database (Admin only) ── */
+function RestoreDatabase({ user }) {
+  const [backups, setBackups] = useState([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState(null);
+
+  const fetchBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/backups`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setBackups((Array.isArray(data) ? data : data.backups || []).slice(0, 3));
+      }
+    } catch (e) { console.error("Failed to fetch backups:", e); }
+    setBackupsLoading(false);
+  };
+
+  const handleRestore = async (backupName) => {
+    if (!confirm(`⚠️ RESTORE DATABASE\n\nThis will replace ALL current data with the backup:\n${backupName}\n\nThis cannot be undone. A safety backup of current data will be created first.\n\nAre you sure?`)) return;
+    if (!confirm(`FINAL CONFIRMATION\n\nRestore from: ${backupName}\n\nAll current data will be overwritten. Continue?`)) return;
+    setRestoreStatus(`Restoring ${backupName}...`);
+    try {
+      const res = await fetch(`${API_BASE}/restore/${encodeURIComponent(backupName)}`, {
+        method: "POST",
+        headers: { ...authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({ user: user?.email || "admin" })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setRestoreStatus(`✅ Restored from ${backupName}! Reloading...`);
+        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setRestoreStatus(`❌ Restore failed: ${data.error || "Unknown error"}`);
+      }
+    } catch (e) { setRestoreStatus(`❌ Restore failed: ${e.message}`); }
+  };
+
+  const handleFileRestore = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const tables = ['users', 'payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets', 'offers'];
+      const found = tables.filter(t => data[t] && Array.isArray(data[t]));
+      if (found.length === 0) { alert("❌ Invalid backup file — no data tables found."); return; }
+      const summary = found.map(t => `  ${t}: ${data[t].length} records`).join("\n");
+      if (!confirm(`📦 Backup file: ${file.name}\n\nContains:\n${summary}\n\n⚠️ This will OVERWRITE all current data.\n\nContinue?`)) return;
+      if (!confirm("FINAL CONFIRMATION — Restore now? This cannot be undone.")) return;
+      setRestoreStatus("Uploading and restoring...");
+      try { await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() }); } catch {}
+      let ok = 0;
+      for (const t of found) {
+        try {
+          const res = await fetch(`${API_BASE}/${t}`, {
+            method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ data: data[t], version: 0, user: user?.email || "restore", forceOverwrite: true })
+          });
+          if (res.ok) ok++;
+        } catch {}
+      }
+      if (ok > 0) {
+        setRestoreStatus(`✅ Restored ${ok}/${found.length} tables from ${file.name}! Reloading...`);
+        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+        setTimeout(() => window.location.reload(), 1500);
+      } else {
+        setRestoreStatus("❌ Restore failed — no tables were saved successfully.");
+      }
+    } catch (err) { setRestoreStatus("❌ Invalid file: " + err.message); }
+  };
+
+  return (
+    <div style={{ marginTop: 32, padding: "20px 24px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 14 }}>
+      <div style={{ fontSize: 18, fontWeight: 700, color: "#92400E", marginBottom: 16 }}>🔄 Restore Database</div>
+
+      {/* Server backups */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#92400E" }}>Server Backups (last 3)</span>
+          <button onClick={fetchBackups} style={{ padding: "6px 14px", borderRadius: 8, background: "#F59E0B", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+            {backupsLoading ? "Loading..." : "↻ Load Backups"}
+          </button>
+        </div>
+        {backups.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {backups.map((b, i) => (
+              <div key={b.name || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "#FFF", border: "1px solid #FDE68A", borderRadius: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" }}>{b.name}</div>
+                  <div style={{ fontSize: 11, color: "#64748B" }}>
+                    {b.files ? `${b.files} files` : ""}{b.date ? ` • ${new Date(b.date).toLocaleString()}` : b.timestamp ? ` • ${b.timestamp}` : ""}
+                  </div>
+                </div>
+                <button onClick={() => handleRestore(b.name)}
+                  style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  ⏪ Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {backups.length === 0 && !backupsLoading && (
+          <div style={{ fontSize: 12, color: "#B45309", padding: "10px 14px", background: "#FFF", borderRadius: 8, border: "1px dashed #FDE68A" }}>Click "Load Backups" to fetch server backups, or use file upload below.</div>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "14px 0" }}>
+        <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
+        <span style={{ fontSize: 12, color: "#B45309", fontWeight: 600 }}>OR</span>
+        <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
+      </div>
+
+      {/* File upload restore */}
+      <div style={{ marginBottom: 8 }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#92400E", display: "block", marginBottom: 8 }}>Restore from Backup File</span>
+        <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 16px", background: "#FFF", border: "2px dashed #FDE68A", borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "#F59E0B"; e.currentTarget.style.background = "#FFFEF5"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "#FDE68A"; e.currentTarget.style.background = "#FFF"; }}
+        >
+          <span style={{ fontSize: 22 }}>📂</span>
+          <span style={{ fontSize: 14, fontWeight: 600, color: "#92400E" }}>Choose backup JSON file...</span>
+          <input type="file" accept=".json" style={{ display: "none" }} onChange={handleFileRestore} />
+        </label>
+      </div>
+
+      {restoreStatus && (
+        <div style={{ marginTop: 10, fontSize: 13, color: restoreStatus.startsWith("✅") ? "#16A34A" : restoreStatus.startsWith("❌") ? "#DC2626" : "#92400E", padding: "10px 14px", background: "#FFF", borderRadius: 8, fontWeight: 500 }}>
+          {restoreStatus}
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: "#B45309", marginTop: 10 }}>⚠️ Restoring will overwrite ALL current data. A safety backup is created automatically first.</div>
     </div>
   );
 }
@@ -2135,47 +2286,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
     } catch (e) { setBackupStatus("❌ " + e.message); }
   };
 
-  // ── Backup Restore System ──
-  const [backups, setBackups] = useState([]);
-  const [backupsLoading, setBackupsLoading] = useState(false);
-  const [restoreStatus, setRestoreStatus] = useState(null);
-
-  const fetchBackups = async () => {
-    setBackupsLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/admin/backups`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setBackups((data.backups || []).slice(0, 3));
-      }
-    } catch (e) { console.error("Failed to fetch backups:", e); }
-    setBackupsLoading(false);
-  };
-
-  const handleRestore = async (backupName) => {
-    if (!confirm(`⚠️ RESTORE DATABASE\n\nThis will replace ALL current data with the backup:\n${backupName}\n\nThis cannot be undone. A safety backup of current data will be created first.\n\nAre you sure?`)) return;
-    if (!confirm(`FINAL CONFIRMATION\n\nRestore from: ${backupName}\n\nAll current data will be overwritten. Continue?`)) return;
-    setRestoreStatus(`Restoring ${backupName}...`);
-    try {
-      const res = await fetch(`${API_BASE}/admin/restore`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ backup: backupName })
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setRestoreStatus(`✅ Restored from ${backupName}! Reloading...`);
-        // Clear localStorage so fresh data loads from server
-        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
-        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
-        setTimeout(() => window.location.reload(), 1500);
-      } else {
-        setRestoreStatus(`❌ Restore failed: ${data.error || "Unknown error"}`);
-      }
-    } catch (e) { setRestoreStatus(`❌ Restore failed: ${e.message}`); }
-  };
-
-  useEffect(() => { if (isAdmin(user.email)) fetchBackups(); }, []);
+  // ── Backup Restore moved to Admin Panel ──
 
   const handleDedup = async () => {
     if (!confirm("Remove duplicate CRG deals and Daily Cap entries?")) return;
@@ -2218,106 +2329,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
           {backupStatus && <div style={{ fontSize: 12, color: "#64748B", padding: "6px 10px", background: "#F8FAFC", borderRadius: 6 }}>Backup: {backupStatus}</div>}
           <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run automatically every hour and on every server restart. Always create a manual backup before deploying a new version.</div>
 
-          {/* ── Restore from Backup ── */}
-          {isAdmin(user.email) && (
-            <div style={{ marginTop: 16, padding: "16px 18px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#92400E", marginBottom: 12 }}>🔄 Restore Database</div>
-
-              {/* Server backups */}
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E" }}>Server Backups (last 3)</span>
-                  <button onClick={fetchBackups} style={{ padding: "4px 12px", borderRadius: 6, background: "#F59E0B", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-                    {backupsLoading ? "Loading..." : "↻ Load Backups"}
-                  </button>
-                </div>
-                {backups.length > 0 && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    {backups.map((b, i) => (
-                      <div key={b.name || i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "#FFF", border: "1px solid #FDE68A", borderRadius: 8 }}>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 600, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" }}>{b.name}</div>
-                          <div style={{ fontSize: 11, color: "#64748B" }}>
-                            {b.date ? new Date(b.date).toLocaleString() : ""}{b.size ? ` • ${b.size}` : ""}
-                          </div>
-                        </div>
-                        <button onClick={() => handleRestore(b.name)}
-                          style={{ padding: "6px 14px", borderRadius: 6, background: "linear-gradient(135deg,#EF4444,#F87171)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
-                          ⏪ Restore
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {backups.length === 0 && !backupsLoading && (
-                  <div style={{ fontSize: 11, color: "#B45309", padding: "8px 12px", background: "#FFF", borderRadius: 8, border: "1px dashed #FDE68A" }}>Click "Load Backups" to fetch server backups, or use file upload below.</div>
-                )}
-              </div>
-
-              {/* Divider */}
-              <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "12px 0" }}>
-                <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
-                <span style={{ fontSize: 11, color: "#B45309", fontWeight: 600 }}>OR</span>
-                <div style={{ flex: 1, height: 1, background: "#FDE68A" }} />
-              </div>
-
-              {/* File upload restore */}
-              <div style={{ marginBottom: 8 }}>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#92400E", display: "block", marginBottom: 8 }}>Restore from Backup File</span>
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "12px 16px", background: "#FFF", border: "2px dashed #FDE68A", borderRadius: 10, cursor: "pointer", transition: "all 0.15s" }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "#F59E0B"; e.currentTarget.style.background = "#FFFEF5"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "#FDE68A"; e.currentTarget.style.background = "#FFF"; }}
-                >
-                  <span style={{ fontSize: 20 }}>📂</span>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#92400E" }}>Choose backup JSON file...</span>
-                  <input type="file" accept=".json" style={{ display: "none" }} onChange={async (e) => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    e.target.value = "";
-                    try {
-                      const text = await file.text();
-                      const data = JSON.parse(text);
-                      const tables = ['users', 'payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets'];
-                      const found = tables.filter(t => data[t] && Array.isArray(data[t]));
-                      if (found.length === 0) { alert("❌ Invalid backup file — no data tables found."); return; }
-                      const summary = found.map(t => `  ${t}: ${data[t].length} records`).join("\n");
-                      if (!confirm(`📦 Backup file: ${file.name}\n\nContains:\n${summary}\n\n⚠️ This will OVERWRITE all current data.\n\nContinue?`)) return;
-                      if (!confirm("FINAL CONFIRMATION — Restore now? This cannot be undone.")) return;
-                      setRestoreStatus("Uploading and restoring...");
-                      // First create safety backup
-                      try { await fetch(`${API_BASE}/admin/backup`, { method: "POST", headers: authHeaders() }); } catch {}
-                      // Then push each table to server
-                      let ok = 0;
-                      for (const t of found) {
-                        try {
-                          const res = await fetch(`${API_BASE}/${t}`, {
-                            method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
-                            body: JSON.stringify({ data: data[t], version: 0, user: user?.email || "restore", forceOverwrite: true })
-                          });
-                          if (res.ok) ok++;
-                        } catch {}
-                      }
-                      if (ok > 0) {
-                        setRestoreStatus(`✅ Restored ${ok}/${found.length} tables from ${file.name}! Reloading...`);
-                        Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
-                        try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
-                        setTimeout(() => window.location.reload(), 1500);
-                      } else {
-                        setRestoreStatus("❌ Restore failed — no tables were saved successfully.");
-                      }
-                    } catch (err) { setRestoreStatus("❌ Invalid file: " + err.message); }
-                  }} />
-                </label>
-              </div>
-
-              {restoreStatus && (
-                <div style={{ marginTop: 8, fontSize: 12, color: restoreStatus.startsWith("✅") ? "#16A34A" : restoreStatus.startsWith("❌") ? "#DC2626" : "#92400E", padding: "8px 12px", background: "#FFF", borderRadius: 6, fontWeight: 500 }}>
-                  {restoreStatus}
-                </div>
-              )}
-              <div style={{ fontSize: 10, color: "#B45309", marginTop: 8 }}>⚠️ Restoring will overwrite ALL current data. A safety backup is created automatically first.</div>
-            </div>
-          )}
+          {/* Restore moved to Admin Panel */}
         </div>
 
         {/* ═══ CAP Targets ═══ */}
@@ -3451,9 +3463,10 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
 
   // ── Confirmation workflow — role-based approvals ──
   const userEmail = (user?.email || "").toLowerCase();
-  const canConfirmRotation = ["zack@blitz-affiliates.marketing", "alehandro@blitz-affiliates.marketing", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
-  const canConfirmCap = ["kazarian.oleksandra.v@gmail.com", "kate@blitz-affiliates.marketing", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
-  const canConfirmFinance = ["sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"].includes(userEmail);
+  const stageUsers = ["kate@blitz-affiliates.marketing", "alehandro@blitz-affiliates.marketing", "zack@blitz-affiliates.marketing", "kazarian.oleksandra.v@gmail.com", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"];
+  const canConfirmRotation = stageUsers.includes(userEmail);
+  const canConfirmCap = stageUsers.includes(userEmail);
+  const canConfirmFinance = stageUsers.includes(userEmail);
 
   const handleConfirmToggle = (dealId, field) => {
     setDeals(prev => prev.map(d => {
@@ -3581,9 +3594,9 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
                     {/* 3 Confirmation checkboxes */}
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {[
-                        { field: "confirmRotation", label: "Rotation set", can: canConfirmRotation, by: d.rotationBy, who: "Zack / Sasha" },
-                        { field: "confirmCap", label: "Cap ordered", can: canConfirmCap, by: d.capBy, who: "Alex / Katie" },
-                        { field: "confirmFinance", label: "Finance approved", can: canConfirmFinance, by: d.financeBy, who: "Sophia" },
+                        { field: "confirmRotation", label: "Rotation set", can: canConfirmRotation, by: d.rotationBy, who: "Kate / Alehandro / Zack / Oleksandra" },
+                        { field: "confirmCap", label: "Cap ordered", can: canConfirmCap, by: d.capBy, who: "Kate / Alehandro / Zack / Oleksandra" },
+                        { field: "confirmFinance", label: "Finance approved", can: canConfirmFinance, by: d.financeBy, who: "Kate / Alehandro / Zack / Oleksandra" },
                       ].map(c => {
                         const checked = !!d[c.field];
                         return (
@@ -4224,8 +4237,14 @@ function DealsForm({ deal, allDeals, onSave, onClose, userName }) {
   );
 }
 
-function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDeals, userAccess }) {
-  const deals = Array.isArray(rawDealsPage) ? rawDealsPage : [];
+function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDeals, offersData, setOffersData, userAccess }) {
+  const manualDeals = Array.isArray(rawDealsPage) ? rawDealsPage : [];
+  const serverOffers = Array.isArray(offersData) ? offersData : [];
+  // Merge: manual deals + server offers (from Telegram bot), dedupe by id
+  const mergedMap = new Map();
+  manualDeals.forEach(d => mergedMap.set(d.id, d));
+  serverOffers.forEach(o => { if (!mergedMap.has(o.id)) mergedMap.set(o.id, o); });
+  const deals = Array.from(mergedMap.values());
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -4579,6 +4598,7 @@ function AppInner() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
+  const [offersData, setOffersData] = useState(() => lsGet('offers', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
 
@@ -4644,6 +4664,7 @@ function AppInner() {
   registerConflictSetter('daily-cap', setDcEntries);
   registerConflictSetter('deals', setDealsData);
   registerConflictSetter('wallets', setWalletsData);
+  registerConflictSetter('offers', setOffersData);
 
   useEffect(() => {
     (async () => {
@@ -4673,14 +4694,14 @@ function AppInner() {
 
       // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
-        const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
+        const [su, sp, scp, scrg, sdc, sdl, swl, sof] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
-          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
+          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'),
         ]);
         if (sessionExpiredFlag) {
           sessionExpiredFlag = false; setUser(null); skipSave.current = false; serverFetchDone.current = false; setLoaded(true); return;
         }
-        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl].some(d => d !== null);
+        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
           setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 2000); return;
@@ -4701,6 +4722,7 @@ function AppInner() {
               return u;
             });
             setUsers(usersFinal);
+            initialUsersRef.current = JSON.stringify(usersFinal);
             if (JSON.stringify(usersFinal) !== JSON.stringify(su)) pushTasks.push(apiSave('users', usersFinal, user?.email));
           }
 
@@ -4711,7 +4733,8 @@ function AppInner() {
             { key: 'crg-deals', srv: scrg, setter: setCrgDeals, ref: initialCrgRef },
             { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: initialDcRef },
             { key: 'deals', srv: sdl, setter: setDealsData, ref: initialDealsRef },
-            { key: 'wallets', srv: swl, setter: setWalletsData },
+            { key: 'wallets', srv: swl, setter: setWalletsData, ref: initialWalletsRef },
+            { key: 'offers', srv: sof, setter: setOffersData },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -4746,20 +4769,21 @@ function AppInner() {
     connectWebSocket();
     const unsub = onWsUpdate((msg) => {
       if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data)) return;
-      skipSave.current = true;
       const setters = {
         users: setUsers, payments: setPayments, 'customer-payments': setCpPayments,
-        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData
+        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData, offers: setOffersData
       };
       const setter = setters[msg.table];
       if (setter) {
-        setter(prev => {
-          const merged = mergeByID(prev, msg.data, msg.table);
-          if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(msg.table, merged); return merged; }
-          return prev;
-        });
+        const lsData = lsGet(msg.table, null) || [];
+        const merged = mergeByID(lsData, msg.data, msg.table);
+        if (JSON.stringify(merged) !== JSON.stringify(lsData)) {
+          skipSave.current = true;
+          lsSave(msg.table, merged);
+          setter(merged);
+          setTimeout(() => { skipSave.current = false; }, 2000);
+        }
       }
-      setTimeout(() => { skipSave.current = false; }, 2000);
     });
 
     // Fallback polling every 15s \u2014 MERGE, never replace
@@ -4767,23 +4791,29 @@ function AppInner() {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
       if (!serverOnline) { try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch {} }
       if (!serverOnline) return;
-      const [su, sp, scp, scrg, sdc, sdl, swl] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'),
+      const [su, sp, scp, scrg, sdc, sdl, swl, sof] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'),
       ]);
       skipSave.current = true;
       const all = [
         { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
-        { d: swl, s: setWalletsData, k: 'wallets' },
+        { d: swl, s: setWalletsData, k: 'wallets' }, { d: sof, s: setOffersData, k: 'offers' },
       ];
+      let anyChanged = false;
       for (const t of all) {
         if (t.d !== null) {
-          t.s(prev => {
-            const merged = mergeByID(prev, t.d, t.k);
-            if (JSON.stringify(merged) !== JSON.stringify(prev)) { lsSave(t.k, merged); return merged; }
-            return prev;
-          });
+          // Compare server data with localStorage BEFORE touching React state
+          const lsData = lsGet(t.k, null) || [];
+          const merged = mergeByID(lsData, t.d, t.k);
+          const lsStr = JSON.stringify(lsData);
+          const mergedStr = JSON.stringify(merged);
+          if (mergedStr !== lsStr) {
+            lsSave(t.k, merged);
+            t.s(merged); // Direct set, not functional update
+            anyChanged = true;
+          }
         }
       }
       setTimeout(() => { skipSave.current = false; }, 2000);
@@ -4794,19 +4824,22 @@ function AppInner() {
   }, [loaded]);
 
   // \u2500\u2500 Auto-save hooks \u2500\u2500
+  const initialUsersRef = useRef(JSON.stringify([]));
   const initialPaymentsRef = useRef(JSON.stringify([]));
   const initialCpRef = useRef(JSON.stringify([]));
   const initialCrgRef = useRef(JSON.stringify([]));
   const initialDcRef = useRef(JSON.stringify([]));
   const initialDealsRef = useRef(JSON.stringify([]));
+  const initialWalletsRef = useRef(JSON.stringify([]));
 
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0) apiSave('users', users, user?.email); }, [users]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0 && JSON.stringify(users) !== initialUsersRef.current) { initialUsersRef.current = JSON.stringify(users); apiSave('users', users, user?.email); } }, [users]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_payments) !== initialPaymentsRef.current) { initialPaymentsRef.current = JSON.stringify(_payments); apiSave('payments', _payments, user?.email); } }, [_payments]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_cpPayments) !== initialCpRef.current) { initialCpRef.current = JSON.stringify(_cpPayments); apiSave('customer-payments', _cpPayments, user?.email); } }, [_cpPayments]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(crgDeals) !== initialCrgRef.current) { initialCrgRef.current = JSON.stringify(crgDeals); apiSave('crg-deals', crgDeals, user?.email); } }, [crgDeals]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dcEntries) !== initialDcRef.current) { initialDcRef.current = JSON.stringify(dcEntries); apiSave('daily-cap', dcEntries, user?.email); } }, [dcEntries]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dealsData) !== initialDealsRef.current) { initialDealsRef.current = JSON.stringify(dealsData); apiSave('deals', dealsData, user?.email); } }, [dealsData]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0) apiSave('wallets', walletsData, user?.email); }, [walletsData]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0 && JSON.stringify(walletsData) !== initialWalletsRef.current) { initialWalletsRef.current = JSON.stringify(walletsData); apiSave('wallets', walletsData, user?.email); } }, [walletsData]);
+  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && offersData.length > 0) apiSave('offers', offersData, user?.email); }, [offersData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
@@ -4834,6 +4867,7 @@ function AppInner() {
   // Redirect to first allowed page if current page is blocked
   if (page !== "admin" && !canAccess(page)) {
     setPage(firstPage);
+    return null;
   }
 
   if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
@@ -4841,7 +4875,7 @@ function AppInner() {
   if (page === "customers" && canAccess("customers")) return (<><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
-  if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
+  if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} offersData={offersData} setOffersData={setOffersData} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
 }
