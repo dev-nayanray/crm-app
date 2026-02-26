@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "7.0";
+const VERSION = "7.02";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -538,7 +538,7 @@ async function apiSave(endpoint, data, userEmail) {
   // SAFETY: Never save empty array to server unless there are explicit deletes
   const hasPendingDeletes = deletedIDs[endpoint] && deletedIDs[endpoint].size > 0;
   const pendingDeleteCount = hasPendingDeletes ? deletedIDs[endpoint].size : 0;
-  if (Array.isArray(data) && data.length === 0 && !hasPendingDeletes && endpoint !== 'users') {
+  if (Array.isArray(data) && data.length === 0 && !hasPendingDeletes) {
     console.warn(`⚠️ BLOCKED empty save to ${endpoint} — no pending deletes, likely a bug`);
     return false;
   }
@@ -644,40 +644,50 @@ async function apiSave(endpoint, data, userEmail) {
 // ── WebSocket Manager (real-time sync) ──
 let wsConnection = null;
 let wsReconnectTimer = null;
+let wsReconnectAttempts = 0;
 const wsListeners = new Set();
 
 function connectWebSocket() {
   if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
+  const token = getSessionToken();
+  if (!token) return; // Don't connect without auth
   try {
-    wsConnection = new WebSocket(`${WS_URL}?token=${encodeURIComponent(getSessionToken() || '')}`);
+    wsConnection = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
     wsConnection.onopen = () => {
       console.log('🔌 WebSocket connected');
+      wsReconnectAttempts = 0; // Reset backoff on success
       serverOnline = true;
-      flushPendingSaves(); // Push any queued saves now that server is back
+      flushPendingSaves();
     };
     wsConnection.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
         if (msg.type === 'update') {
-          // Real-time update from another user
           if (msg.version) dataVersions[msg.table] = msg.version;
           if (Array.isArray(msg.data)) {
             lsSave(msg.table, msg.data);
           }
-          // Notify all listeners
           wsListeners.forEach(fn => fn(msg));
         } else if (msg.type === 'versions') {
           Object.entries(msg.versions).forEach(([k, v]) => { dataVersions[k] = v; });
         }
       } catch {}
     };
-    wsConnection.onclose = () => {
+    wsConnection.onclose = (e) => {
       wsConnection = null;
-      // Reconnect after 3 seconds
-      if (!wsReconnectTimer) wsReconnectTimer = setTimeout(() => { wsReconnectTimer = null; connectWebSocket(); }, 3000);
+      // Exponential backoff: 3s, 6s, 12s, 24s, max 30s
+      const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempts), 30000);
+      wsReconnectAttempts++;
+      if (wsReconnectAttempts <= 3) console.log(`🔌 WebSocket closed (code=${e.code}, reason=${e.reason || 'none'}). Reconnecting in ${delay/1000}s...`);
+      if (!wsReconnectTimer) wsReconnectTimer = setTimeout(() => { wsReconnectTimer = null; connectWebSocket(); }, delay);
     };
-    wsConnection.onerror = () => { wsConnection = null; };
-  } catch {}
+    wsConnection.onerror = (e) => {
+      if (wsReconnectAttempts === 0) console.warn('🔌 WebSocket error — will fall back to HTTP polling if reconnect fails');
+      wsConnection = null;
+    };
+  } catch (e) {
+    console.warn('🔌 WebSocket creation failed:', e.message, '— using HTTP polling');
+  }
 }
 
 function onWsUpdate(fn) { wsListeners.add(fn); return () => wsListeners.delete(fn); }
@@ -1419,7 +1429,7 @@ function PageAccessToggles({ access, onChange }) {
   );
 }
 
-function AdminPanel({ users, setUsers, wallets, setWallets, onBack }) {
+function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
   const [addOpen, setAddOpen] = useState(false);
   const [editUser, setEditUser] = useState(null);
   const [newUser, setNewUser] = useState({ email: "", password: "", name: "", pageAccess: ALL_PAGES.map(p => p.key) });
@@ -1934,6 +1944,7 @@ function ServerDiagnostics() {
         <div style={cardStyle}><div style={labelStyle}>WS Clients</div><div style={valStyle}>{diag.connections?.webSocketClients || 0}</div></div>
         <div style={cardStyle}><div style={labelStyle}>Sessions</div><div style={valStyle}>{diag.connections?.activeSessions || 0}</div></div>
         <div style={cardStyle}><div style={labelStyle}>TG Errors</div><div style={{ ...valStyle, color: (diag.telegram?.pollingErrors || 0) > 5 ? "#EF4444" : "#10B981" }}>{diag.telegram?.pollingErrors || 0}</div></div>
+        <div style={cardStyle}><div style={labelStyle}>Backups</div><div style={{ ...valStyle, color: (diag.backups?.count || 0) > 0 ? "#10B981" : "#EF4444" }}>{diag.backups?.count || 0}</div><div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>{diag.backups?.latest ? `Latest: ${diag.backups.latest.slice(0,19)}` : "No backups!"}</div></div>
       </div>
 
       {history.length > 1 && (
@@ -4237,14 +4248,8 @@ function DealsForm({ deal, allDeals, onSave, onClose, userName }) {
   );
 }
 
-function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDeals, offersData, setOffersData, userAccess }) {
-  const manualDeals = Array.isArray(rawDealsPage) ? rawDealsPage : [];
-  const serverOffers = Array.isArray(offersData) ? offersData : [];
-  // Merge: manual deals + server offers (from Telegram bot), dedupe by id
-  const mergedMap = new Map();
-  manualDeals.forEach(d => mergedMap.set(d.id, d));
-  serverOffers.forEach(o => { if (!mergedMap.has(o.id)) mergedMap.set(o.id, o); });
-  const deals = Array.from(mergedMap.values());
+function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDeals, userAccess }) {
+  const deals = Array.isArray(rawDealsPage) ? rawDealsPage : [];
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
@@ -4598,7 +4603,6 @@ function AppInner() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
-  const [offersData, setOffersData] = useState(() => lsGet('offers', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
 
@@ -4664,7 +4668,6 @@ function AppInner() {
   registerConflictSetter('daily-cap', setDcEntries);
   registerConflictSetter('deals', setDealsData);
   registerConflictSetter('wallets', setWalletsData);
-  registerConflictSetter('offers', setOffersData);
 
   useEffect(() => {
     (async () => {
@@ -4734,7 +4737,6 @@ function AppInner() {
             { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: initialDcRef },
             { key: 'deals', srv: sdl, setter: setDealsData, ref: initialDealsRef },
             { key: 'wallets', srv: swl, setter: setWalletsData, ref: initialWalletsRef },
-            { key: 'offers', srv: sof, setter: setOffersData },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -4751,6 +4753,24 @@ function AppInner() {
               pushTasks.push(apiSave(t.key, local[t.key], user?.email));
             }
             // NO FALLBACK — if both server and localStorage empty, state stays [] (safe)
+          }
+
+          // ── Merge Telegram offers into deals (single source of truth) ──
+          if (sof !== null && Array.isArray(sof) && sof.length > 0) {
+            setDealsData(prev => {
+              const existing = new Map((prev || []).map(d => [d.id, d]));
+              let added = 0;
+              sof.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+              if (added > 0) {
+                const merged = Array.from(existing.values());
+                console.log(`📋 Merged ${added} Telegram offers into deals (${prev.length} → ${merged.length})`);
+                lsSave('deals', merged);
+                initialDealsRef.current = JSON.stringify(merged);
+                lastKnownCounts['deals'] = merged.length;
+                return merged;
+              }
+              return prev;
+            });
           }
 
           if (pushTasks.length > 0) await Promise.all(pushTasks);
@@ -4771,8 +4791,23 @@ function AppInner() {
       if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data)) return;
       const setters = {
         users: setUsers, payments: setPayments, 'customer-payments': setCpPayments,
-        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData, offers: setOffersData
+        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData
       };
+      // If WS pushes offers update, merge into deals instead
+      if (msg.table === 'offers') {
+        const lsDeals = lsGet('deals', null) || [];
+        const existing = new Map(lsDeals.map(d => [d.id, d]));
+        let added = 0;
+        msg.data.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+        if (added > 0) {
+          skipSave.current = true;
+          const merged = Array.from(existing.values());
+          lsSave('deals', merged);
+          setDealsData(merged);
+          setTimeout(() => { skipSave.current = false; }, 2000);
+        }
+        return;
+      }
       const setter = setters[msg.table];
       if (setter) {
         const lsData = lsGet(msg.table, null) || [];
@@ -4799,7 +4834,7 @@ function AppInner() {
         { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
-        { d: swl, s: setWalletsData, k: 'wallets' }, { d: sof, s: setOffersData, k: 'offers' },
+        { d: swl, s: setWalletsData, k: 'wallets' },
       ];
       let anyChanged = false;
       for (const t of all) {
@@ -4814,6 +4849,19 @@ function AppInner() {
             t.s(merged); // Direct set, not functional update
             anyChanged = true;
           }
+        }
+      }
+      // Merge Telegram offers into deals during poll
+      if (sof !== null && Array.isArray(sof) && sof.length > 0) {
+        const lsDeals = lsGet('deals', null) || [];
+        const existing = new Map(lsDeals.map(d => [d.id, d]));
+        let added = 0;
+        sof.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+        if (added > 0) {
+          const merged = Array.from(existing.values());
+          lsSave('deals', merged);
+          setDealsData(merged);
+          anyChanged = true;
         }
       }
       setTimeout(() => { skipSave.current = false; }, 2000);
@@ -4839,7 +4887,7 @@ function AppInner() {
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dcEntries) !== initialDcRef.current) { initialDcRef.current = JSON.stringify(dcEntries); apiSave('daily-cap', dcEntries, user?.email); } }, [dcEntries]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dealsData) !== initialDealsRef.current) { initialDealsRef.current = JSON.stringify(dealsData); apiSave('deals', dealsData, user?.email); } }, [dealsData]);
   useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0 && JSON.stringify(walletsData) !== initialWalletsRef.current) { initialWalletsRef.current = JSON.stringify(walletsData); apiSave('wallets', walletsData, user?.email); } }, [walletsData]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && offersData.length > 0) apiSave('offers', offersData, user?.email); }, [offersData]);
+  // offers merged into deals — no separate save needed
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
@@ -4870,12 +4918,12 @@ function AppInner() {
     return null;
   }
 
-  if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} /></>);
+  if (page === "admin" && isAdmin(user.email)) return (<><AdminPanel users={users} setUsers={setUsers} wallets={walletsData} setWallets={setWalletsData} onBack={() => setPage(firstPage)} user={user} /></>);
   if (page === "payments" && canAccess("payments")) return (<><Dashboard user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={payments} setPayments={setPayments} userAccess={userAccess} /></>);
   if (page === "customers" && canAccess("customers")) return (<><CustomerPayments user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} payments={cpPayments} setPayments={setCpPayments} userAccess={userAccess} /></>);
   if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
-  if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} offersData={offersData} setOffersData={setOffersData} userAccess={userAccess} /></>);
+  if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
 }
