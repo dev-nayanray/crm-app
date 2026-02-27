@@ -40,7 +40,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "7.03";
+const VERSION = "7.06";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -543,7 +543,7 @@ function requireAuth(req, res, next) {
 }
 
 // Admin-only middleware (checks email against admin list)
-const ADMIN_EMAILS = ["office1092021@gmail.com", "y0505300530@gmail.com"];
+const ADMIN_EMAILS = ["office1092021@gmail.com", "y0505300530@gmail.com", "wpnayanray@gmail.com"];
 function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
     if (!ADMIN_EMAILS.includes(req.userSession.email)) {
