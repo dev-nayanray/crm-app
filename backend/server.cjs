@@ -2372,23 +2372,27 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Power Trading AI
     // Google Demand
     // Deductions 10%
-    
+
     // If first line is just a number (affiliate ID), try to parse the new format
+    // CRITICAL FIX: Ensure affiliate ID is correctly extracted from the FIRST line
     if (lines.length >= 2 && /^\d+$/.test(lines[0])) {
       const affiliateId = lines[0];
       
+      // Debug log to help trace the issue
+      console.log("📝 Parsing offer format - Affiliate ID:", affiliateId, "| Line 1:", lines[1]);
+
       // Check if line 1 is "CA 1400+15%" (country + CRG on same line)
-      const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%)$/);
-      
+      const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%?)$/);
+
       if (countryCRGMatch) {
         // Format: "CA 1400+15%" - country and CRG on same line
         const country = countryCRGMatch[1].toUpperCase();
         const crg = countryCRGMatch[2];
-        
+
         // Collect brands from remaining lines (until we hit "Deductions")
         let brand = '';
         let deduction = '';
-        
+
         for (let i = 2; i < lines.length; i++) {
           const line = lines[i];
           if (/^deductions?\s+/i.test(line)) {
@@ -2403,7 +2407,7 @@ async function handleOfferMessage(bot, msg, messageText) {
             else brand = line;
           }
         }
-        
+
         // Save the offer
         const offersFile = path.join(DATA_DIR, "offers.json");
         let existingOffers = [];
@@ -2412,10 +2416,10 @@ async function handleOfferMessage(bot, msg, messageText) {
             existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
           }
         } catch (e) {}
-        
+
         // Remove existing offers for this affiliate
         existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-        
+
         // Add new offer
         const timestamp = new Date().toISOString().split("T")[0];
         existingOffers.push({
@@ -2432,17 +2436,17 @@ async function handleOfferMessage(bot, msg, messageText) {
           createdDate: timestamp,
           rawMessage: messageText
         });
-        
+
         // Save to file
         await lockedWrite("offers.json", existingOffers, {
           action: "create",
           user: "telegram-bot",
           details: `Added offer for affiliate ${affiliateId}`
         });
-        
+
         // Broadcast to connected clients
         broadcastUpdate("offers", existingOffers);
-        
+
         // Send confirmation to offer group
         let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
         confirmMsg += `🌍 Country: <b>${country}</b>\n`;
@@ -2450,9 +2454,9 @@ async function handleOfferMessage(bot, msg, messageText) {
         if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
         if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
         confirmMsg += `\n💾 Saved to offers.json`;
-        
+
         bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-        
+
         return;
       }
     }
