@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "7.02";
+const VERSION = "7.03";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -552,6 +552,19 @@ async function apiSave(endpoint, data, userEmail) {
     if (prev - curr > maxAllowedDrop) {
       console.error(`🛑 BLOCKED suspicious save to ${endpoint}: ${prev} → ${curr} records (drop of ${prev - curr}, only ${pendingDeleteCount} explicit deletes). This looks like a crash-induced data loss.`);
       return false;
+    }
+  }
+  // SAFETY v3: If we have NO baseline yet, check localStorage for a count
+  // This catches the case after version upgrade when lastKnownCounts is empty
+  if (Array.isArray(data) && !lastKnownCounts[endpoint]) {
+    const lsData = lsGet(endpoint, null);
+    if (Array.isArray(lsData) && lsData.length > 0) {
+      lastKnownCounts[endpoint] = lsData.length;
+      // Now apply the same guard
+      if (lsData.length > 10 && data.length < lsData.length * 0.5 && pendingDeleteCount === 0) {
+        console.error(`🛑 BLOCKED suspicious save to ${endpoint}: localStorage has ${lsData.length} but saving only ${data.length}. Likely stale data after version upgrade.`);
+        return false;
+      }
     }
   }
   // Update last known count after safety check passes
@@ -4707,7 +4720,7 @@ function AppInner() {
         const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
-          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 2000); return;
+          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 5000); return;
         }
 
         if (anySuccess) {
@@ -4779,7 +4792,7 @@ function AppInner() {
 
       setLoaded(true);
       serverFetchDone.current = true;
-      setTimeout(() => { skipSave.current = false; }, 2000);
+      setTimeout(() => { skipSave.current = false; }, 5000); // 5s safety window after init
     })();
   }, [user]); // Re-run when user logs in
 
