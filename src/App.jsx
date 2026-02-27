@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "7.03";
+const VERSION = "7.06";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -3486,11 +3486,11 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
   };
 
   // ── Confirmation workflow — role-based approvals ──
-  const userEmail = (user?.email || "").toLowerCase();
-  const stageUsers = ["kate@blitz-affiliates.marketing", "alehandro@blitz-affiliates.marketing", "zack@blitz-affiliates.marketing", "kazarian.oleksandra.v@gmail.com", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com"];
-  const canConfirmRotation = stageUsers.includes(userEmail);
-  const canConfirmCap = stageUsers.includes(userEmail);
-  const canConfirmFinance = stageUsers.includes(userEmail);
+  const userEmail = (user?.email || "").toLowerCase().trim();
+  const stageUsers = ["kate@blitz-affiliates.marketing", "alehandro@blitz-affiliates.marketing", "zack@blitz-affiliates.marketing", "kazarian.oleksandra.v@gmail.com", "sophia@blitz-affiliates.marketing", "y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
+  const canConfirmRotation = stageUsers.some(e => e.toLowerCase() === userEmail) || isAdmin(user?.email);
+  const canConfirmCap = stageUsers.some(e => e.toLowerCase() === userEmail) || isAdmin(user?.email);
+  const canConfirmFinance = stageUsers.some(e => e.toLowerCase() === userEmail) || isAdmin(user?.email);
 
   const handleConfirmToggle = (dealId, field) => {
     setDeals(prev => prev.map(d => {
