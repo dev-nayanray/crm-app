@@ -40,7 +40,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "7.0";
+const VERSION = "7.03";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -850,7 +850,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
   // Atomic write
   const success = await lockedWrite("payments.json", merged, {
-    action: "update", user: userEmail || "unknown", details: `${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
+    action: "update", user: userEmail || "unknown", details: `[payments] ${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
   });
 
   if (success) {
@@ -886,11 +886,16 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
     // ═══ DATA SHRINKAGE PROTECTION ═══
     // If client sends significantly fewer records than server has, it likely has stale/demo data.
-    // Create a safety backup BEFORE merging so we can always recover.
     const existingBeforeMerge = readJSON(file, []);
-    if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5) {
-      console.log(`🛡️ SHRINKAGE WARNING [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Creating safety backup.`);
+    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+    if (existingBeforeMerge.length > 5 && records.length < existingBeforeMerge.length * 0.5 && deleteSet.size === 0) {
+      console.log(`🛡️ SHRINKAGE PROTECTION [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Creating safety backup.`);
       createBackup(`safety-${ep}-${Date.now()}`);
+      // For tables with established data, reject the save and tell client to re-fetch
+      if (existingBeforeMerge.length > 20 && records.length < existingBeforeMerge.length * 0.3) {
+        console.error(`🛑 BLOCKED [${ep}]: client has ${records.length} vs server ${existingBeforeMerge.length} — too much data loss without deletes`);
+        return res.status(409).json({ error: "Data shrinkage rejected", serverCount: existingBeforeMerge.length, clientCount: records.length, version: getVersion(ep) });
+      }
     }
 
     // SPECIAL HANDLING: customer-payments status change notifications
@@ -940,8 +945,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
     // Note: serverOnly records are already in mergedMap from the initial forEach above.
     
-    // Remove explicitly deleted records
-    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+    // Remove explicitly deleted records (deleteSet already declared above in shrinkage protection)
     if (deleteSet.size > 0) {
       deleteSet.forEach(id => mergedMap.delete(id));
       console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted`);
@@ -1009,7 +1013,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
 
     const success = await lockedWrite(file, deduped, {
-      action: "update", user: userEmail || "unknown", details: `${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
+      action: "update", user: userEmail || "unknown", details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
     });
 
     if (success) {
@@ -2366,102 +2370,7 @@ async function handleOfferMessage(bot, msg, messageText) {
     
     const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
     
-    // Check for format WITHOUT "Offer:" prefix:
-    // 83
-    // CA 1400+15%
-    // Power Trading AI
-    // Google Demand
-    // Deductions 10%
-
-    // If first line is just a number (affiliate ID), try to parse the new format
-    // CRITICAL FIX: Ensure affiliate ID is correctly extracted from the FIRST line
-    if (lines.length >= 2 && /^\d+$/.test(lines[0])) {
-      const affiliateId = lines[0];
-      
-      // Debug log to help trace the issue
-      console.log("📝 Parsing offer format - Affiliate ID:", affiliateId, "| Line 1:", lines[1]);
-
-      // Check if line 1 is "CA 1400+15%" (country + CRG on same line)
-      const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%?)$/);
-
-      if (countryCRGMatch) {
-        // Format: "CA 1400+15%" - country and CRG on same line
-        const country = countryCRGMatch[1].toUpperCase();
-        const crg = countryCRGMatch[2];
-
-        // Collect brands from remaining lines (until we hit "Deductions")
-        let brand = '';
-        let deduction = '';
-
-        for (let i = 2; i < lines.length; i++) {
-          const line = lines[i];
-          if (/^deductions?\s+/i.test(line)) {
-            // This is the deduction line
-            const deductionMatch = line.match(/^deductions?\s+(\d+%)/i);
-            if (deductionMatch) {
-              deduction = deductionMatch[1];
-            }
-          } else if (line.trim()) {
-            // This is a brand line
-            if (brand) brand += ', ' + line;
-            else brand = line;
-          }
-        }
-
-        // Save the offer
-        const offersFile = path.join(DATA_DIR, "offers.json");
-        let existingOffers = [];
-        try {
-          if (fs.existsSync(offersFile)) {
-            existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
-          }
-        } catch (e) {}
-
-        // Remove existing offers for this affiliate
-        existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-
-        // Add new offer
-        const timestamp = new Date().toISOString().split("T")[0];
-        existingOffers.push({
-          id: crypto.randomBytes(4).toString('hex'),
-          affiliateId: affiliateId,
-          country: country,
-          crg: crg,
-          crgAmount: crg ? crg.split('+')[0] : '',
-          crgPercentage: crg ? (crg.split('+')[1] || '') : '',
-          brands: brand,
-          traffic: '',
-          deduction: deduction,
-          status: "Open",
-          createdDate: timestamp,
-          rawMessage: messageText
-        });
-
-        // Save to file
-        await lockedWrite("offers.json", existingOffers, {
-          action: "create",
-          user: "telegram-bot",
-          details: `Added offer for affiliate ${affiliateId}`
-        });
-
-        // Broadcast to connected clients
-        broadcastUpdate("offers", existingOffers);
-
-        // Send confirmation to offer group
-        let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
-        confirmMsg += `🌍 Country: <b>${country}</b>\n`;
-        confirmMsg += `🏷️ Brand: <b>${brand || 'N/A'}</b>\n`;
-        if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
-        if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
-        confirmMsg += `\n💾 Saved to offers.json`;
-
-        bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-
-        return;
-      }
-    }
-    
-// Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
+    // Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
     const simpleMatch = messageText.match(/^Offer:\s*(\d+)\s+(\w+)\s+(\S+)\s+(\d+[\+\%]\d+)/i);
     if (simpleMatch) {
       const affiliateId = simpleMatch[1];
@@ -2585,80 +2494,6 @@ async function handleOfferMessage(bot, msg, messageText) {
       const line2NumberOnly = lines[1].match(/^(\d+)$/);
       if (line2NumberOnly) {
         const affiliateId = line2NumberOnly[1];
-        
-        // Line 2 could also be "CA 1400+15%" (country + CRG on same line)
-        // This is the format: "83\nCA 1400+15%\nBrand\nDeductions 10%"
-        const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%)$/);
-        
-        if (countryCRGMatch) {
-          // Format: "CA 1400+15%" - country and CRG on same line
-          const country = countryCRGMatch[1].toUpperCase();
-          const crg = countryCRGMatch[2];
-          const brand = lines[2] || '';
-          
-          // Parse deduction from remaining lines (e.g., "Deductions 10%")
-          let deduction = '';
-          for (let i = 3; i < lines.length; i++) {
-            const deductionMatch = lines[i].match(/deductions?\s+(\d+%)/i);
-            if (deductionMatch) {
-              deduction = deductionMatch[1];
-              break;
-            }
-          }
-          
-          if (affiliateId && country) {
-            // Get existing offers
-            const offersFile = path.join(DATA_DIR, "offers.json");
-            let existingOffers = [];
-            try {
-              if (fs.existsSync(offersFile)) {
-                existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
-              }
-            } catch (e) {}
-            
-            // Remove existing offers for this affiliate
-            existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-            
-            // Add new offer
-            const timestamp = new Date().toISOString().split("T")[0];
-            existingOffers.push({
-              id: crypto.randomBytes(4).toString('hex'),
-              affiliateId: affiliateId,
-              country: country,
-              crg: crg,
-              crgAmount: crg ? crg.split('+')[0] : '',
-              crgPercentage: crg ? (crg.split('+')[1] || '') : '',
-              brands: brand,
-              traffic: '',
-              deduction: deduction,
-              status: "Open",
-              createdDate: timestamp,
-              rawMessage: messageText
-            });
-            
-            // Save to file
-            await lockedWrite("offers.json", existingOffers, {
-              action: "create",
-              user: "telegram-bot",
-              details: `Added offer for affiliate ${affiliateId}`
-            });
-            
-            // Broadcast to connected clients
-            broadcastUpdate("offers", existingOffers);
-            
-            // Send confirmation to offer group
-            let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
-            confirmMsg += `🌍 Country: <b>${country}</b>\n`;
-            confirmMsg += `🏷️ Brand: <b>${brand}</b>\n`;
-            if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
-            if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
-            confirmMsg += `\n💾 Saved to offers.json`;
-            
-            bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
-            
-            return;
-          }
-        }
         
         // Line 3 contains: country brand crg (e.g., "HR native Quantumcroatia 1250+11%")
         const line3 = lines[2] || '';
@@ -3053,11 +2888,23 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
       recentAudit.push({ file: f, entries: lines.map(l => { try { return JSON.parse(l); } catch { return l; } }) });
     }
   } catch {}
+  // Backup status
+  let backupInfo = { count: 0, latest: null, oldest: null };
+  try {
+    if (fs.existsSync(BACKUP_DIR)) {
+      const dirs = fs.readdirSync(BACKUP_DIR).sort().reverse();
+      backupInfo.count = dirs.length;
+      if (dirs.length > 0) backupInfo.latest = dirs[0];
+      if (dirs.length > 1) backupInfo.oldest = dirs[dirs.length - 1];
+    }
+  } catch {}
+
   res.json({
     server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid },
     memory: snap, memoryHistory: memoryLog.slice(-30),
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
     telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
+    backups: backupInfo,
     data: { payments: readJSON("payments.json",[]).length, customerPayments: readJSON("customer-payments.json",[]).length, crgDeals: readJSON("crg-deals.json",[]).length, dailyCap: readJSON("daily-cap.json",[]).length, offers: readJSON("deals.json",[]).length, telegramOffers: readJSON("offers.json",[]).length, wallets: readJSON("wallets.json",[]).length },
     recentAudit,
   });
