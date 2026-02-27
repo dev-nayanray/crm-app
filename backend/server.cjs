@@ -2366,7 +2366,98 @@ async function handleOfferMessage(bot, msg, messageText) {
     
     const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
     
-    // Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
+    // Check for format WITHOUT "Offer:" prefix:
+    // 83
+    // CA 1400+15%
+    // Power Trading AI
+    // Google Demand
+    // Deductions 10%
+    
+    // If first line is just a number (affiliate ID), try to parse the new format
+    if (lines.length >= 2 && /^\d+$/.test(lines[0])) {
+      const affiliateId = lines[0];
+      
+      // Check if line 1 is "CA 1400+15%" (country + CRG on same line)
+      const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%)$/);
+      
+      if (countryCRGMatch) {
+        // Format: "CA 1400+15%" - country and CRG on same line
+        const country = countryCRGMatch[1].toUpperCase();
+        const crg = countryCRGMatch[2];
+        
+        // Collect brands from remaining lines (until we hit "Deductions")
+        let brand = '';
+        let deduction = '';
+        
+        for (let i = 2; i < lines.length; i++) {
+          const line = lines[i];
+          if (/^deductions?\s+/i.test(line)) {
+            // This is the deduction line
+            const deductionMatch = line.match(/^deductions?\s+(\d+%)/i);
+            if (deductionMatch) {
+              deduction = deductionMatch[1];
+            }
+          } else if (line.trim()) {
+            // This is a brand line
+            if (brand) brand += ', ' + line;
+            else brand = line;
+          }
+        }
+        
+        // Save the offer
+        const offersFile = path.join(DATA_DIR, "offers.json");
+        let existingOffers = [];
+        try {
+          if (fs.existsSync(offersFile)) {
+            existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+          }
+        } catch (e) {}
+        
+        // Remove existing offers for this affiliate
+        existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+        
+        // Add new offer
+        const timestamp = new Date().toISOString().split("T")[0];
+        existingOffers.push({
+          id: crypto.randomBytes(4).toString('hex'),
+          affiliateId: affiliateId,
+          country: country,
+          crg: crg,
+          crgAmount: crg ? crg.split('+')[0] : '',
+          crgPercentage: crg ? (crg.split('+')[1] || '') : '',
+          brands: brand,
+          traffic: '',
+          deduction: deduction,
+          status: "Open",
+          createdDate: timestamp,
+          rawMessage: messageText
+        });
+        
+        // Save to file
+        await lockedWrite("offers.json", existingOffers, {
+          action: "create",
+          user: "telegram-bot",
+          details: `Added offer for affiliate ${affiliateId}`
+        });
+        
+        // Broadcast to connected clients
+        broadcastUpdate("offers", existingOffers);
+        
+        // Send confirmation to offer group
+        let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
+        confirmMsg += `🌍 Country: <b>${country}</b>\n`;
+        confirmMsg += `🏷️ Brand: <b>${brand || 'N/A'}</b>\n`;
+        if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
+        if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
+        confirmMsg += `\n💾 Saved to offers.json`;
+        
+        bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+        
+        return;
+      }
+    }
+    
+// Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
     const simpleMatch = messageText.match(/^Offer:\s*(\d+)\s+(\w+)\s+(\S+)\s+(\d+[\+\%]\d+)/i);
     if (simpleMatch) {
       const affiliateId = simpleMatch[1];
@@ -2490,6 +2581,80 @@ async function handleOfferMessage(bot, msg, messageText) {
       const line2NumberOnly = lines[1].match(/^(\d+)$/);
       if (line2NumberOnly) {
         const affiliateId = line2NumberOnly[1];
+        
+        // Line 2 could also be "CA 1400+15%" (country + CRG on same line)
+        // This is the format: "83\nCA 1400+15%\nBrand\nDeductions 10%"
+        const countryCRGMatch = lines[1].match(/^([A-Za-z]{2})\s+(\d+[\+\%]\d+%)$/);
+        
+        if (countryCRGMatch) {
+          // Format: "CA 1400+15%" - country and CRG on same line
+          const country = countryCRGMatch[1].toUpperCase();
+          const crg = countryCRGMatch[2];
+          const brand = lines[2] || '';
+          
+          // Parse deduction from remaining lines (e.g., "Deductions 10%")
+          let deduction = '';
+          for (let i = 3; i < lines.length; i++) {
+            const deductionMatch = lines[i].match(/deductions?\s+(\d+%)/i);
+            if (deductionMatch) {
+              deduction = deductionMatch[1];
+              break;
+            }
+          }
+          
+          if (affiliateId && country) {
+            // Get existing offers
+            const offersFile = path.join(DATA_DIR, "offers.json");
+            let existingOffers = [];
+            try {
+              if (fs.existsSync(offersFile)) {
+                existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+              }
+            } catch (e) {}
+            
+            // Remove existing offers for this affiliate
+            existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+            
+            // Add new offer
+            const timestamp = new Date().toISOString().split("T")[0];
+            existingOffers.push({
+              id: crypto.randomBytes(4).toString('hex'),
+              affiliateId: affiliateId,
+              country: country,
+              crg: crg,
+              crgAmount: crg ? crg.split('+')[0] : '',
+              crgPercentage: crg ? (crg.split('+')[1] || '') : '',
+              brands: brand,
+              traffic: '',
+              deduction: deduction,
+              status: "Open",
+              createdDate: timestamp,
+              rawMessage: messageText
+            });
+            
+            // Save to file
+            await lockedWrite("offers.json", existingOffers, {
+              action: "create",
+              user: "telegram-bot",
+              details: `Added offer for affiliate ${affiliateId}`
+            });
+            
+            // Broadcast to connected clients
+            broadcastUpdate("offers", existingOffers);
+            
+            // Send confirmation to offer group
+            let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
+            confirmMsg += `🌍 Country: <b>${country}</b>\n`;
+            confirmMsg += `🏷️ Brand: <b>${brand}</b>\n`;
+            if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
+            if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
+            confirmMsg += `\n💾 Saved to offers.json`;
+            
+            bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+            
+            return;
+          }
+        }
         
         // Line 3 contains: country brand crg (e.g., "HR native Quantumcroatia 1250+11%")
         const line3 = lines[2] || '';
