@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "7.06";
+const VERSION = "8.0";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -348,8 +348,9 @@ const LS_VERSIONS_KEY = 'blitz_data_versions';
 const PREV_VERSION_KEY = 'blitz_app_version';
 const prevVersion = localStorage.getItem(PREV_VERSION_KEY);
 if (prevVersion !== VERSION) {
-  console.log(`🔄 Version upgrade: ${prevVersion || 'unknown'} → ${VERSION} — clearing localStorage cache`);
-  Object.values(LS_KEYS).forEach(k => { try { localStorage.removeItem(k); } catch {} });
+  console.log(`🔄 Version upgrade: ${prevVersion || 'unknown'} → ${VERSION}`);
+  // IMPORTANT: Do NOT clear data tables — server fetch will merge/update them.
+  // Only clear version tracking so fresh versions are fetched from server.
   try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
   localStorage.setItem(PREV_VERSION_KEY, VERSION);
 }
@@ -4738,18 +4739,18 @@ function AppInner() {
               return u;
             });
             setUsers(usersFinal);
-            initialUsersRef.current = JSON.stringify(usersFinal);
+            saveBaselines.current['users'] = JSON.stringify(usersFinal);
             if (JSON.stringify(usersFinal) !== JSON.stringify(su)) pushTasks.push(apiSave('users', usersFinal, user?.email));
           }
 
           // DATA TABLES \u2014 merge by ID
           const tables = [
-            { key: 'payments', srv: sp, setter: setPayments, ref: initialPaymentsRef },
-            { key: 'customer-payments', srv: scp, setter: setCpPayments, ref: initialCpRef },
-            { key: 'crg-deals', srv: scrg, setter: setCrgDeals, ref: initialCrgRef },
-            { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: initialDcRef },
-            { key: 'deals', srv: sdl, setter: setDealsData, ref: initialDealsRef },
-            { key: 'wallets', srv: swl, setter: setWalletsData, ref: initialWalletsRef },
+            { key: 'payments', srv: sp, setter: setPayments, ref: 'payments' },
+            { key: 'customer-payments', srv: scp, setter: setCpPayments, ref: 'customer-payments' },
+            { key: 'crg-deals', srv: scrg, setter: setCrgDeals, ref: 'crg-deals' },
+            { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: 'daily-cap' },
+            { key: 'deals', srv: sdl, setter: setDealsData, ref: 'deals' },
+            { key: 'wallets', srv: swl, setter: setWalletsData, ref: 'wallets' },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -4757,7 +4758,7 @@ function AppInner() {
               t.setter(merged);
               lsSave(t.key, merged);
               lastKnownCounts[t.key] = merged.length; // Set baseline for data loss protection
-              if (t.ref) t.ref.current = JSON.stringify(merged);
+              if (t.ref) saveBaselines.current[t.ref] = JSON.stringify(merged);
               if (merged.length > t.srv.length) pushTasks.push(apiSave(t.key, merged, user?.email));
             } else if (local[t.key] && local[t.key].length > 0) {
               t.setter(local[t.key]);
@@ -4778,7 +4779,7 @@ function AppInner() {
                 const merged = Array.from(existing.values());
                 console.log(`📋 Merged ${added} Telegram offers into deals (${prev.length} → ${merged.length})`);
                 lsSave('deals', merged);
-                initialDealsRef.current = JSON.stringify(merged);
+                saveBaselines.current['deals'] = JSON.stringify(merged);
                 lastKnownCounts['deals'] = merged.length;
                 return merged;
               }
@@ -4879,28 +4880,39 @@ function AppInner() {
       }
       setTimeout(() => { skipSave.current = false; }, 2000);
     };
-    const interval = setInterval(poll, 15000);
+    const interval = setInterval(poll, 30000); // v8: 30s poll (was 15s)
     const reconnectFlush = setInterval(() => { if (serverOnline && pendingSaves.size > 0) flushPendingSaves(); }, 10000);
     return () => { clearInterval(interval); clearInterval(reconnectFlush); unsub(); };
   }, [loaded]);
 
-  // \u2500\u2500 Auto-save hooks \u2500\u2500
-  const initialUsersRef = useRef(JSON.stringify([]));
-  const initialPaymentsRef = useRef(JSON.stringify([]));
-  const initialCpRef = useRef(JSON.stringify([]));
-  const initialCrgRef = useRef(JSON.stringify([]));
-  const initialDcRef = useRef(JSON.stringify([]));
-  const initialDealsRef = useRef(JSON.stringify([]));
-  const initialWalletsRef = useRef(JSON.stringify([]));
+  // ── Unified debounced auto-save (v8) ──
+  // Single system: debounce 2s, skip if unchanged from baseline, block during init
+  const saveBaselines = useRef({});
+  const saveTimers = useRef({});
 
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && users.length > 0 && JSON.stringify(users) !== initialUsersRef.current) { initialUsersRef.current = JSON.stringify(users); apiSave('users', users, user?.email); } }, [users]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_payments) !== initialPaymentsRef.current) { initialPaymentsRef.current = JSON.stringify(_payments); apiSave('payments', _payments, user?.email); } }, [_payments]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(_cpPayments) !== initialCpRef.current) { initialCpRef.current = JSON.stringify(_cpPayments); apiSave('customer-payments', _cpPayments, user?.email); } }, [_cpPayments]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(crgDeals) !== initialCrgRef.current) { initialCrgRef.current = JSON.stringify(crgDeals); apiSave('crg-deals', crgDeals, user?.email); } }, [crgDeals]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dcEntries) !== initialDcRef.current) { initialDcRef.current = JSON.stringify(dcEntries); apiSave('daily-cap', dcEntries, user?.email); } }, [dcEntries]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && JSON.stringify(dealsData) !== initialDealsRef.current) { initialDealsRef.current = JSON.stringify(dealsData); apiSave('deals', dealsData, user?.email); } }, [dealsData]);
-  useEffect(() => { if (!skipSave.current && loaded && serverFetchDone.current && walletsData.length > 0 && JSON.stringify(walletsData) !== initialWalletsRef.current) { initialWalletsRef.current = JSON.stringify(walletsData); apiSave('wallets', walletsData, user?.email); } }, [walletsData]);
-  // offers merged into deals — no separate save needed
+  const debouncedSave = (table, data) => {
+    if (!serverFetchDone.current || !loaded || skipSave.current) return;
+    if (!Array.isArray(data)) return;
+    const json = JSON.stringify(data);
+    if (json === (saveBaselines.current[table] || '[]')) return;
+    lsSave(table, data);
+    if (saveTimers.current[table]) clearTimeout(saveTimers.current[table]);
+    saveTimers.current[table] = setTimeout(() => {
+      if (skipSave.current) return;
+      const currentJson = JSON.stringify(data);
+      if (currentJson === (saveBaselines.current[table] || '[]')) return;
+      saveBaselines.current[table] = currentJson;
+      apiSave(table, data, user?.email);
+    }, 2000);
+  };
+
+  useEffect(() => { debouncedSave('users', users); }, [users]);
+  useEffect(() => { debouncedSave('payments', _payments); }, [_payments]);
+  useEffect(() => { debouncedSave('customer-payments', _cpPayments); }, [_cpPayments]);
+  useEffect(() => { debouncedSave('crg-deals', crgDeals); }, [crgDeals]);
+  useEffect(() => { debouncedSave('daily-cap', dcEntries); }, [dcEntries]);
+  useEffect(() => { debouncedSave('deals', dealsData); }, [dealsData]);
+  useEffect(() => { debouncedSave('wallets', walletsData); }, [walletsData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
