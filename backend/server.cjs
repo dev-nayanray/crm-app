@@ -29,18 +29,29 @@ app.disable('x-powered-by'); // Don't reveal tech stack
 // ═══════════════════════════════════════════════════════════════
 // CRASH PROTECTION — Keep server alive no matter what
 // ═══════════════════════════════════════════════════════════════
+let crashCount = 0;
+const CRASH_LOG = [];
+
 process.on('uncaughtException', (err) => {
-  console.error('💥 UNCAUGHT EXCEPTION (server stays alive):', err.message);
+  crashCount++;
+  const info = { time: new Date().toISOString(), type: 'exception', msg: err.message, stack: (err.stack || '').split('\n').slice(0, 5).join('\n') };
+  CRASH_LOG.push(info);
+  if (CRASH_LOG.length > 50) CRASH_LOG.shift();
+  console.error(`💥 UNCAUGHT EXCEPTION #${crashCount} (server stays alive):`, err.message);
   console.error(err.stack);
-  // Don't process.exit() — let the server keep running
+  if (global.gc) { try { global.gc(); } catch {} }
 });
 
 process.on('unhandledRejection', (reason) => {
-  console.error('💥 UNHANDLED REJECTION (server stays alive):', reason);
-  // Don't process.exit() — let the server keep running
+  crashCount++;
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  const info = { time: new Date().toISOString(), type: 'rejection', msg };
+  CRASH_LOG.push(info);
+  if (CRASH_LOG.length > 50) CRASH_LOG.shift();
+  console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
 const PORT = 3001;
-const VERSION = "9.02";
+const VERSION = "9.03";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -470,7 +481,7 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "15mb" })); // v9.03: was 10mb
 
 // Catch JSON parse errors (malformed body) — return proper JSON, not HTML
 app.use((err, req, res, next) => {
@@ -484,7 +495,7 @@ app.use((err, req, res, next) => {
 // On login success, server issues a random session token.
 // All data/admin endpoints require valid token in Authorization header.
 // activeSessions loaded above from SESSION_FILE
-const SESSION_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days (matches client)
+const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // v9.03: 14 days (was 7)
 const SESSION_FILE = path.join(DATA_DIR, ".sessions.json");
 
 // Load persisted sessions on startup (survive server restarts)
@@ -556,7 +567,7 @@ function requireAdmin(req, res, next) {
 // Rate limiting: 200 req/min per IP (increased for WebSocket fallback polling)
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
-const RATE_LIMIT_MAX = 200;
+const RATE_LIMIT_MAX = 300; // v9.03: was 200
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -610,8 +621,8 @@ app.use('/api/', (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════
 
 const loginAttempts = new Map();
-const LOGIN_MAX_ATTEMPTS = 3;
-const LOGIN_BLOCK_DURATION = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 5; // v9.03: was 3
+const LOGIN_BLOCK_DURATION = 10 * 60 * 1000; // v9.03: 10 min (was 15)
 setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════════════
@@ -1148,7 +1159,7 @@ if (WS_AVAILABLE) {
     wsClients.forEach(ws => {
       if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
       try {
-        ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size }));
+        ws.send(JSON.stringify({ type: "heartbeat", timestamp: Date.now(), clients: wsClients.size, v: VERSION }));
       } catch (err) {
         console.error("⚠️ Heartbeat send failed:", err.message);
         wsClients.delete(ws);
@@ -2869,6 +2880,11 @@ setInterval(() => {
   if (snap.heapUsed > 400) {
     console.error(`🚨 HIGH MEMORY: heap=${snap.heapUsed}MB rss=${snap.rss}MB ws=${snap.wsClients}`);
   }
+  // v9.03: Force GC at 500MB to prevent OOM crashes
+  if (snap.heapUsed > 500 && global.gc) {
+    console.warn(`🧹 Forcing GC at ${snap.heapUsed}MB heap...`);
+    try { global.gc(); } catch {}
+  }
   if (memoryLog.length >= 10) {
     const tenAgo = memoryLog[memoryLog.length - 10];
     const growth = snap.heapUsed - tenAgo.heapUsed;
@@ -2901,7 +2917,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
   } catch {}
 
   res.json({
-    server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid },
+    server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid, crashes: crashCount },
     memory: snap, memoryHistory: memoryLog.slice(-30),
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
     telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
