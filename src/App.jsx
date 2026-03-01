@@ -2769,20 +2769,32 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
           const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
           const dayOfMonth = now.getDate();
           const pace = dayOfMonth / daysInMonth;
-          // Use MONTH data from Daily Cap for totals
+          // Use MONTH data from Daily Cap
           const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
           const monthDcAll = dcEntries.filter(d => (d.date || "").startsWith(monthPrefix));
+          // Today's daily cap
+          const todayStr = now.toISOString().split("T")[0];
+          const todayDc = dcEntries.filter(d => d.date === todayStr);
+          const todayBrands = todayDc.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
+          const todayAff = todayDc.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
+          // Per-agent monthly totals
           const mAgentAff = {}; const mAgentBrand = {};
           monthDcAll.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
+          // Per-agent today
+          const tAgentAff = {}; const tAgentBrand = {};
+          todayDc.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; tAgentAff[a] = (tAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); tAgentBrand[a] = (tAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
           const totalBrands = Object.values(mAgentBrand).reduce((s, v) => s + v, 0);
           const totalAff = Object.values(mAgentAff).reduce((s, v) => s + v, 0);
-          const allA = [...new Set([...Object.keys(mAgentAff), ...Object.keys(mAgentBrand)])].sort();
+          const avgBrands = dayOfMonth > 0 ? (totalBrands / dayOfMonth).toFixed(1) : 0;
+          const avgAff = dayOfMonth > 0 ? (totalAff / dayOfMonth).toFixed(1) : 0;
+          const allA = [...new Set([...Object.keys(mAgentAff), ...Object.keys(mAgentBrand), ...Object.keys(tAgentAff), ...Object.keys(tAgentBrand)])].sort();
           const brandPct = globalBrandTarget > 0 ? Math.round((totalBrands / globalBrandTarget) * 100) : null;
           const affPct = globalAffTarget > 0 ? Math.round((totalAff / globalAffTarget) * 100) : null;
+          const thC = { padding: "7px 6px", textAlign: "center", fontWeight: 700, fontSize: 9, whiteSpace: "nowrap" };
           return allA.length > 0 || isAdmin(user.email) ? (
             <div style={{ ...cardStyle, marginBottom: 28 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Targets vs Actual</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Daily Sales & Targets</div>
                 {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpBrand(String(globalBrandTarget || "")); setTmpAff(String(globalAffTarget || "")); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
               </div>
               {editTgt && (
@@ -2798,62 +2810,68 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                   <button onClick={() => { const t = { ...savedTgt, __brandTarget: tmpBrand, __affTarget: tmpAff }; localStorage.setItem(targetKey, JSON.stringify(t)); toast("✅ Targets saved!"); setEditTgt(false); window.location.reload(); }} style={{ padding: "6px 16px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Save</button>
                 </div>
               )}
-              {/* Global progress bars */}
-              {(globalBrandTarget > 0 || globalAffTarget > 0) && (
-                <div style={{ marginBottom: 14 }}>
-                  {globalBrandTarget > 0 && (
-                    <div style={{ marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 3 }}>
-                        <span>Brands Cap: {totalBrands} / {globalBrandTarget}</span>
-                        <span style={{ color: brandPct >= 100 ? "#10B981" : brandPct >= Math.round(pace * 100) ? "#F59E0B" : "#EF4444" }}>{brandPct}%</span>
-                      </div>
-                      <div style={{ height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${Math.min(100, brandPct)}%`, background: brandPct >= 100 ? "#10B981" : "linear-gradient(90deg,#10B981,#34D399)", borderRadius: 5, transition: "width 0.5s" }} />
-                      </div>
-                    </div>
-                  )}
-                  {globalAffTarget > 0 && (
-                    <div>
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 3 }}>
-                        <span>Affiliates Cap: {totalAff} / {globalAffTarget}</span>
-                        <span style={{ color: affPct >= 100 ? "#10B981" : affPct >= Math.round(pace * 100) ? "#F59E0B" : "#EF4444" }}>{affPct}%</span>
-                      </div>
-                      <div style={{ height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
-                        <div style={{ height: "100%", width: `${Math.min(100, affPct)}%`, background: affPct >= 100 ? "#8B5CF6" : "linear-gradient(90deg,#8B5CF6,#A78BFA)", borderRadius: 5, transition: "width 0.5s" }} />
-                      </div>
-                    </div>
-                  )}
+              {/* Summary cards: Daily / Monthly / Average / Target */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div style={{ padding: 12, background: "#ECFDF5", borderRadius: 10, border: "1px solid #A7F3D0" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 6 }}>Brands Cap</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Today</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{todayBrands}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{totalBrands}{globalBrandTarget > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{globalBrandTarget}</span>}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Avg/day</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{avgBrands}</div></div>
+                  </div>
+                  {globalBrandTarget > 0 && <div style={{ height: 6, background: "#D1FAE5", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, brandPct)}%`, background: "#10B981", borderRadius: 3 }} /></div>}
                 </div>
-              )}
+                <div style={{ padding: 12, background: "#F5F3FF", borderRadius: 10, border: "1px solid #C4B5FD" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 6 }}>Affiliates Cap</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Today</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{todayAff}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{totalAff}{globalAffTarget > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{globalAffTarget}</span>}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Avg/day</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{avgAff}</div></div>
+                  </div>
+                  {globalAffTarget > 0 && <div style={{ height: 6, background: "#EDE9FE", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, affPct)}%`, background: "#8B5CF6", borderRadius: 3 }} /></div>}
+                </div>
+              </div>
+              {/* Per-agent table */}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead><tr style={{ background: "#F8FAFC" }}>
-                    <th style={{ padding: "7px 8px", textAlign: "left", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Agent</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#10B981", fontSize: 10 }}>Brands</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Affiliates</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#0EA5E9", fontSize: 10 }}>Total</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Status</th>
+                    <th style={{ ...thC, textAlign: "left", color: "#64748B" }}>Agent</th>
+                    <th style={{ ...thC, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>Today Brands</th>
+                    <th style={{ ...thC, color: "#10B981" }}>Monthly</th>
+                    <th style={{ ...thC, color: "#10B981" }}>Avg/d</th>
+                    <th style={{ ...thC, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>Today Aff</th>
+                    <th style={{ ...thC, color: "#8B5CF6" }}>Monthly</th>
+                    <th style={{ ...thC, color: "#8B5CF6" }}>Avg/d</th>
+                    <th style={{ ...thC, color: "#64748B", borderLeft: "2px solid #E2E8F0" }}>Status</th>
                   </tr></thead>
-                  <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0).map(agent => {
-                    const bA = mAgentBrand[agent] || 0; const aA = mAgentAff[agent] || 0;
-                    const total = bA + aA;
-                    const hasActivity = total > 0;
+                  <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0 || (tAgentAff[a] || 0) > 0 || (tAgentBrand[a] || 0) > 0).map(agent => {
+                    const bM = mAgentBrand[agent] || 0; const aM = mAgentAff[agent] || 0;
+                    const bT = tAgentBrand[agent] || 0; const aT = tAgentAff[agent] || 0;
+                    const bAvg = dayOfMonth > 0 ? (bM / dayOfMonth).toFixed(1) : "0";
+                    const aAvg = dayOfMonth > 0 ? (aM / dayOfMonth).toFixed(1) : "0";
+                    const hasToday = bT > 0 || aT > 0;
                     return (
                       <tr key={agent} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                        <td style={{ padding: "7px 8px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 55, borderRadius: 4 }}>{agent}</span></td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{bA}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{aA}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{total}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 14 }}>{hasActivity ? "✓" : "⚠"}</td>
+                        <td style={{ padding: "7px 8px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span></td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: bT > 0 ? "#10B981" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{bT}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{bM}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#94A3B8" }}>{bAvg}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: aT > 0 ? "#8B5CF6" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{aT}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{aM}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#94A3B8" }}>{aAvg}</td>
+                        <td style={{ padding: "6px 6px", textAlign: "center", fontSize: 14, borderLeft: "2px solid #E2E8F0" }}>{hasToday ? "✓" : "—"}</td>
                       </tr>
                     );
                   })}</tbody>
                   <tfoot><tr style={{ background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
                     <td style={{ padding: "7px 8px", fontWeight: 800, fontSize: 11 }}>Total</td>
-                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981" }}>{totalBrands}</td>
-                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6" }}>{totalAff}</td>
-                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{totalBrands + totalAff}</td>
-                    <td></td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>{todayBrands}</td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981" }}>{totalBrands}</td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#64748B" }}>{avgBrands}</td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>{todayAff}</td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6" }}>{totalAff}</td>
+                    <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#64748B" }}>{avgAff}</td>
+                    <td style={{ borderLeft: "2px solid #E2E8F0" }}></td>
                   </tr></tfoot>
                 </table>
                 <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Day {dayOfMonth}/{daysInMonth} — {Math.round(pace * 100)}% through month</div>
@@ -2979,7 +2997,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
   const [countryFilter, setCountryFilter] = useState("all");
   const [selected, setSelected] = useState(new Set());
   const [addOpen, setAddOpen] = useState(false);
-  const [newFtd, setNewFtd] = useState({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "" });
+  const [newFtd, setNewFtd] = useState({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "", country: "" });
 
   const getRange = () => {
     if (period === "today") return { from: today, to: today };
@@ -3049,8 +3067,14 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
 
   const handleAdd = () => {
     if (!newFtd.affiliate) return;
+    // If country provided and not already in affiliate string, append it
+    let aff = newFtd.affiliate.trim();
+    if (newFtd.country && !aff.toUpperCase().endsWith(newFtd.country.toUpperCase())) {
+      aff = `${aff} ${newFtd.country.toUpperCase()}`;
+    }
     const entry = {
       ...newFtd,
+      affiliate: aff,
       id: crypto.randomUUID ? crypto.randomUUID() : `ftd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       cap: newFtd.cap || "0",
       capReceived: newFtd.capReceived || "0",
@@ -3201,6 +3225,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Affiliate (e.g. 211 UK)"><input style={inp} value={newFtd.affiliate} onChange={e => setNewFtd(p => ({ ...p, affiliate: e.target.value }))} placeholder="211 UK" /></Field>
             <Field label="Broker / Brand"><input style={inp} value={newFtd.brokerCap} onChange={e => setNewFtd(p => ({ ...p, brokerCap: e.target.value }))} placeholder="3102 Helios" /></Field>
+            <Field label="Country"><input style={inp} value={newFtd.country} onChange={e => setNewFtd(p => ({ ...p, country: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4) }))} placeholder="e.g. UK, DE, ES" maxLength={4} /></Field>
             <Field label="Date"><input style={inp} type="date" value={newFtd.date} onChange={e => setNewFtd(p => ({ ...p, date: e.target.value }))} /></Field>
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
@@ -3597,17 +3622,21 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
           return (
             <div style={sectionStyle}>
               <div style={sectionTitle}>🎯 Monthly Targets — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
-              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Set monthly cap targets. Actuals are calculated from Daily Cap totals. Progress is shown on the Dashboard.</div>
+              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Set monthly cap targets. Actuals are calculated from Daily Cap totals. Dashboard shows daily/monthly/average breakdown per agent.</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
                 <div style={{ padding: 16, background: "#ECFDF5", borderRadius: 12, border: "1px solid #A7F3D0" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>Monthly Brands Cap Target</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>Daily Sales — Brands Cap</div>
+                  <div style={{ fontSize: 10, color: "#64748B", marginBottom: 8 }}>Monthly target for total Brands cap across all agents</div>
                   <input value={brandTarget} onChange={e => setBrandTarget(e.target.value)} type="number"
                     style={{ width: "100%", padding: "10px 12px", border: "2px solid #A7F3D0", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#10B981", background: "#FFF", outline: "none" }} placeholder="0" />
+                  {brandTarget && <div style={{ fontSize: 10, color: "#64748B", marginTop: 6 }}>≈ {Math.round(parseInt(brandTarget) / 30)} avg/day needed</div>}
                 </div>
                 <div style={{ padding: 16, background: "#F5F3FF", borderRadius: 12, border: "1px solid #C4B5FD" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>Monthly Affiliates Cap Target</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>Daily Sales — Affiliates Cap</div>
+                  <div style={{ fontSize: 10, color: "#64748B", marginBottom: 8 }}>Monthly target for total Affiliates cap across all agents</div>
                   <input value={affTarget} onChange={e => setAffTarget(e.target.value)} type="number"
                     style={{ width: "100%", padding: "10px 12px", border: "2px solid #C4B5FD", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6", background: "#FFF", outline: "none" }} placeholder="0" />
+                  {affTarget && <div style={{ fontSize: 10, color: "#64748B", marginTop: 6 }}>≈ {Math.round(parseInt(affTarget) / 30)} avg/day needed</div>}
                 </div>
               </div>
               <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>💾 Save Targets</button>
