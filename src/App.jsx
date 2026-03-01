@@ -194,6 +194,16 @@ const darkModeCSS = `
     box-shadow: 0 0 20px rgba(56,189,248,0.08), 0 4px 16px rgba(0,0,0,0.3) !important;
   }
 
+  /* v9.05: Nav dropdown dark mode */
+  .dark-mode .nav-dropdown-panel {
+    background: var(--space-surface) !important;
+    border-color: var(--space-border-glow) !important;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 40px rgba(56,189,248,0.04) !important;
+  }
+  .dark-mode .nav-dropdown-panel button:hover {
+    background: var(--space-elevated) !important;
+  }
+
   /* Scrollbar */
   .dark-mode ::-webkit-scrollbar { width: 6px; height: 6px; }
   .dark-mode ::-webkit-scrollbar-track { background: var(--space-void); }
@@ -261,21 +271,64 @@ function useMobile() {
 }
 
 function MobileNav({ pages, current, userAccess, onNav, onClose }) {
+  // v9.05: Grouped mobile navigation
+  const MOBILE_GROUPS = [
+    { title: null, items: [{ key: "overview", label: "📊 Dashboard", color: "#6366F1" }] },
+    { title: "Finance", items: [
+      { key: "payments", label: "💳 Payments", color: "#0EA5E9" },
+      { key: "customers", label: "👥 Customer Payments", color: "#0EA5E9" },
+    ]},
+    { title: "Deals", items: [
+      { key: "crg", label: "📋 CRG Deals", color: "#F59E0B" },
+      { key: "deals", label: "🏷️ Offers", color: "#10B981" },
+      { key: "dailycap", label: "📈 Daily Cap", color: "#8B5CF6" },
+    ]},
+    { title: "Hunting", items: [
+      { key: "partners", label: "🎯 Partners", color: "#EC4899" },
+    ]},
+    { title: null, items: [
+      { key: "settings", label: "⚙️ Settings", color: "#64748B" },
+      ...(pages.some(p => p.key === "admin") ? [{ key: "admin", label: "🔒 Admin", color: "#DC2626" }] : []),
+    ]},
+  ];
+
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998 }} onClick={onClose}>
-      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 260, background: "#FFFFFF", boxShadow: "-4px 0 30px rgba(0,0,0,0.15)", zIndex: 9999, padding: "20px 0", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
+      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 280, background: "#FFFFFF", boxShadow: "-4px 0 30px rgba(0,0,0,0.15)", zIndex: 9999, padding: "20px 0", overflowY: "auto" }} onClick={e => e.stopPropagation()}>
         <div style={{ padding: "0 20px 16px", borderBottom: "1px solid #E2E8F0", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span style={{ fontWeight: 700, fontSize: 16 }}>Menu</span>
           <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#64748B", padding: 4 }}>✕</button>
         </div>
-        {pages.map(pg => {
-          if (pg.key !== "admin" && !(userAccess || []).includes(pg.key)) return null;
-          const isActive = current === pg.key;
+        {MOBILE_GROUPS.map((group, gi) => {
+          const visible = group.items.filter(i => i.key === "admin" ? pages.some(p => p.key === "admin") : (userAccess || []).includes(i.key));
+          if (visible.length === 0) return null;
           return (
-            <button key={pg.key} onClick={() => { onNav(pg.key); onClose(); }}
-              style={{ display: "block", width: "100%", padding: "14px 24px", border: "none", background: isActive ? `${pg.color}15` : "transparent", color: isActive ? pg.color : "#334155", fontSize: 15, fontWeight: isActive ? 700 : 500, cursor: "pointer", textAlign: "left", borderLeft: isActive ? `4px solid ${pg.color}` : "4px solid transparent" }}>
-              {pg.label}
-            </button>
+            <div key={gi}>
+              {group.title && (
+                <div style={{ padding: "12px 24px 4px", fontSize: 10, fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: 1.2 }}>
+                  {group.title}
+                </div>
+              )}
+              {visible.map(pg => {
+                const isActive = current === pg.key;
+                return (
+                  <button key={pg.key} onClick={() => { onNav(pg.key); onClose(); }}
+                    style={{
+                      display: "block", width: "100%", padding: "12px 24px", border: "none",
+                      background: isActive ? `${pg.color}12` : "transparent",
+                      color: isActive ? pg.color : "#334155", fontSize: 14, fontWeight: isActive ? 700 : 500,
+                      cursor: "pointer", textAlign: "left",
+                      borderLeft: isActive ? `4px solid ${pg.color}` : "4px solid transparent",
+                      transition: "all 0.15s",
+                    }}>
+                    {pg.label}
+                  </button>
+                );
+              })}
+              {gi < MOBILE_GROUPS.length - 1 && visible.length > 0 && (
+                <div style={{ height: 1, background: "#F1F5F9", margin: "6px 20px" }} />
+              )}
+            </div>
           );
         })}
       </div>
@@ -366,7 +419,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.05";
+const VERSION = "9.06";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -495,7 +548,18 @@ async function apiGet(endpoint) {
       lsSave(endpoint, data); // Always save, even empty arrays (important after deletes)
     }
     return data;
-  } catch (e) { serverOnline = false; return null; }
+  } catch (e) {
+    // v9.05 FIX: Don't immediately mark offline on a single timeout — could be a flicker
+    // Only mark offline if we were already having issues (consecutive failures)
+    if (!serverOnline) return null; // Already offline, stay offline
+    // First failure — try a quick health check before killing online status
+    try {
+      const h = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      if (h.ok) { /* Server is fine, just this request failed */ return null; }
+    } catch {}
+    serverOnline = false;
+    return null;
+  }
 }
 
 // ── Pending saves queue: retry failed saves when server comes back ──
@@ -668,7 +732,7 @@ async function apiSave(endpoint, data, userEmail) {
     pendingSaves.delete(endpoint);
     return true;
   } catch (e) {
-    serverOnline = false;
+    // v9.05 FIX: Don't immediately kill serverOnline — retry first
     // Retry once after 2 seconds
     try {
       await new Promise(r => setTimeout(r, 2000));
@@ -908,12 +972,24 @@ function SyncStatus() {
   const [status, setStatus] = useState("checking");
   const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => {
-    const iv = setInterval(() => {
-      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) setStatus("live");
-      else if (serverOnline) setStatus("poll");
-      else setStatus("offline");
+    const iv = setInterval(async () => {
       setPendingCount(pendingSaves.size);
-    }, 2000);
+      // v9.05 FIX: Active health check — don't rely solely on stale serverOnline flag
+      if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+        setStatus("live");
+      } else if (serverOnline) {
+        setStatus("poll");
+      } else {
+        // serverOnline is false — but is the server actually down? Quick check.
+        try {
+          const r = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+          if (r.ok) { serverOnline = true; setStatus("poll"); }
+          else setStatus("offline");
+        } catch {
+          setStatus("offline");
+        }
+      }
+    }, 3000);
     return () => clearInterval(iv);
   }, []);
   const isOk = status === "live";
@@ -1021,11 +1097,96 @@ function fmtFee(fee, amount) {
   return fee.trim().endsWith('%') ? `${fee.trim()} (${val.toLocaleString("en-US")}$)` : `${val.toLocaleString("en-US")}$`;
 }
 
+/* ── Dropdown Nav Menu ── */
+function NavDropdown({ label, icon, items, activePage, userAccess, onNav, accentColor }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const hasActive = items.some(i => i.key === activePage);
+  const visibleItems = items.filter(i => (userAccess || []).includes(i.key));
+  if (visibleItems.length === 0) return null;
+
+  useEffect(() => {
+    const close = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button onClick={() => setOpen(!open)}
+        style={{
+          display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+          background: hasActive ? `${accentColor}15` : "transparent",
+          border: hasActive ? `1.5px solid ${accentColor}40` : "1.5px solid transparent",
+          color: hasActive ? accentColor : "#64748B",
+          transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}
+        onMouseEnter={e => { if (!hasActive) { e.currentTarget.style.background = "rgba(100,116,139,0.06)"; e.currentTarget.style.color = accentColor; } }}
+        onMouseLeave={e => { if (!hasActive) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "#64748B"; } }}
+      >
+        <span style={{ fontSize: 14 }}>{icon}</span>
+        {label}
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: open ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s" }}>
+          <path d="M3 4.5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      </button>
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 200,
+          background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0",
+          boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+          padding: "6px", zIndex: 200, animation: "fadeUp 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        }}>
+          {visibleItems.map(pg => {
+            const isActive = activePage === pg.key;
+            return (
+              <button key={pg.key} onClick={() => { onNav(pg.key); setOpen(false); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 14px",
+                  border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: isActive ? 700 : 500, textAlign: "left",
+                  background: isActive ? `${pg.color}12` : "transparent",
+                  color: isActive ? pg.color : "#334155",
+                  transition: "all 0.15s",
+                }}
+                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "#F8FAFC"; }}
+                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+              >
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: isActive ? pg.color : "#CBD5E1", transition: "all 0.15s" }} />
+                {pg.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Shared Responsive Header ── */
 function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, accentColor }) {
   const mobile = useMobile();
   const [menuOpen, setMenuOpen] = useState(false);
   const { dark, toggle: toggleDark } = useTheme();
+
+  // v9.05: Grouped navigation structure
+  const NAV_GROUPS = [
+    { label: "Dashboard", icon: "📊", type: "single", key: "overview", color: "#6366F1" },
+    { label: "Finance", icon: "💰", type: "dropdown", color: "#0EA5E9", items: [
+      { key: "payments", label: "Payments", color: "#0EA5E9" },
+      { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
+    ]},
+    { label: "Deals", icon: "📋", type: "dropdown", color: "#F59E0B", items: [
+      { key: "crg", label: "CRG Deals", color: "#F59E0B" },
+      { key: "deals", label: "Offers", color: "#10B981" },
+      { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
+    ]},
+    { label: "Hunting", icon: "🎯", type: "dropdown", color: "#EC4899", items: [
+      { key: "partners", label: "Partners", color: "#EC4899" },
+    ]},
+    { label: "Settings", icon: "⚙️", type: "single", key: "settings", color: "#64748B" },
+  ];
+
+  // Flat list for mobile + admin
   const allNavPages = [
     { key: "overview", label: "Dashboard", color: "#6366F1" },
     { key: "payments", label: "Payments", color: "#0EA5E9" },
@@ -1047,13 +1208,20 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           {!mobile && <>
             <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
-            <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 2 }}>
-              {allNavPages.filter(pg => pg.key !== "admin" && (userAccess || []).includes(pg.key)).map(pg => (
-                activePage === pg.key
-                  ? <span key={pg.key} style={{ background: pg.color, color: "#FFF", padding: "4px 12px", borderRadius: 6, fontSize: 14, fontWeight: 700 }}>{pg.label}</span>
-                  : <button key={pg.key} onClick={() => onNav(pg.key)} style={{ background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500, padding: "4px 8px" }}
-                      onMouseEnter={e => e.currentTarget.style.color = pg.color} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}>{pg.label}</button>
-              ))}
+            <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              {NAV_GROUPS.map(group => {
+                if (group.type === "single") {
+                  if (!(userAccess || []).includes(group.key)) return null;
+                  const isActive = activePage === group.key;
+                  return isActive
+                    ? <span key={group.key} style={{ display: "flex", alignItems: "center", gap: 5, background: `${group.color}15`, border: `1.5px solid ${group.color}40`, color: group.color, padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700 }}><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</span>
+                    : <button key={group.key} onClick={() => onNav(group.key)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1.5px solid transparent", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 8, transition: "all 0.15s" }}
+                        onMouseEnter={e => { e.currentTarget.style.color = group.color; e.currentTarget.style.background = "rgba(100,116,139,0.06)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.background = "transparent"; }}
+                      ><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</button>;
+                }
+                return <NavDropdown key={group.label} label={group.label} icon={group.icon} items={group.items} activePage={activePage} userAccess={userAccess} onNav={onNav} accentColor={group.color} />;
+              })}
             </div>
           </>}
         </div>
@@ -1544,6 +1712,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
           <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>
           <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
           <span style={{ color: "#64748B", fontSize: 14 }}>/ Admin</span>
+          <SyncStatus />
         </div>
         <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "8px 16px", borderRadius: 8 }}
           onMouseEnter={e => { e.currentTarget.style.borderColor = "#38BDF8"; e.currentTarget.style.color = "#38BDF8"; }}
@@ -2000,14 +2169,30 @@ function ServerDiagnostics() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={cardStyle}><div style={labelStyle}>Version</div><div style={valStyle}>{diag.server?.version || "—"}</div></div>
         <div style={cardStyle}><div style={labelStyle}>Uptime</div><div style={valStyle}>{diag.server?.uptimeFormatted || "—"}</div></div>
         <div style={cardStyle}><div style={labelStyle}>Heap Used</div><div style={{ ...valStyle, color: isHighMem ? "#EF4444" : "#10B981" }}>{mem.heapUsed || 0} MB</div></div>
         <div style={cardStyle}><div style={labelStyle}>RSS Memory</div><div style={valStyle}>{mem.rss || 0} MB</div></div>
         <div style={cardStyle}><div style={labelStyle}>WS Clients</div><div style={valStyle}>{diag.connections?.webSocketClients || 0}</div></div>
         <div style={cardStyle}><div style={labelStyle}>Sessions</div><div style={valStyle}>{diag.connections?.activeSessions || 0}</div></div>
+        <div style={cardStyle}><div style={labelStyle}>Crashes</div><div style={{ ...valStyle, color: (diag.server?.crashes || 0) > 0 ? "#EF4444" : "#10B981" }}>{diag.server?.crashes || 0}</div></div>
         <div style={cardStyle}><div style={labelStyle}>TG Errors</div><div style={{ ...valStyle, color: (diag.telegram?.pollingErrors || 0) > 5 ? "#EF4444" : "#10B981" }}>{diag.telegram?.pollingErrors || 0}</div></div>
         <div style={cardStyle}><div style={labelStyle}>Backups</div><div style={{ ...valStyle, color: (diag.backups?.count || 0) > 0 ? "#10B981" : "#EF4444" }}>{diag.backups?.count || 0}</div><div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>{diag.backups?.latest ? `Latest: ${diag.backups.latest.slice(0,19)}` : "No backups!"}</div></div>
       </div>
+
+      {/* v9.06: Crash Log — show recent crashes if any */}
+      {diag.server?.recentCrashes && diag.server.recentCrashes.length > 0 && (
+        <div style={{ ...cardStyle, marginBottom: 16, borderLeft: "3px solid #EF4444" }}>
+          <div style={labelStyle}>⚠️ Recent Crashes ({diag.server.recentCrashes.length})</div>
+          <div style={{ maxHeight: 150, overflowY: "auto", fontSize: 11, fontFamily: "'JetBrains Mono',monospace", lineHeight: 1.6, color: "#DC2626" }}>
+            {diag.server.recentCrashes.slice(-5).reverse().map((c, i) => (
+              <div key={i} style={{ marginBottom: 4, padding: "4px 8px", background: "rgba(239,68,68,0.05)", borderRadius: 4 }}>
+                <span style={{ color: "#94A3B8" }}>{c.time?.slice(11,19) || "?"}</span> [{c.type}] {c.msg}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {history.length > 1 && (
         <div style={{ ...cardStyle, marginBottom: 16 }}>
@@ -2032,6 +2217,33 @@ function ServerDiagnostics() {
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, marginTop: 8 }}>
             {Object.entries(diag.data).map(([k, v]) => (
               <span key={k} style={{ fontSize: 12, color: "#475569" }}><strong>{k}:</strong> {v}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* v9.06: Audit Trail — "Who changed what and when" */}
+      {diag.recentAudit && diag.recentAudit.length > 0 && (
+        <div style={{ ...cardStyle, marginBottom: 16 }}>
+          <div style={labelStyle}>📋 Recent Activity (Audit Trail)</div>
+          <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
+            {diag.recentAudit.map((auditFile, fi) => (
+              <div key={fi}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#6366F1", padding: "6px 0 4px", borderBottom: "1px solid #E2E8F0", marginBottom: 4 }}>{auditFile.file}</div>
+                {(auditFile.entries || []).slice(-20).reverse().map((entry, ei) => {
+                  if (typeof entry === 'string') return null;
+                  const timeStr = entry.timestamp ? entry.timestamp.slice(11, 19) : "?";
+                  const actionColor = { login_success: "#10B981", logout: "#94A3B8", update: "#0EA5E9", create: "#8B5CF6", delete: "#EF4444", shutdown: "#F59E0B", blocked_request: "#DC2626", "auto-dedup": "#F59E0B", restore: "#6366F1" }[entry.action] || "#475569";
+                  return (
+                    <div key={ei} style={{ display: "flex", gap: 8, alignItems: "center", padding: "3px 0", fontSize: 11, borderBottom: "1px solid #F8FAFC" }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "#94A3B8", minWidth: 55 }}>{timeStr}</span>
+                      <span style={{ padding: "1px 6px", borderRadius: 4, background: `${actionColor}15`, color: actionColor, fontWeight: 700, fontSize: 10, minWidth: 55, textAlign: "center" }}>{entry.action}</span>
+                      <span style={{ color: "#64748B", fontWeight: 600, minWidth: 70 }}>{entry.table}</span>
+                      <span style={{ color: "#94A3B8", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.user?.split("@")[0] || "system"} — {(entry.details || "").slice(0, 60)}</span>
+                    </div>
+                  );
+                })}
+              </div>
             ))}
           </div>
         </div>
@@ -2739,7 +2951,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
             }} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>📸 Send All Screenshots</button>}
           </div>
           {backupStatus && <div style={{ fontSize: 12, color: "#64748B", padding: "6px 10px", background: "#F8FAFC", borderRadius: 6 }}>Backup: {backupStatus}</div>}
-          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run automatically every hour and on every server restart. Always create a manual backup before deploying a new version.</div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run hourly + daily snapshots at 02:00 (7-day retention). Auto-dedup runs nightly at 03:00. Always create a manual backup before deploying a new version.</div>
 
           {/* Restore moved to Admin Panel */}
         </div>
@@ -2790,12 +3002,15 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10 }}>
               {[
-                { label: "Uptime", value: diagData.uptime ? `${Math.floor(diagData.uptime / 3600)}h ${Math.floor((diagData.uptime % 3600) / 60)}m` : "N/A", color: "#10B981" },
-                { label: "Heap Used", value: diagData.memory?.heapUsed ? `${Math.round(diagData.memory.heapUsed / 1048576)}MB` : "N/A", color: diagData.memory?.heapUsed > 200000000 ? "#EF4444" : "#10B981" },
-                { label: "RSS Memory", value: diagData.memory?.rss ? `${Math.round(diagData.memory.rss / 1048576)}MB` : "N/A", color: "#0EA5E9" },
-                { label: "WS Clients", value: diagData.wsClients ?? "N/A", color: "#8B5CF6" },
-                { label: "Sessions", value: diagData.sessions ?? "N/A", color: "#F59E0B" },
-                { label: "TG Errors", value: diagData.telegramErrors ?? "0", color: (diagData.telegramErrors || 0) > 5 ? "#EF4444" : "#10B981" },
+                { label: "Version", value: diagData.server?.version || VERSION, color: "#6366F1" },
+                { label: "Uptime", value: diagData.server?.uptimeFormatted || `${Math.floor((diagData.server?.uptime || 0) / 3600)}h ${Math.floor(((diagData.server?.uptime || 0) % 3600) / 60)}m`, color: "#10B981" },
+                { label: "Heap Used", value: `${diagData.memory?.heapUsed || 0}MB`, color: (diagData.memory?.heapUsed || 0) > 300 ? "#EF4444" : "#10B981" },
+                { label: "RSS Memory", value: `${diagData.memory?.rss || 0}MB`, color: "#0EA5E9" },
+                { label: "WS Clients", value: diagData.connections?.webSocketClients ?? diagData.memory?.wsClients ?? 0, color: "#8B5CF6" },
+                { label: "Sessions", value: diagData.connections?.activeSessions ?? diagData.memory?.sessions ?? 0, color: "#F59E0B" },
+                { label: "Crashes", value: diagData.server?.crashes ?? 0, color: (diagData.server?.crashes || 0) > 0 ? "#EF4444" : "#10B981" },
+                { label: "TG Errors", value: diagData.telegram?.pollingErrors ?? 0, color: (diagData.telegram?.pollingErrors || 0) > 5 ? "#EF4444" : "#10B981" },
+                { label: "Backups", value: diagData.backups?.count ?? "?", color: (diagData.backups?.count || 0) > 0 ? "#10B981" : "#EF4444" },
               ].map((c, i) => (
                 <div key={i} style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${c.color}` }}>
                   <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
@@ -2803,6 +3018,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
                 </div>
               ))}
             </div>
+            {diagData.backups?.latest && <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Latest backup: {diagData.backups.latest.slice(0, 19)}</div>}
           </div>
         )}
 
@@ -5652,7 +5868,7 @@ function AppInner() {
     // Fallback polling every 15s \u2014 MERGE, never replace
     const poll = async () => {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
-      if (!serverOnline) { try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch {} }
+      if (!serverOnline) { try { const h = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); if (h.ok) { serverOnline = true; console.log("🔌 Server back online"); connectWebSocket(); } } catch {} }
       if (!serverOnline) return;
       const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
