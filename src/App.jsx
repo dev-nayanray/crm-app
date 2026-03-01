@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.00";
+const VERSION = "9.02";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -791,9 +791,9 @@ const I = {
 
 /* ── Shared styles ── */
 const inp = {
-  width: "100%", padding: "10px 14px", background: "#F8FAFC",
-  border: "1px solid #E2E8F0", borderRadius: 10,
-  color: "#1E293B", fontSize: 14, outline: "none", boxSizing: "border-box",
+  width: "100%", padding: "11px 15px", background: "#FFFFFF",
+  border: "2px solid #E2E8F0", borderRadius: 12,
+  color: "#0F172A", fontSize: 14, outline: "none", boxSizing: "border-box",
   transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
 };
 
@@ -993,7 +993,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 
   return (
     <>
-      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
+      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.97)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
           {I.logo}
           {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>}
@@ -1487,7 +1487,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
@@ -2323,7 +2323,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
   const activeMetric = metricOptions.find(m => m.key === chartMetric) || metricOptions[0];
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="overview" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
@@ -2616,7 +2616,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
   const btnStyle = (bg) => ({ padding: "8px 16px", borderRadius: 8, background: bg, border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 });
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="settings" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#64748B" />
 
@@ -2850,7 +2850,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="payments" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
@@ -2963,13 +2963,10 @@ function LoginScreen({ onLogin, users }) {
         signal: AbortSignal.timeout(8000),
       });
 
-      // Try to parse JSON — server might return HTML (Nginx 502/504)
       const text = await res.text();
       let data;
       try { data = JSON.parse(text); } catch {
-        // Server returned non-JSON (HTML error page from Nginx)
         console.log("⚠️ Server returned non-JSON:", text.substring(0, 200));
-        // Fall through to offline login below
         throw new Error("non-json");
       }
 
@@ -2988,24 +2985,20 @@ function LoginScreen({ onLogin, users }) {
         setLoading(false);
         return;
       } else if (res.status === 401) {
-        // Server says wrong password — don't fall through to offline
         setError("Invalid email or password.");
         if (data.debug) setDebugData({ ...data.debug, clientHash8: hashed.substring(0, 8), clientHashFull: hashed });
         setLoading(false);
         return;
       } else {
-        // Other server error — fall through to offline login
         throw new Error(`HTTP ${res.status}`);
       }
     } catch (fetchErr) {
       // ── TRY 2: Offline login using INITIAL_USERS ──
-      // This works even if server is down, crashed, returning HTML, etc.
       const u = INITIAL_USERS.find(u => u.email === emailClean && u.passwordHash === hashed);
       if (u) {
         console.log("✅ Offline login success for:", emailClean);
         onLogin({ email: u.email, name: u.name, pageAccess: u.pageAccess });
       } else {
-        // Check if email exists but password is wrong
         const emailExists = INITIAL_USERS.some(u => u.email === emailClean);
         if (emailExists) {
           setError(serverWorked ? "Invalid email or password." : "Server unreachable. Password doesn't match offline records.");
@@ -3017,48 +3010,185 @@ function LoginScreen({ onLogin, users }) {
     setLoading(false);
   };
 
-  const diagStyle = { background: "rgba(0,0,0,0.6)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 10, padding: 14, marginTop: 12, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: "#F59E0B", lineHeight: 1.8, whiteSpace: "pre-wrap", maxHeight: 300, overflowY: "auto" };
+  const diagStyle = { background: "#FEF3C7", border: "1px solid #F59E0B40", borderRadius: 10, padding: 14, marginTop: 12, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: "#92400E", lineHeight: 1.8, whiteSpace: "pre-wrap", maxHeight: 300, overflowY: "auto" };
+
+  // Floating decoration SVGs
+  const BitcoinSVG = ({ style }) => (
+    <svg style={{ position: "absolute", pointerEvents: "none", filter: "drop-shadow(0 4px 12px rgba(247,181,0,0.3))", ...style }} width="90" height="90" viewBox="0 0 100 100">
+      <defs><linearGradient id="btcg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor="#FFD700"/><stop offset="50%" stopColor="#F7B500"/><stop offset="100%" stopColor="#E5A000"/></linearGradient></defs>
+      <circle cx="50" cy="50" r="46" fill="url(#btcg)" stroke="#D4940080" strokeWidth="3"/>
+      <circle cx="50" cy="50" r="38" fill="none" stroke="#FFF4" strokeWidth="1.5"/>
+      <text x="50" y="66" textAnchor="middle" fill="#FFF" fontSize="42" fontWeight="800" fontFamily="Arial,sans-serif" style={{textShadow:"0 2px 4px rgba(0,0,0,0.2)"}}>₿</text>
+    </svg>
+  );
+
+  const AirpodsSVG = ({ style }) => (
+    <svg style={{ position: "absolute", pointerEvents: "none", filter: "drop-shadow(0 4px 10px rgba(0,0,0,0.1))", ...style }} width="85" height="100" viewBox="0 0 85 100">
+      {/* Left airpod */}
+      <ellipse cx="25" cy="32" rx="14" ry="18" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="1.5"/>
+      <ellipse cx="25" cy="28" rx="5" ry="5" fill="#E2E8F0"/>
+      <rect x="22" y="48" width="6" height="32" rx="3" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1"/>
+      {/* Right airpod */}
+      <ellipse cx="58" cy="26" rx="14" ry="18" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="1.5"/>
+      <ellipse cx="58" cy="22" rx="5" ry="5" fill="#E2E8F0"/>
+      <rect x="55" y="42" width="6" height="35" rx="3" fill="#F1F5F9" stroke="#E2E8F0" strokeWidth="1"/>
+      {/* Cute face on right one */}
+      <circle cx="53" cy="24" r="1.8" fill="#334155"/>
+      <circle cx="63" cy="24" r="1.8" fill="#334155"/>
+      <ellipse cx="58" cy="30" rx="4" ry="3" fill="none" stroke="#334155" strokeWidth="1.2" strokeLinecap="round" style={{strokeDasharray:"0 7 7 0"}}/>
+    </svg>
+  );
+
+  const UkraineFlagSVG = ({ style }) => (
+    <svg style={{ position: "absolute", pointerEvents: "none", filter: "drop-shadow(0 3px 8px rgba(0,0,0,0.12))", ...style }} width="80" height="65" viewBox="0 0 80 65">
+      {/* Pole */}
+      <rect x="8" y="5" width="3.5" height="58" rx="1.5" fill="#B0B8C4"/>
+      <circle cx="9.75" cy="6" r="3.5" fill="#F59E0B"/>
+      {/* Flag body with wave */}
+      <path d="M13 10 Q35 6 55 12 Q70 16 75 13 L75 35 Q60 31 55 35 Q35 41 13 37 Z" fill="#0057B8"/>
+      <path d="M13 37 Q35 41 55 35 Q60 31 75 35 L75 55 Q60 52 55 56 Q35 62 13 58 Z" fill="#FFD700"/>
+    </svg>
+  );
+
+  // Sparkle/star decorations
+  const Sparkle = ({ x, y, size, color, delay }) => (
+    <div style={{ position: "absolute", left: x, top: y, pointerEvents: "none", animation: `sparkle 2s ease-in-out ${delay || 0}s infinite` }}>
+      <svg width={size || 14} height={size || 14} viewBox="0 0 24 24">
+        <path d="M12 0L14.5 9.5L24 12L14.5 14.5L12 24L9.5 14.5L0 12L9.5 9.5Z" fill={color || "#38BDF8"} opacity="0.6"/>
+      </svg>
+    </div>
+  );
+
+  const Dot = ({ x, y, size, color }) => (
+    <div style={{ position: "absolute", left: x, top: y, width: size || 8, height: size || 8, borderRadius: "50%", background: color || "#38BDF8", opacity: 0.4, pointerEvents: "none", animation: `float 3s ease-in-out infinite` }} />
+  );
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg, #080B14 0%, #0C1021 40%, #111729 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #F0F7FF 0%, #FFFFFF 30%, #F8FBFF 60%, #EFF6FF 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-      <style>{mobileCSS}{darkModeCSS}</style>
-      <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(56,189,248,0.08) 0%, transparent 70%)", top: "-10%", right: "-5%", pointerEvents: "none" }} />
-      <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.06) 0%, transparent 70%)", bottom: "-5%", left: "-3%", pointerEvents: "none" }} />
-      <div style={{ width: 480, maxWidth: "94vw", background: "rgba(22, 29, 49, 0.8)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(56,189,248,0.1)", padding: "48px 40px", boxShadow: "0 25px 80px rgba(0,0,0,0.5), 0 0 60px rgba(56,189,248,0.04)", animation: "fadeUp 0.5s cubic-bezier(0.4, 0, 0.2, 1)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+      <style>{mobileCSS}{`
+        @keyframes sparkle { 0%,100% { opacity:0.3; transform:scale(0.8) rotate(0deg); } 50% { opacity:1; transform:scale(1.2) rotate(180deg); } }
+        @keyframes float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+        @keyframes floatSlow { 0%,100% { transform:translateY(0) rotate(-5deg); } 50% { transform:translateY(-12px) rotate(5deg); } }
+        @keyframes fadeSlideUp { from { opacity:0; transform:translateY(30px); } to { opacity:1; transform:translateY(0); } }
+        @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(14,165,233,0.15); } 50% { box-shadow: 0 0 0 12px rgba(14,165,233,0); } }
+      `}</style>
+
+      {/* ══ Background decorations ══ */}
+      {/* Soft gradient orbs */}
+      <div style={{ position: "absolute", width: 500, height: 500, borderRadius: "50%", background: "radial-gradient(circle, rgba(56,189,248,0.06) 0%, transparent 70%)", top: "-15%", right: "-10%", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", width: 400, height: 400, borderRadius: "50%", background: "radial-gradient(circle, rgba(167,139,250,0.05) 0%, transparent 70%)", bottom: "-10%", left: "-8%", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", width: 300, height: 300, borderRadius: "50%", background: "radial-gradient(circle, rgba(251,191,36,0.04) 0%, transparent 70%)", top: "20%", left: "5%", pointerEvents: "none" }} />
+
+      {/* ══ Floating illustrations ══ */}
+      <BitcoinSVG style={{ top: "8%", left: "8%", animation: "floatSlow 4s ease-in-out infinite", zIndex: 2 }} />
+      <AirpodsSVG style={{ top: "12%", right: "6%", animation: "floatSlow 5s ease-in-out 0.5s infinite", transform: "rotate(15deg)", zIndex: 2 }} />
+      <UkraineFlagSVG style={{ bottom: "12%", left: "10%", animation: "floatSlow 4.5s ease-in-out 1s infinite", zIndex: 2 }} />
+
+      {/* Currency scale (€ vs $) — bottom center-left */}
+      <svg style={{ position: "absolute", bottom: "14%", left: "18%", pointerEvents: "none", opacity: 0.85, animation: "floatSlow 5s ease-in-out 1.5s infinite", zIndex: 2 }} width="110" height="80" viewBox="0 0 110 80">
+        {/* Scale base */}
+        <rect x="48" y="40" width="14" height="36" rx="3" fill="#B0B8C4" opacity="0.5"/>
+        <ellipse cx="55" cy="76" rx="22" ry="4" fill="#CBD5E1" opacity="0.4"/>
+        {/* Scale beam */}
+        <rect x="10" y="38" width="90" height="4" rx="2" fill="#94A3B8" transform="rotate(-5 55 40)"/>
+        {/* Euro side (higher = lighter) */}
+        <text x="18" y="34" fontSize="28" fontWeight="800" fill="#FFB800" fontFamily="Arial" style={{filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.15))"}}>€</text>
+        {/* Dollar side (lower = heavier) */}
+        <text x="78" y="42" fontSize="28" fontWeight="800" fill="#FFB800" fontFamily="Arial" style={{filter:"drop-shadow(0 2px 4px rgba(0,0,0,0.15))"}}>$</text>
+      </svg>
+
+      {/* Call center girl — right side */}
+      <svg style={{ position: "absolute", bottom: "5%", right: "3%", pointerEvents: "none", zIndex: 2, opacity: 0.9 }} width="160" height="200" viewBox="0 0 160 200">
+        {/* Laptop */}
+        <rect x="20" y="145" width="80" height="50" rx="4" fill="#E2E8F0" stroke="#CBD5E1" strokeWidth="1.5"/>
+        <rect x="25" y="148" width="70" height="38" rx="2" fill="#F8FAFC"/>
+        <circle cx="60" cy="167" r="4" fill="#CBD5E1"/>
+        <rect x="15" y="194" width="90" height="4" rx="2" fill="#CBD5E1"/>
+        {/* Body */}
+        <ellipse cx="95" cy="165" rx="25" ry="30" fill="#BFDBFE"/>
+        {/* Neck */}
+        <rect x="88" y="110" width="14" height="15" rx="5" fill="#FDDEB5"/>
+        {/* Head */}
+        <ellipse cx="95" cy="90" rx="24" ry="28" fill="#FDDEB5"/>
+        {/* Hair */}
+        <ellipse cx="95" cy="72" rx="26" ry="18" fill="#8B6914"/>
+        <ellipse cx="75" cy="90" rx="8" ry="25" fill="#A07420"/>
+        <ellipse cx="115" cy="90" rx="8" ry="25" fill="#A07420"/>
+        <ellipse cx="120" cy="115" rx="6" ry="18" fill="#A07420"/>
+        <ellipse cx="70" cy="115" rx="6" ry="18" fill="#A07420"/>
+        {/* Eyes */}
+        <ellipse cx="86" cy="88" rx="3.5" ry="4" fill="#FFF"/>
+        <ellipse cx="104" cy="88" rx="3.5" ry="4" fill="#FFF"/>
+        <circle cx="87" cy="89" r="2" fill="#4A3520"/>
+        <circle cx="105" cy="89" r="2" fill="#4A3520"/>
+        <circle cx="87.5" cy="88" r="0.8" fill="#FFF"/>
+        <circle cx="105.5" cy="88" r="0.8" fill="#FFF"/>
+        {/* Smile */}
+        <path d="M89 98 Q95 104 101 98" fill="none" stroke="#D4845A" strokeWidth="1.5" strokeLinecap="round"/>
+        {/* Headset */}
+        <path d="M70 82 Q70 60 95 58 Q120 60 120 82" fill="none" stroke="#334155" strokeWidth="3" strokeLinecap="round"/>
+        <rect x="65" y="80" width="10" height="16" rx="5" fill="#334155"/>
+        <rect x="115" y="80" width="10" height="16" rx="5" fill="#334155"/>
+        {/* Mic arm */}
+        <path d="M68 92 Q60 100 65 108" fill="none" stroke="#334155" strokeWidth="2" strokeLinecap="round"/>
+        <circle cx="65" cy="110" r="4" fill="#334155"/>
+        {/* Arm on laptop */}
+        <path d="M80 155 Q70 140 55 148" fill="none" stroke="#FDDEB5" strokeWidth="8" strokeLinecap="round"/>
+      </svg>
+
+      {/* Sparkles and dots scattered around */}
+      <Sparkle x="15%" y="25%" size={16} color="#FFD700" delay={0} />
+      <Sparkle x="85%" y="30%" size={12} color="#38BDF8" delay={0.5} />
+      <Sparkle x="75%" y="70%" size={14} color="#A78BFA" delay={1} />
+      <Sparkle x="20%" y="75%" size={10} color="#38BDF8" delay={1.5} />
+      <Sparkle x="50%" y="10%" size={12} color="#FFD700" delay={0.8} />
+      <Sparkle x="90%" y="55%" size={10} color="#F472B6" delay={2} />
+      <Dot x="25%" y="15%" size={8} color="#38BDF8" />
+      <Dot x="80%" y="20%" size={6} color="#FFD700" />
+      <Dot x="12%" y="60%" size={10} color="#A78BFA" />
+      <Dot x="88%" y="75%" size={7} color="#38BDF8" />
+      <Dot x="45%" y="85%" size={6} color="#FFD700" />
+      <Dot x="70%" y="8%" size={9} color="#F472B6" />
+
+      {/* ══ Login Card ══ */}
+      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(226,232,240,0.8)", padding: "44px 40px", boxShadow: "0 20px 60px rgba(15,23,42,0.08), 0 0 0 1px rgba(255,255,255,0.6) inset", animation: "fadeSlideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1)", position: "relative", zIndex: 10 }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
           {I.logo}
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 22, color: "#F1F5F9", letterSpacing: -0.5 }}>Blitz CRM</span>
-          <span style={{ fontSize: 10, color: "#38BDF8", fontFamily: "'JetBrains Mono',monospace", background: "rgba(56,189,248,0.1)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(56,189,248,0.15)" }}>v{VERSION}</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 24, color: "#0F172A", letterSpacing: -0.5 }}>Blitz CRM</span>
+          <span style={{ fontSize: 11, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "#EFF6FF", padding: "3px 12px", borderRadius: 20, border: "1px solid #BFDBFE", fontWeight: 600 }}>v{VERSION}</span>
         </div>
-        <p style={{ color: "#64748B", fontSize: 14, marginBottom: 20, marginTop: 4 }}>Deep Space Dashboard</p>
 
         {/* Server status */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 20, padding: "8px 14px", borderRadius: 10,
-          background: serverStatus === "online" ? "rgba(16,185,129,0.08)" : serverStatus === "offline" ? "rgba(245,158,11,0.08)" : "rgba(148,163,184,0.08)",
-          border: `1px solid ${serverStatus === "online" ? "rgba(16,185,129,0.2)" : serverStatus === "offline" ? "rgba(245,158,11,0.2)" : "rgba(148,163,184,0.2)"}` }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%",
+        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 24, padding: "8px 14px", borderRadius: 10,
+          background: serverStatus === "online" ? "#ECFDF5" : serverStatus === "offline" ? "#FEF3C7" : "#F8FAFC",
+          border: `1px solid ${serverStatus === "online" ? "#A7F3D0" : serverStatus === "offline" ? "#FDE68A" : "#E2E8F0"}` }}>
+          <div style={{ width: 9, height: 9, borderRadius: "50%",
             background: serverStatus === "online" ? "#10B981" : serverStatus === "offline" ? "#F59E0B" : "#94A3B8",
-            boxShadow: serverStatus === "online" ? "0 0 6px rgba(16,185,129,0.5)" : "none" }} />
-          <span style={{ fontSize: 12, color: serverStatus === "online" ? "#10B981" : serverStatus === "offline" ? "#F59E0B" : "#94A3B8", fontWeight: 500 }}>
+            boxShadow: serverStatus === "online" ? "0 0 8px rgba(16,185,129,0.5)" : "none",
+            animation: serverStatus === "online" ? "pulse 2s ease-in-out infinite" : "none" }} />
+          <span style={{ fontSize: 13, color: serverStatus === "online" ? "#065F46" : serverStatus === "offline" ? "#92400E" : "#64748B", fontWeight: 600 }}>
             {serverStatus === "online" ? "Server connected" : serverStatus === "offline" ? "Server offline — offline login available" : "Checking server..."}
           </span>
         </div>
 
         <form onSubmit={submit} method="post" autoComplete="on">
-          <label htmlFor="login-email" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Email</label>
+          <label htmlFor="login-email" style={{ display: "block", color: "#334155", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Email</label>
           <input id="login-email" name="email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
-            style={{ width: "100%", padding: "12px 16px", background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#38BDF8" }}
-            onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
-            onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
-          <label htmlFor="login-password" style={{ display: "block", color: "#94A3B8", fontSize: 11, fontWeight: 600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1.2 }}>Password</label>
+            style={{ width: "100%", padding: "14px 18px", background: "#FFFFFF", border: "2px solid #E2E8F0", borderRadius: 14, color: "#0F172A", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#0EA5E9" }}
+            onFocus={e => { e.target.style.borderColor = "#38BDF8"; e.target.style.boxShadow = "0 0 0 4px rgba(56,189,248,0.1)"; }}
+            onBlur={e => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none"; }} />
+
+          <label htmlFor="login-password" style={{ display: "block", color: "#334155", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Password</label>
           <div style={{ position: "relative", marginBottom: 20 }}>
             <input id="login-password" name="password" type={showPass ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-              style={{ width: "100%", padding: "12px 16px", paddingRight: 48, background: "rgba(12,16,33,0.6)", border: "1px solid rgba(56,189,248,0.12)", borderRadius: 12, color: "#F1F5F9", fontSize: 14, outline: "none", boxSizing: "border-box", transition: "all 0.2s ease", caretColor: "#38BDF8" }}
-              onFocus={e => { e.target.style.borderColor = "rgba(56,189,248,0.4)"; e.target.style.boxShadow = "0 0 0 3px rgba(56,189,248,0.08)"; }}
-              onBlur={e => { e.target.style.borderColor = "rgba(56,189,248,0.12)"; e.target.style.boxShadow = "none"; }} />
+              style={{ width: "100%", padding: "14px 18px", paddingRight: 50, background: "#FFFFFF", border: "2px solid #E2E8F0", borderRadius: 14, color: "#0F172A", fontSize: 15, outline: "none", boxSizing: "border-box", transition: "all 0.2s ease", caretColor: "#0EA5E9" }}
+              onFocus={e => { e.target.style.borderColor = "#38BDF8"; e.target.style.boxShadow = "0 0 0 4px rgba(56,189,248,0.1)"; }}
+              onBlur={e => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none"; }} />
             <button type="button" onClick={() => setShowPass(!showPass)} tabIndex={-1}
-              style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 4, color: showPass ? "#38BDF8" : "#64748B", transition: "color 0.2s" }}>
+              style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 4, color: showPass ? "#0EA5E9" : "#94A3B8", transition: "color 0.2s" }}>
               {showPass
                 ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                 : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
@@ -3066,32 +3196,32 @@ function LoginScreen({ onLogin, users }) {
             </button>
           </div>
 
-          {error && <div style={{ color: "#F87171", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "rgba(239,68,68,0.08)", borderRadius: 10, border: "1px solid rgba(239,68,68,0.15)" }}>{error}</div>}
+          {error && <div style={{ color: "#DC2626", fontSize: 13, marginBottom: 16, padding: "10px 14px", background: "#FEF2F2", borderRadius: 12, border: "1px solid #FECACA", fontWeight: 500 }}>{error}</div>}
 
-          {/* DEBUG PANEL — shows server diagnostic data */}
+          {/* DEBUG PANEL */}
           {debugData && (
             <div style={diagStyle}>
-              <div style={{ color: "#F59E0B", fontWeight: 700, marginBottom: 8 }}>🔍 DEBUG DIAGNOSTIC (v{VERSION})</div>
+              <div style={{ color: "#92400E", fontWeight: 700, marginBottom: 8 }}>🔍 DEBUG DIAGNOSTIC (v{VERSION})</div>
               <div>Server version: {debugData.v || "unknown (old server?)"}</div>
               <div>Data dir: {debugData.dataDir || "?"}</div>
               <div>users.json exists: {debugData.fileExists ? "✅ YES" : "❌ NO"}</div>
               <div>─────────────────────────</div>
               <div>Users in file: {debugData.fileUsersCount ?? "?"}</div>
-              <div style={{ color: debugData.fileUsersWithHash === debugData.fileUsersCount ? "#10B981" : "#EF4444" }}>
+              <div style={{ color: debugData.fileUsersWithHash === debugData.fileUsersCount ? "#065F46" : "#DC2626" }}>
                 With passwordHash: {debugData.fileUsersWithHash ?? "?"} / {debugData.fileUsersCount ?? "?"}
               </div>
               {debugData.fileUsersNoHash && debugData.fileUsersNoHash.length > 0 && (
-                <div style={{ color: "#EF4444" }}>⚠️ MISSING HASH: {debugData.fileUsersNoHash.join(", ")}</div>
+                <div style={{ color: "#DC2626" }}>⚠️ MISSING HASH: {debugData.fileUsersNoHash.join(", ")}</div>
               )}
               <div>─────────────────────────</div>
               <div>Email in file: {debugData.emailInFile ? "✅" : "❌"}</div>
               <div>Email in seed: {debugData.emailInSeed ? "✅" : "❌"}</div>
               <div>File has hash: {debugData.fileHasHash ? "✅" : "❌ ← PROBLEM"}</div>
               <div>Seed has hash: {debugData.seedHasHash ? "✅" : "❌"}</div>
-              <div style={{ color: debugData.hashMatchFile || debugData.hashMatchSeed ? "#10B981" : "#EF4444" }}>
+              <div style={{ color: debugData.hashMatchFile || debugData.hashMatchSeed ? "#065F46" : "#DC2626" }}>
                 Hash match (file): {debugData.hashMatchFile ? "✅ MATCH" : "❌ NO MATCH"}
               </div>
-              <div style={{ color: debugData.hashMatchSeed ? "#10B981" : "#EF4444" }}>
+              <div style={{ color: debugData.hashMatchSeed ? "#065F46" : "#DC2626" }}>
                 Hash match (seed): {debugData.hashMatchSeed ? "✅ MATCH" : "❌ NO MATCH"}
               </div>
               <div>─────────────────────────</div>
@@ -3103,7 +3233,9 @@ function LoginScreen({ onLogin, users }) {
           )}
 
           <button type="submit" disabled={loading || blocked > 0}
-            style={{ width: "100%", padding: 14, background: loading ? "rgba(14,165,233,0.3)" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #7DD3FC 100%)", color: "#FFF", border: "none", borderRadius: 12, fontSize: 15, fontWeight: 700, cursor: loading ? "wait" : "pointer", boxShadow: "0 4px 24px rgba(14,165,233,0.3)", transition: "all 0.2s", letterSpacing: 0.3, marginTop: 8 }}
+            style={{ width: "100%", padding: 16, background: loading ? "#93C5FD" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #60C6FA 100%)", color: "#FFF", border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: loading ? "wait" : "pointer", boxShadow: loading ? "none" : "0 6px 30px rgba(14,165,233,0.35)", transition: "all 0.2s", letterSpacing: 0.5, marginTop: 8 }}
+            onMouseEnter={e => { if (!loading) e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
           >
             {loading ? "Signing in..." : "Sign In →"}
           </button>
@@ -3120,7 +3252,9 @@ function LoginScreen({ onLogin, users }) {
                 window.open(window.location.href, '_blank', 'toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=420,height=800');
               }
             }}
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "rgba(56,189,248,0.06)", border: "1px solid rgba(56,189,248,0.15)", borderRadius: 12, color: "#38BDF8", fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, color: "#475569", fontSize: 13, fontWeight: 600, textDecoration: "none", cursor: "pointer", transition: "all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "#EFF6FF"; e.currentTarget.style.borderColor = "#BFDBFE"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "#F8FAFC"; e.currentTarget.style.borderColor = "#E2E8F0"; }}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
             Open in App
@@ -3458,7 +3592,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
@@ -3807,7 +3941,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#F59E0B" />
 
@@ -4322,7 +4456,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
   const activeAgents = todayEntries.length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#8B5CF6" />
 
@@ -4657,7 +4791,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
   })();
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
 
