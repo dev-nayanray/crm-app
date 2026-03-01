@@ -285,7 +285,7 @@ function MobileNav({ pages, current, userAccess, onNav, onClose }) {
     ]},
     { title: "Info", items: [
       { key: "partners", label: "🎯 Partners", color: "#EC4899" },
-      { key: "monthlystats", label: "📊 Monthly Stats", color: "#6366F1" },
+      { key: "monthlystats", label: "📊 Blitz Report", color: "#6366F1" },
       { key: "ftdsinfo", label: "📈 FTDs Info", color: "#10B981" },
     ]},
     { title: null, items: [
@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.07";
+const VERSION = "9.10";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -481,7 +481,10 @@ const WS_URL = (() => {
   const h = window.location.hostname;
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   if (h === 'localhost' || h === '127.0.0.1') return 'ws://localhost:3001/ws';
-  return `${proto}//${h}/ws`;
+  // Include port if non-standard (important for direct server access without reverse proxy)
+  const port = window.location.port;
+  const portSuffix = port && port !== '80' && port !== '443' ? `:${port}` : '';
+  return `${proto}//${h}${portSuffix}/ws`;
 })();
 
 let serverOnline = false;
@@ -655,9 +658,18 @@ async function apiSave(endpoint, data, userEmail) {
   if (Array.isArray(data) && lastKnownCounts[endpoint] > 0) {
     const prev = lastKnownCounts[endpoint];
     const curr = data.length;
-    const maxAllowedDrop = Math.max(prev * 0.3, pendingDeleteCount + 3); // v9.05: stricter 30% drop (was 50%)
+    const maxAllowedDrop = Math.max(prev * 0.2, pendingDeleteCount + 2); // v9.09: stricter 20% drop (was 30%)
     if (prev - curr > maxAllowedDrop) {
       console.error(`🛑 BLOCKED suspicious save to ${endpoint}: ${prev} → ${curr} records (drop of ${prev - curr}, only ${pendingDeleteCount} explicit deletes). This looks like a crash-induced data loss.`);
+      // v9.09: Attempt to recover from server before giving up
+      try {
+        const serverData = await apiGet(endpoint);
+        if (Array.isArray(serverData) && serverData.length > curr) {
+          console.log(`🔄 Recovering ${endpoint} from server: ${serverData.length} records`);
+          lsSave(endpoint, serverData);
+          lastKnownCounts[endpoint] = serverData.length;
+        }
+      } catch {}
       return false;
     }
   }
@@ -769,10 +781,13 @@ const wsListeners = new Set();
 
 function connectWebSocket() {
   if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
+  if (wsConnection && wsConnection.readyState === WebSocket.CONNECTING) return; // v9.09: don't double-connect
   const token = getSessionToken();
   if (!token) return; // Don't connect without auth
   try {
+    console.log(`🔌 WebSocket connecting to ${WS_URL}...`);
     wsConnection = new WebSocket(`${WS_URL}?token=${encodeURIComponent(token)}`);
+    let closedHandled = false; // v9.09: prevent double-fire from onerror+onclose
     wsConnection.onopen = () => {
       console.log('🔌 WebSocket connected');
       wsReconnectAttempts = 0; // Reset backoff on success
@@ -796,16 +811,23 @@ function connectWebSocket() {
       } catch {}
     };
     wsConnection.onclose = (e) => {
+      if (closedHandled) return; // v9.09: prevent double reconnect
+      closedHandled = true;
       wsConnection = null;
-      // Exponential backoff: 3s, 6s, 12s, 24s, max 30s
-      const delay = Math.min(3000 * Math.pow(2, wsReconnectAttempts), 30000);
+      // Exponential backoff: 2s, 4s, 8s, 16s, max 30s
+      const delay = Math.min(2000 * Math.pow(2, wsReconnectAttempts), 30000);
       wsReconnectAttempts++;
-      if (wsReconnectAttempts <= 3) console.log(`🔌 WebSocket closed (code=${e.code}, reason=${e.reason || 'none'}). Reconnecting in ${delay/1000}s...`);
+      if (wsReconnectAttempts <= 5) console.log(`🔌 WebSocket closed (code=${e.code}, reason=${e.reason || 'none'}). Reconnect #${wsReconnectAttempts} in ${delay/1000}s...`);
       if (!wsReconnectTimer) wsReconnectTimer = setTimeout(() => { wsReconnectTimer = null; connectWebSocket(); }, delay);
     };
     wsConnection.onerror = (e) => {
-      if (wsReconnectAttempts === 0) console.warn('🔌 WebSocket error — will fall back to HTTP polling if reconnect fails');
+      if (wsReconnectAttempts === 0) console.warn('🔌 WebSocket error — will reconnect');
+      if (closedHandled) return; // v9.09: onclose will handle reconnect
+      closedHandled = true;
       wsConnection = null;
+      const delay = Math.min(2000 * Math.pow(2, wsReconnectAttempts), 30000);
+      wsReconnectAttempts++;
+      if (!wsReconnectTimer) wsReconnectTimer = setTimeout(() => { wsReconnectTimer = null; connectWebSocket(); }, delay);
     };
   } catch (e) {
     console.warn('🔌 WebSocket creation failed:', e.message, '— using HTTP polling');
@@ -1023,6 +1045,27 @@ function StatusBadge({ status }) {
   return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: c.bg, color: c.text, border: `1px solid ${c.border}`, whiteSpace: "nowrap" }}>{status}</span>;
 }
 
+// ── Currency & Branding Badges (₿ / € / $ / 🇺🇦) ──
+function CurrencyBadges() {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <div title="Bitcoin" style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #F7931A, #FFB74D)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(247,147,26,0.35)", cursor: "default" }}>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="#FFF"><path d="M14.24 10.56c-.31-1.55-2.07-2.09-3.44-2.22l.56-2.25-1.36-.34-.54 2.18c-.36-.09-.72-.17-1.08-.26l.55-2.19-1.36-.34-.56 2.25c-.3-.07-.59-.14-.87-.21L4.47 5l-.35 1.46s1 .23 1 .24c.55.14.65.5.63.79l-.63 2.54.09.02-.09-.02-.89 3.57c-.07.16-.23.41-.6.32.01.02-1-.25-1-.25L2 15.24l1.65.41c.31.08.61.16.9.23l-.57 2.28 1.36.34.56-2.26c.37.1.74.2 1.1.28l-.56 2.24 1.37.34.57-2.27c2.34.44 4.1.26 4.84-1.86.6-1.7-.03-2.68-1.26-3.32.9-.2 1.57-.79 1.75-2zm-3.13 4.39c-.42 1.71-3.32.79-4.26.55l.76-3.04c.94.23 3.94.7 3.5 2.49zm.43-4.41c-.39 1.55-2.8.76-3.58.57l.69-2.76c.78.2 3.3.56 2.89 2.19z"/></svg>
+      </div>
+      <div title="Euro" style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #2563EB, #60A5FA)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(37,99,235,0.3)", cursor: "default" }}>
+        <span style={{ color: "#FFF", fontSize: 17, fontWeight: 800, fontFamily: "serif", lineHeight: 1 }}>€</span>
+      </div>
+      <div title="US Dollar" style={{ width: 34, height: 34, borderRadius: "50%", background: "linear-gradient(135deg, #16A34A, #4ADE80)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(22,163,74,0.3)", cursor: "default" }}>
+        <span style={{ color: "#FFF", fontSize: 17, fontWeight: 800, fontFamily: "serif", lineHeight: 1 }}>$</span>
+      </div>
+      <div title="Ukraine" style={{ width: 34, height: 34, borderRadius: "50%", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,87,183,0.3)", cursor: "default", position: "relative", flexShrink: 0 }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "50%", background: "#005BB5" }} />
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "50%", background: "#FFD500" }} />
+      </div>
+    </div>
+  );
+}
+
 function Modal({ title, onClose, children }) {
   const [show, setShow] = useState(false);
   useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
@@ -1184,7 +1227,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     ]},
     { label: "Info", icon: "📊", type: "dropdown", color: "#EC4899", items: [
       { key: "partners", label: "Partners", color: "#EC4899" },
-      { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+      { key: "monthlystats", label: "Blitz Report", color: "#6366F1" },
       { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
     ]},
     { label: "Settings", icon: "⚙️", type: "single", key: "settings", color: "#64748B" },
@@ -1199,7 +1242,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
     { key: "deals", label: "Offers", color: "#10B981" },
     { key: "partners", label: "Partners", color: "#EC4899" },
-    { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+    { key: "monthlystats", label: "Blitz Report", color: "#6366F1" },
     { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
     { key: "settings", label: "Settings", color: "#64748B" },
   ];
@@ -1613,7 +1656,7 @@ const ALL_PAGES = [
   { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
   { key: "deals", label: "Offers", color: "#10B981" },
   { key: "partners", label: "Partners", color: "#EC4899" },
-  { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+  { key: "monthlystats", label: "Blitz Report", color: "#6366F1" },
   { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
   { key: "settings", label: "Settings", color: "#64748B" },
 ];
@@ -2600,6 +2643,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
         {/* ═══ Header + Period Selector ═══ */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A" }}>📊 Dashboard</h2>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {compare && <span style={{ fontSize: 11, color: "#94A3B8", background: "#F8FAFC", padding: "4px 10px", borderRadius: 6, border: "1px solid #E2E8F0" }}>vs {range.prevLabel} ({prevRange.from.slice(5)} → {prevRange.to.slice(5)})</span>}
             <PeriodSelector />
@@ -2893,21 +2937,23 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
 }
 
 // ═══════════════════════════════════════════════════════════════
-// FTDS INFO PAGE — FTD tracking table grouped by day (v9.06)
+// FTDS INFO PAGE — Full CRUD table with inline edit (v9.09)
 // ═══════════════════════════════════════════════════════════════
-function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, userAccess }) {
+function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrgDeals, userAccess }) {
   const crg = Array.isArray(rawCrg) ? rawCrg : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
-  // ── Period filter ──
+  // ── State ──
   const [period, setPeriod] = useState("month");
   const [customFrom, setCustomFrom] = useState(today);
   const [customTo, setCustomTo] = useState(today);
   const [searchTerm, setSearchTerm] = useState("");
   const [countryFilter, setCountryFilter] = useState("all");
+  const [selected, setSelected] = useState(new Set());
+  const [addOpen, setAddOpen] = useState(false);
+  const [newFtd, setNewFtd] = useState({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "" });
 
-  // Compute date range
   const getRange = () => {
     if (period === "today") return { from: today, to: today };
     if (period === "yesterday") { const d = new Date(now); d.setDate(d.getDate() - 1); const y = d.toISOString().split("T")[0]; return { from: y, to: y }; }
@@ -2918,108 +2964,140 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, userAc
   };
   const range = getRange();
 
-  // Extract country from affiliate field (e.g. "211 UK" → "UK", "47 DE" → "DE")
   const extractCountry = (aff) => { const m = (aff || "").match(/[A-Z]{2,4}$/); return m ? m[0] : "??"; };
-
-  // Extract affiliate ID from affiliate field (e.g. "211 UK" → "211")
   const extractAffId = (aff) => { const m = (aff || "").match(/^[*]?(\d+)/); return m ? m[1] : ""; };
 
-  // Extract affiliate name — from deals data the affiliate field is like "211 UK", brand info is in brokerCap
-  // Based on the Telegram messages: "211 - ExTraffic 🟢 -> 3102 - Helios New CRG"
-  // affiliate field stores "211 UK", brokerCap stores "3102" or brand name
-
-  // Filter CRG deals in range
+  // Filter
   const filtered = crg.filter(d => {
     const date = d.date || "";
     if (date < range.from || date > range.to) return false;
     if (countryFilter !== "all" && extractCountry(d.affiliate) !== countryFilter) return false;
     if (searchTerm) {
       const s = searchTerm.toLowerCase();
-      const affMatch = (d.affiliate || "").toLowerCase().includes(s);
-      const brokerMatch = (d.brokerCap || "").toLowerCase().includes(s);
-      const managerMatch = (d.manageAff || "").toLowerCase().includes(s);
-      if (!affMatch && !brokerMatch && !managerMatch) return false;
+      if (!(d.affiliate || "").toLowerCase().includes(s) && !(d.brokerCap || "").toLowerCase().includes(s) && !(d.manageAff || "").toLowerCase().includes(s)) return false;
     }
     return true;
   });
 
-  // Group by date (descending)
+  // Group by date
   const grouped = {};
-  filtered.forEach(d => {
-    const date = d.date || "unknown";
-    if (!grouped[date]) grouped[date] = [];
-    grouped[date].push(d);
-  });
+  filtered.forEach(d => { const date = d.date || "unknown"; if (!grouped[date]) grouped[date] = []; grouped[date].push(d); });
   const sortedDates = Object.keys(grouped).sort().reverse();
-
-  // All countries for filter
   const allCountries = [...new Set(crg.filter(d => d.date >= range.from && d.date <= range.to).map(d => extractCountry(d.affiliate)))].sort();
 
-  // Summary stats
+  // Stats
   const totalFtds = filtered.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
   const totalCap = filtered.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-  const totalReceived = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+  const totalRec = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
 
-  // Format date for display
-  const fmtDate = (ds) => {
-    if (!ds) return "—";
-    const [y, m, d] = ds.split("-");
-    const dt = new Date(ds + "T00:00:00");
-    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    return `${dayNames[dt.getDay()]}, ${d}/${m}/${y}`;
+  const fmtDate = (ds) => { if (!ds) return "—"; const [y, m, d] = ds.split("-"); const dt = new Date(ds + "T00:00:00"); const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; return `${dn[dt.getDay()]}, ${d}/${m}/${y}`; };
+
+  // ── CRUD handlers ──
+  const updateField = (id, field, value) => {
+    setCrgDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
-  const btnStyle = (active) => ({
-    padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid",
-    background: active ? "linear-gradient(135deg,#10B981,#34D399)" : "#FFF",
-    borderColor: active ? "#10B981" : "#E2E8F0",
-    color: active ? "#FFF" : "#64748B",
-  });
+  const handleDelete = (id) => {
+    if (!confirm("Delete this FTD entry?")) return;
+    trackDelete('crg-deals', id);
+    setCrgDeals(prev => prev.filter(d => d.id !== id));
+  };
+
+  const handleBulkDelete = () => {
+    if (!confirm(`Delete ${selected.size} selected entries?`)) return;
+    selected.forEach(id => trackDelete('crg-deals', id));
+    setCrgDeals(prev => prev.filter(d => !selected.has(d.id)));
+    setSelected(new Set());
+  };
+
+  const handleBulkDuplicate = () => {
+    const dupes = [];
+    crg.forEach(d => {
+      if (selected.has(d.id)) {
+        dupes.push({ ...d, id: crypto.randomUUID ? crypto.randomUUID() : `ftd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
+      }
+    });
+    setCrgDeals(prev => [...prev, ...dupes]);
+    setSelected(new Set());
+    toast(`✅ Duplicated ${dupes.length} entries`);
+  };
+
+  const handleAdd = () => {
+    if (!newFtd.affiliate) return;
+    const entry = {
+      ...newFtd,
+      id: crypto.randomUUID ? crypto.randomUUID() : `ftd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      cap: newFtd.cap || "0",
+      capReceived: newFtd.capReceived || "0",
+      ftd: newFtd.ftd || "0",
+      started: newFtd.started || false,
+    };
+    setCrgDeals(prev => [entry, ...prev]);
+    setNewFtd({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "" });
+    setAddOpen(false);
+    toast("✅ FTD entry added");
+  };
+
+  const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleAll = (dayDeals) => {
+    const dayIds = dayDeals.map(d => d.id);
+    const allSelected = dayIds.every(id => selected.has(id));
+    setSelected(prev => { const n = new Set(prev); dayIds.forEach(id => allSelected ? n.delete(id) : n.add(id)); return n; });
+  };
+
+  const btnS = (active) => ({ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid", background: active ? "linear-gradient(135deg,#10B981,#34D399)" : "#FFF", borderColor: active ? "#10B981" : "#E2E8F0", color: active ? "#FFF" : "#64748B" });
+  const thS = { padding: "8px 10px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" };
+  const tdS = { padding: "4px 6px", fontSize: 13, verticalAlign: "middle" };
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="ftdsinfo" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
 
-      <main className="blitz-main" style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 32px" }}>
-        <h2 style={{ margin: "0 0 20px", fontSize: 22, fontWeight: 800, color: "#334155" }}>📈 FTDs Info</h2>
+      <main className="blitz-main" style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 32px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📈 FTDs Info</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <CurrencyBadges />
+            <button onClick={() => setAddOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)" }}>{I.plus} New FTD</button>
+          </div>
+        </div>
 
-        {/* ── Summary Cards ── */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
+        {/* Summary */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 16 }}>
           {[
-            { label: "Total FTDs", value: totalFtds, color: "#10B981" },
-            { label: "Total Cap", value: totalCap, color: "#0EA5E9" },
-            { label: "Received", value: totalReceived, color: "#8B5CF6" },
-            { label: "Remaining", value: totalCap - totalReceived, color: "#F59E0B" },
+            { label: "FTDs", value: totalFtds, color: "#10B981" },
+            { label: "Cap", value: totalCap, color: "#0EA5E9" },
+            { label: "Received", value: totalRec, color: "#8B5CF6" },
+            { label: "Remaining", value: totalCap - totalRec, color: "#F59E0B" },
             { label: "Deals", value: filtered.length, color: "#EC4899" },
-            { label: "Days", value: sortedDates.length, color: "#6366F1" },
           ].map((c, i) => (
-            <div key={i} style={{ padding: "14px 16px", background: "#FFF", borderRadius: 12, border: "1px solid #E2E8F0", borderLeft: `3px solid ${c.color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={i} style={{ padding: "12px 14px", background: "#FFF", borderRadius: 10, border: "1px solid #E2E8F0", borderLeft: `3px solid ${c.color}` }}>
               <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
             </div>
           ))}
         </div>
 
-        {/* ── Filters ── */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "center" }}>
+        {/* Filters */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 14, alignItems: "center" }}>
           {["today", "yesterday", "week", "month", "custom"].map(p => (
-            <button key={p} onClick={() => setPeriod(p)} style={btnStyle(period === p)}>{p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : p === "week" ? "This Week" : p === "month" ? "This Month" : "Custom"}</button>
+            <button key={p} onClick={() => setPeriod(p)} style={btnS(period === p)}>{p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : p === "week" ? "This Week" : p === "month" ? "This Month" : "Custom"}</button>
           ))}
           {period === "custom" && <>
-            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
             <span style={{ color: "#94A3B8" }}>→</span>
-            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
           </>}
           <span style={{ color: "#CBD5E1" }}>|</span>
-          <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 600, color: "#475569", background: "#FFF" }}>
+          <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ padding: "5px 8px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 600, color: "#475569" }}>
             <option value="all">All Countries</option>
             {allCountries.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
-          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search affiliate, brand..." style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, width: 180 }} />
+          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, width: 150 }} />
         </div>
 
-        {/* ── FTD Table grouped by day ── */}
+        {/* ── Tables by day ── */}
         {sortedDates.length === 0 ? (
           <div style={{ textAlign: "center", padding: 60, color: "#94A3B8", fontSize: 14 }}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
@@ -3030,77 +3108,69 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, userAc
           const dayFtd = dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
           const dayCap = dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
           const dayRec = dayDeals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const dayAllSelected = dayDeals.length > 0 && dayDeals.every(d => selected.has(d.id));
 
           return (
-            <div key={date} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-              {/* Day Header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px", background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)", borderBottom: "2px solid #E2E8F0" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: "#334155" }}>📅 {fmtDate(date)}</span>
-                  <span style={{ padding: "3px 10px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10B981", fontSize: 11, fontWeight: 700 }}>{dayDeals.length} deals</span>
+            <div key={date} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)", borderBottom: "2px solid #E2E8F0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <input type="checkbox" checked={dayAllSelected} onChange={() => toggleAll(dayDeals)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#10B981" }} />
+                  <span style={{ fontSize: 14, fontWeight: 800, color: "#334155" }}>📅 {fmtDate(date)}</span>
+                  <span style={{ padding: "2px 8px", borderRadius: 16, background: "rgba(16,185,129,0.1)", color: "#10B981", fontSize: 11, fontWeight: 700 }}>{dayDeals.length}</span>
                 </div>
-                <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
+                <div style={{ display: "flex", gap: 14, fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
                   <span style={{ color: "#10B981" }}>FTD: {dayFtd}</span>
                   <span style={{ color: "#0EA5E9" }}>Cap: {dayCap}</span>
                   <span style={{ color: "#8B5CF6" }}>Rec: {dayRec}</span>
                 </div>
               </div>
-
-              {/* Table */}
               <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead>
-                    <tr style={{ background: "#F8FAFC" }}>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>#</th>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Country</th>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Affiliate</th>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Aff ID</th>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Brand</th>
-                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Brand ID</th>
-                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Cap</th>
-                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Received</th>
-                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>FTD</th>
-                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Status</th>
+                    <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+                      <th style={{ ...thS, width: 30 }}></th>
+                      <th style={thS}>Country</th>
+                      <th style={thS}>Affiliate</th>
+                      <th style={thS}>Aff ID</th>
+                      <th style={thS}>Brand</th>
+                      <th style={thS}>Brand ID</th>
+                      <th style={{ ...thS, textAlign: "center" }}>Cap</th>
+                      <th style={{ ...thS, textAlign: "center" }}>Received</th>
+                      <th style={{ ...thS, textAlign: "center" }}>FTD</th>
+                      <th style={{ ...thS, textAlign: "center" }}>Started</th>
+                      <th style={thS}>Hours</th>
+                      <th style={thS}>Funnel</th>
+                      <th style={{ ...thS, width: 50 }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {dayDeals.map((d, i) => {
+                    {dayDeals.map(d => {
                       const country = extractCountry(d.affiliate);
                       const affId = extractAffId(d.affiliate);
-                      const affName = (d.affiliate || "").replace(/^[*]?\d+\s*[-]?\s*/, "").replace(/\s*[A-Z]{2,4}$/, "").trim() || d.affiliate || "—";
-                      // Brand info: brokerCap might be "3102" or "Helios New CRG" or "3102 - Helios"
                       const brokerRaw = (d.brokerCap || "").trim();
                       const brandIdMatch = brokerRaw.match(/^(\d+)/);
                       const brandId = brandIdMatch ? brandIdMatch[1] : "";
-                      const brandName = brokerRaw.replace(/^\d+\s*[-]?\s*/, "").trim() || brokerRaw || "—";
-                      const ftd = parseInt(d.ftd) || 0;
-                      const cap = parseInt(d.cap) || 0;
-                      const rec = parseInt(d.capReceived) || 0;
-                      const started = d.started;
+                      const brandName = brokerRaw.replace(/^\d+\s*[-]?\s*/, "").trim() || brokerRaw || "";
+                      const isChecked = selected.has(d.id);
 
                       return (
-                        <tr key={d.id || i} style={{ borderBottom: "1px solid #F1F5F9" }}
-                          onMouseEnter={e => e.currentTarget.style.background = "rgba(16,185,129,0.03)"}
-                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                          <td style={{ padding: "8px 16px", color: "#94A3B8", fontSize: 11 }}>{i + 1}</td>
-                          <td style={{ padding: "8px 16px", fontWeight: 700 }}>
-                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, background: `${getPersonColor(country)}15`, color: getPersonColor(country), fontSize: 12, fontWeight: 700 }}>
-                              {country}
-                            </span>
+                        <tr key={d.id} style={{ borderBottom: "1px solid #F1F5F9", background: isChecked ? "rgba(16,185,129,0.04)" : "transparent" }}>
+                          <td style={tdS}><input type="checkbox" checked={isChecked} onChange={() => toggleSelect(d.id)} style={{ cursor: "pointer", accentColor: "#10B981" }} /></td>
+                          <td style={tdS}>
+                            <span style={{ padding: "2px 6px", borderRadius: 4, background: `${getPersonColor(country)}15`, color: getPersonColor(country), fontSize: 11, fontWeight: 700 }}>{country}</span>
                           </td>
-                          <td style={{ padding: "8px 16px", fontWeight: 600, color: "#334155" }}>{affName}</td>
-                          <td style={{ padding: "8px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0EA5E9", fontWeight: 700 }}>{affId}</td>
-                          <td style={{ padding: "8px 16px", fontWeight: 600, color: "#334155" }}>{brandName}</td>
-                          <td style={{ padding: "8px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700 }}>{brandId}</td>
-                          <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#0EA5E9" }}>{cap}</td>
-                          <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6" }}>{rec}</td>
-                          <td style={{ padding: "8px 16px", textAlign: "center" }}>
-                            <span style={{ padding: "2px 10px", borderRadius: 8, fontWeight: 700, fontSize: 12, fontFamily: "'JetBrains Mono',monospace",
-                              background: ftd > 0 ? "rgba(16,185,129,0.1)" : "rgba(148,163,184,0.1)",
-                              color: ftd > 0 ? "#10B981" : "#94A3B8" }}>{ftd}</span>
-                          </td>
-                          <td style={{ padding: "8px 16px", textAlign: "center" }}>
-                            {started ? <span style={{ color: "#10B981", fontWeight: 700 }}>✅</span> : <span style={{ color: "#EF4444", fontWeight: 700 }}>❌</span>}
+                          <td style={tdS}><InlineCell value={d.affiliate || ""} onSave={v => updateField(d.id, "affiliate", v)} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
+                          <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0EA5E9", fontWeight: 700 }}>{affId}</td>
+                          <td style={tdS}><InlineCell value={brandName} onSave={v => { const newBroker = brandId ? `${brandId} ${v}` : v; updateField(d.id, "brokerCap", newBroker); }} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.brokerCap || ""} onSave={v => updateField(d.id, "brokerCap", v)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700, padding: "0 8px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.cap || ""} onSave={v => updateField(d.id, "cap", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, textAlign: "center", color: "#0EA5E9", padding: "0 6px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.capReceived || ""} onSave={v => updateField(d.id, "capReceived", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 13, textAlign: "center", color: "#8B5CF6", padding: "0 6px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.ftd || ""} onSave={v => updateField(d.id, "ftd", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, textAlign: "center", color: (parseInt(d.ftd) || 0) > 0 ? "#10B981" : "#94A3B8", padding: "0 6px" }} /></td>
+                          <td style={{ ...tdS, textAlign: "center" }}><InlineCell value={d.started} onSave={v => updateField(d.id, "started", v)} type="checkbox" style={{ textAlign: "center", padding: "0 6px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.hours || ""} onSave={v => updateField(d.id, "hours", v)} style={{ fontSize: 12, color: "#676879", padding: "0 6px" }} /></td>
+                          <td style={tdS}><InlineCell value={d.funnel || ""} onSave={v => updateField(d.id, "funnel", v)} style={{ fontSize: 12, color: "#676879", padding: "0 6px", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }} /></td>
+                          <td style={tdS}>
+                            <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
                           </td>
                         </tr>
                       );
@@ -3111,267 +3181,283 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, userAc
             </div>
           );
         })}
+
+        {/* ── Bulk Action Bar ── */}
+        <BulkActionBar count={selected.size} onClear={() => setSelected(new Set())}
+          onDelete={handleBulkDelete}
+          onDuplicate={handleBulkDuplicate}
+        />
       </main>
+
+      {/* ── Add New FTD Modal ── */}
+      {addOpen && (
+        <Modal title="Add New FTD Entry" onClose={() => setAddOpen(false)}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Affiliate (e.g. 211 UK)"><input style={inp} value={newFtd.affiliate} onChange={e => setNewFtd(p => ({ ...p, affiliate: e.target.value }))} placeholder="211 UK" /></Field>
+            <Field label="Broker / Brand"><input style={inp} value={newFtd.brokerCap} onChange={e => setNewFtd(p => ({ ...p, brokerCap: e.target.value }))} placeholder="3102 Helios" /></Field>
+            <Field label="Cap"><input style={inp} type="number" value={newFtd.cap} onChange={e => setNewFtd(p => ({ ...p, cap: e.target.value }))} placeholder="0" /></Field>
+            <Field label="Cap Received"><input style={inp} type="number" value={newFtd.capReceived} onChange={e => setNewFtd(p => ({ ...p, capReceived: e.target.value }))} placeholder="0" /></Field>
+            <Field label="FTD"><input style={inp} type="number" value={newFtd.ftd} onChange={e => setNewFtd(p => ({ ...p, ftd: e.target.value }))} placeholder="0" /></Field>
+            <Field label="Date"><input style={inp} type="date" value={newFtd.date} onChange={e => setNewFtd(p => ({ ...p, date: e.target.value }))} /></Field>
+            <Field label="Hours"><input style={inp} value={newFtd.hours} onChange={e => setNewFtd(p => ({ ...p, hours: e.target.value }))} placeholder="9-17" /></Field>
+            <Field label="Funnel"><input style={inp} value={newFtd.funnel} onChange={e => setNewFtd(p => ({ ...p, funnel: e.target.value }))} placeholder="funnel name" /></Field>
+            <Field label="Manager"><input style={inp} value={newFtd.manageAff} onChange={e => setNewFtd(p => ({ ...p, manageAff: e.target.value }))} placeholder="agent name" /></Field>
+            <Field label="Started"><label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={newFtd.started} onChange={e => setNewFtd(p => ({ ...p, started: e.target.checked }))} style={{ width: 18, height: 18, accentColor: "#10B981" }} /><span style={{ fontSize: 13 }}>Active</span></label></Field>
+          </div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
+            <button onClick={() => setAddOpen(false)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
+            <button onClick={handleAdd} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(16,185,129,0.3)" }}>Add FTD</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MONTHLY STATISTICS PAGE — Blitz Report (v9.06)
+// BLITZ REPORT PAGE — Fully editable monthly report (v9.07)
 // ═══════════════════════════════════════════════════════════════
 function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dcEntries: rawDc, cpPayments: rawCp, payments: rawPay, dealsData: rawDeals, partnersData: rawPartners, userAccess }) {
-  const crg = Array.isArray(rawCrg) ? rawCrg : [];
-  const dc = Array.isArray(rawDc) ? rawDc : [];
-  const cp = Array.isArray(rawCp) ? rawCp : [];
-  const pay = Array.isArray(rawPay) ? rawPay : [];
-  const deals = Array.isArray(rawDeals) ? rawDeals : [];
-  const partners = Array.isArray(rawPartners) ? rawPartners : [];
-
   const now = new Date();
   const today = now.toISOString().split("T")[0];
-  const yesterday = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; })();
-  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const dayOfMonth = now.getDate();
+  const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const curLabel = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
-  // ── FTD calculations ──
-  const ftdVal = (row) => parseInt(row.ftd) || 0;
-  const capVal = (row) => parseInt(row.cap) || 0;
-  const capRecVal = (row) => parseInt(row.capReceived) || 0;
+  // ── All saved reports from localStorage ──
+  const REPORTS_KEY = "blitz_reports_all";
+  const loadAllReports = () => {
+    try { return JSON.parse(localStorage.getItem(REPORTS_KEY) || '{}'); } catch { return {}; }
+  };
+  const [allReports, setAllReports] = useState(loadAllReports);
+  const [activeMonth, setActiveMonth] = useState(curMonth);
 
-  // Yesterday FTDs
-  const yFtds = crg.filter(d => d.date === yesterday).reduce((s, d) => s + ftdVal(d), 0);
-  // Monthly FTDs (this month)
-  const monthlyFtds = crg.filter(d => d.date >= monthStart && d.date <= today).reduce((s, d) => s + ftdVal(d), 0);
-  // Monthly EST (projection based on current pace)
-  const monthlyEst = dayOfMonth > 0 ? Math.round((monthlyFtds / dayOfMonth) * daysInMonth) : monthlyFtds;
-
-  // ── Refund data (from customer-payments with negative amounts or "Refund" status) ──
-  const monthCp = cp.filter(p => {
-    const d = p.date || p.paidDate || p.receivedDate || "";
-    return d >= monthStart && d <= today;
+  // Default empty report structure matching the screenshot exactly
+  const emptyReport = () => ({
+    date: today,
+    yFtds: "", monthlyFtds: "", monthlyEst: "",
+    salesTarget: "", superTarget: "",
+    yBrandFtds: "", monthlyBrandFtds: "", monthlyBrandEst: "",
+    newAffiliates: "", newBrands: "",
+    yCrgCap: "", highestDailyCap: "", highestDailyCapDate: "",
+    refundAffiliates: "", refundBrands: "",
+    dailyFtdsRecord: "", dailyFtdsDate: "",
+    weekendFtdsRecord: "", weekendFtdsDate: "",
+    weeklyFtdsRecord: "", weeklyFtdsDate: "",
+    monthlyFtdsRecord: "", monthlyFtdsDate: "",
   });
-  const refundAffiliates = monthCp.filter(p => (p.type || "").toLowerCase().includes("refund") && !(p.brand || "")).length;
-  const refundBrands = monthCp.filter(p => (p.type || "").toLowerCase().includes("refund") && (p.brand || "")).length;
 
-  // ── CRG cap ──
-  const yCrgCap = crg.filter(d => d.date === yesterday).reduce((s, d) => s + capVal(d), 0);
+  // Get or create current month's report
+  const getReport = (month) => allReports[month] || emptyReport();
+  const [report, setReport] = useState(getReport(activeMonth));
 
-  // ── Partners (new this month) ──
-  const newAffiliates = partners.filter(p => (p.type || "").toLowerCase().includes("affiliate") && (p.createdAt || p.dateAdded || "") >= monthStart).length;
-  const newBrands = partners.filter(p => (p.type || "").toLowerCase().includes("brand") && (p.createdAt || p.dateAdded || "") >= monthStart).length;
+  // When switching months, load that report
+  useEffect(() => { setReport(getReport(activeMonth)); }, [activeMonth]);
 
-  // ── Records tracking (from localStorage or computed) ──
-  const recordsKey = `blitz_records_${now.getFullYear()}`;
-  const savedRecords = JSON.parse(localStorage.getItem(recordsKey) || '{}');
-  const [records, setRecords] = useState({
-    dailyFtds: savedRecords.dailyFtds || { value: 0, date: "" },
-    weekendFtds: savedRecords.weekendFtds || { value: 0, date: "" },
-    weeklyFtds: savedRecords.weeklyFtds || { value: 0, date: "" },
-    monthlyFtds: savedRecords.monthlyFtds || { value: 0, date: "" },
-    highestDailyCap: savedRecords.highestDailyCap || { value: 0, date: "" },
-  });
-  // ── Sales targets from localStorage ──
-  const targetKey = `blitz_sales_targets_${now.getFullYear()}_${now.getMonth()}`;
-  const savedTargets = JSON.parse(localStorage.getItem(targetKey) || '{}');
-  const [salesTarget, setSalesTarget] = useState(savedTargets.salesTarget || "");
-  const [superTarget, setSuperTarget] = useState(savedTargets.superTarget || "");
-
-  // ── Compute daily FTDs for today — auto-update records ──
-  const todayFtds = crg.filter(d => d.date === today).reduce((s, d) => s + ftdVal(d), 0);
-
-  // ── Compute yesterday's total CRG cap ──
-  const yCrgCapTotal = crg.filter(d => d.date === yesterday).reduce((s, d) => s + capVal(d), 0);
-
-  // Auto-check records
-  useEffect(() => {
-    let changed = false;
-    const updated = { ...records };
-    if (todayFtds > (records.dailyFtds.value || 0)) { updated.dailyFtds = { value: todayFtds, date: today }; changed = true; }
-    if (monthlyFtds > (records.monthlyFtds.value || 0)) { updated.monthlyFtds = { value: monthlyFtds, date: `${MONTHS[now.getMonth()]} ${now.getFullYear()}` }; changed = true; }
-    if (yCrgCapTotal > (records.highestDailyCap.value || 0)) { updated.highestDailyCap = { value: yCrgCapTotal, date: yesterday }; changed = true; }
-    if (changed) { setRecords(updated); localStorage.setItem(recordsKey, JSON.stringify(updated)); }
-  }, [todayFtds, monthlyFtds, yCrgCapTotal]);
-
-  // ── Yesterday's brand recap (🐦 icon from screenshot) ──
-  const yBrandFtds = 0; // Placeholder — can be wired to brand-specific tracking later
-  const monthlyBrandFtds = 0;
-  const monthlyBrandEst = 0;
-
-  const admin = isAdmin(user.email);
-
-  // Save targets handler
-  const saveTargets = () => {
-    localStorage.setItem(targetKey, JSON.stringify({ salesTarget, superTarget }));
-    alert("✅ Targets saved!");
+  // Save handler
+  const saveReport = () => {
+    const updated = { ...allReports, [activeMonth]: { ...report, lastSaved: new Date().toISOString() } };
+    setAllReports(updated);
+    localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
+    toast("✅ Report saved!");
   };
 
-  // Save records handler (manual edit)
-  const saveRecords = () => {
-    localStorage.setItem(recordsKey, JSON.stringify(records));
-    alert("✅ Records saved!");
+  // Delete a report
+  const deleteReport = (month) => {
+    if (!confirm(`Delete report for ${month}?`)) return;
+    const updated = { ...allReports };
+    delete updated[month];
+    setAllReports(updated);
+    localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
+    if (activeMonth === month) { setActiveMonth(curMonth); setReport(getReport(curMonth)); }
   };
+
+  // Field update helper
+  const set = (field, val) => setReport(p => ({ ...p, [field]: val }));
+
+  // Sorted months for "Old" section (exclude current month)
+  const oldMonths = Object.keys(allReports).filter(m => m !== curMonth).sort().reverse();
 
   // ── Styles ──
-  const cellStyle = { padding: "10px 16px", fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", borderBottom: "1px solid #E2E8F0" };
-  const headerCell = { ...cellStyle, fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, background: "#F8FAFC" };
-  const labelCell = { ...cellStyle, textAlign: "left", fontWeight: 700, color: "#334155", fontSize: 13, background: "#F8FAFC", minWidth: 120 };
-  const valCell = (bg) => ({ ...cellStyle, background: bg || "#FFF", color: "#0F172A" });
-  const greenBg = "rgba(16,185,129,0.08)";
-  const blueBg = "rgba(56,189,248,0.08)";
-  const amberBg = "rgba(245,158,11,0.08)";
-  const pinkBg = "rgba(236,72,153,0.08)";
-  const sectionGap = { height: 16 };
+  const inp = (w) => ({ width: w || 70, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF" });
+  const inp2 = (w) => ({ ...inp(w), fontSize: 10, fontWeight: 500, color: "#64748B" });
+  const cellS = { padding: "8px 12px", fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", borderBottom: "1px solid #E2E8F0", verticalAlign: "middle" };
+  const hdrS = { ...cellS, fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, background: "#F8FAFC", padding: "6px 12px" };
+  const lblS = { ...cellS, textAlign: "left", fontWeight: 700, color: "#334155", fontSize: 13, background: "#F8FAFC", minWidth: 110 };
+  const valS = (bg) => ({ ...cellS, background: bg || "#FFF" });
+  const g = "rgba(16,185,129,0.08)";
+  const b = "rgba(56,189,248,0.08)";
+  const a = "rgba(245,158,11,0.08)";
+  const p = "rgba(236,72,153,0.08)";
+  const iB = "rgba(99,102,241,0.08)";
+
+  const isCurrentMonth = activeMonth === curMonth;
+  const monthLabel = (() => {
+    const [y, m] = activeMonth.split("-");
+    return `${MONTHS[parseInt(m) - 1]} ${y}`;
+  })();
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
-      <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 950, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📊 Blitz Report</h2>
-          <span style={{ fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "4px 12px", borderRadius: 8 }}>{String(now.getDate()).padStart(2,"0")}/{String(now.getMonth()+1).padStart(2,"0")}/{now.getFullYear()}</span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <CurrencyBadges />
+            {!isCurrentMonth && <button onClick={() => setActiveMonth(curMonth)} style={{ padding: "6px 14px", borderRadius: 8, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>← Current Month</button>}
+            <button onClick={saveReport} style={{ padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>💾 Save Report</button>
+          </div>
         </div>
 
         {/* ═══ MAIN REPORT TABLE ═══ */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: 20 }}>
+          <div style={{ background: "linear-gradient(135deg,#334155,#475569)", color: "#FFF", padding: "12px 20px", fontSize: 16, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>Blitz Report — {monthLabel}</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <tbody>
-              {/* ── Row 1: FTD summary ── */}
+              {/* ── Row 1: FTD header ── */}
               <tr>
-                <td style={labelCell}>{String(now.getDate()).padStart(2,"0")}/{String(now.getMonth()+1).padStart(2,"0")}/{now.getFullYear()}</td>
-                <td style={headerCell}>Y FTDs</td>
-                <td style={headerCell}>Monthly FTDs</td>
-                <td style={headerCell}>Monthly EST</td>
-                <td style={headerCell} colSpan={2}>Sales Target</td>
-              </tr>
-              <tr>
-                <td style={labelCell}></td>
-                <td style={valCell(blueBg)}>{yFtds}</td>
-                <td style={valCell(blueBg)}>{monthlyFtds}</td>
-                <td style={valCell(greenBg)}>{monthlyEst}</td>
-                <td style={{ ...cellStyle, background: amberBg, borderBottom: "1px solid #E2E8F0" }} colSpan={2}>
-                  {admin ? <input value={salesTarget} onChange={e => setSalesTarget(e.target.value)} style={{ width: 60, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} placeholder="—" /> : (salesTarget || "—")}
+                <td style={lblS}>
+                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(100), fontSize: 12 }} />
                 </td>
+                <td style={hdrS}>Y FTDs</td>
+                <td style={hdrS}>Monthly FTDs</td>
+                <td style={hdrS}>Monthly EST</td>
+                <td style={hdrS}></td>
+                <td style={hdrS}>Sales Target</td>
+              </tr>
+              {/* ── Row 2: FTD values ── */}
+              <tr>
+                <td style={lblS}></td>
+                <td style={valS(b)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
+                <td style={valS(b)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
+                <td style={valS(g)}><input value={report.monthlyEst} onChange={e => set("monthlyEst", e.target.value)} style={inp()} /></td>
+                <td style={valS()}></td>
+                <td style={valS(a)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
+              </tr>
+              {/* ── Row 3: Super Target ── */}
+              <tr>
+                <td style={lblS}></td>
+                <td style={hdrS}></td>
+                <td style={hdrS}></td>
+                <td style={hdrS}></td>
+                <td style={hdrS}></td>
+                <td style={hdrS}>Super Target</td>
               </tr>
               <tr>
-                <td style={labelCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell} colSpan={2}>Super Target</td>
-              </tr>
-              <tr>
-                <td style={labelCell}></td>
-                <td style={valCell()}></td>
-                <td style={valCell()}></td>
-                <td style={valCell()}></td>
-                <td style={{ ...cellStyle, background: greenBg }} colSpan={2}>
-                  {admin ? <input value={superTarget} onChange={e => setSuperTarget(e.target.value)} style={{ width: 60, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} placeholder="—" /> : (superTarget || "—")}
-                </td>
+                <td style={lblS}></td>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS(g)}><input value={report.superTarget} onChange={e => set("superTarget", e.target.value)} style={inp()} /></td>
               </tr>
 
               {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={sectionGap}></td></tr>
+              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
 
-              {/* ── Row 2: New affiliates & brands ── */}
+              {/* ── Brand row (🐦 icon from screenshot) ── */}
               <tr>
-                <td style={labelCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell}></td>
-                <td style={headerCell}>New Affiliates</td>
-                <td style={headerCell}>New Brands</td>
+                <td style={lblS}>🐦</td>
+                <td style={hdrS}>Yesterday 🐦</td>
+                <td style={hdrS}>Monthly 🐦</td>
+                <td style={hdrS}>Monthly EST 🐦</td>
+                <td style={hdrS}></td>
+                <td style={hdrS}></td>
               </tr>
               <tr>
-                <td style={labelCell}></td>
-                <td style={valCell()}></td>
-                <td style={valCell()}></td>
-                <td style={valCell()}></td>
-                <td style={valCell(blueBg)}>{newAffiliates}</td>
-                <td style={valCell(greenBg)}>{newBrands}</td>
-              </tr>
-
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={sectionGap}></td></tr>
-
-              {/* ── Row 3: CRG Cap ── */}
-              <tr>
-                <td style={headerCell}>Y CRG Cap</td>
-                <td style={headerCell}>Highest Daily CRG Cap</td>
-                <td style={headerCell} colSpan={2}></td>
-                <td style={headerCell}>Refund Affiliates</td>
-                <td style={headerCell}>Refund Brands</td>
+                <td style={lblS}></td>
+                <td style={valS(b)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valS(b)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valS(g)}><input value={report.monthlyBrandEst} onChange={e => set("monthlyBrandEst", e.target.value)} style={inp()} /></td>
+                <td style={hdrS}>New Affiliates</td>
+                <td style={hdrS}>New Brands</td>
               </tr>
               <tr>
-                <td style={valCell(blueBg)}>{yCrgCap}</td>
-                <td style={valCell(amberBg)}>
-                  <div>{records.highestDailyCap.value || 0}</div>
-                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>{records.highestDailyCap.date || "—"}</div>
-                </td>
-                <td style={valCell()} colSpan={2}></td>
-                <td style={valCell(pinkBg)}>{refundAffiliates}</td>
-                <td style={valCell(pinkBg)}>{refundBrands}</td>
+                <td style={lblS}></td>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS(b)}><input value={report.newAffiliates} onChange={e => set("newAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valS(g)}><input value={report.newBrands} onChange={e => set("newBrands", e.target.value)} style={inp()} /></td>
               </tr>
 
               {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={sectionGap}></td></tr>
+              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
 
-              {/* ── Row 4: Blitz Records ── */}
+              {/* ── CRG Cap row ── */}
               <tr>
-                <td style={labelCell}>Blitz Records</td>
-                <td style={headerCell}>Daily FTDs</td>
-                <td style={headerCell}>Weekend FTDs</td>
-                <td style={headerCell}>Weekly FTDs</td>
-                <td style={headerCell} colSpan={2}>Monthly FTDs</td>
+                <td style={hdrS}>Y CRG Cap</td>
+                <td style={hdrS}>Highest Daily CRG Cap</td>
+                <td style={hdrS}></td>
+                <td style={hdrS}></td>
+                <td style={hdrS}>Refund Affiliates</td>
+                <td style={hdrS}>Refund Brands</td>
               </tr>
               <tr>
-                <td style={labelCell}></td>
-                <td style={valCell(greenBg)}>
-                  {admin ? <input value={records.dailyFtds.value} onChange={e => setRecords(p => ({...p, dailyFtds: {...p.dailyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.dailyFtds.value || 0)}
-                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
-                    {admin ? <input value={records.dailyFtds.date} onChange={e => setRecords(p => ({...p, dailyFtds: {...p.dailyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.dailyFtds.date || "—")}
-                  </div>
+                <td style={valS(b)}><input value={report.yCrgCap} onChange={e => set("yCrgCap", e.target.value)} style={inp()} /></td>
+                <td style={valS(a)}>
+                  <input value={report.highestDailyCap} onChange={e => set("highestDailyCap", e.target.value)} style={inp()} />
+                  <div><input value={report.highestDailyCapDate} onChange={e => set("highestDailyCapDate", e.target.value)} style={inp2(90)} placeholder="dd/mm/yyyy" /></div>
                 </td>
-                <td style={valCell(greenBg)}>
-                  {admin ? <input value={records.weekendFtds.value} onChange={e => setRecords(p => ({...p, weekendFtds: {...p.weekendFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.weekendFtds.value || 0)}
-                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
-                    {admin ? <input value={records.weekendFtds.date} onChange={e => setRecords(p => ({...p, weekendFtds: {...p.weekendFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.weekendFtds.date || "—")}
-                  </div>
+                <td style={valS()}></td>
+                <td style={valS()}></td>
+                <td style={valS(p)}><input value={report.refundAffiliates} onChange={e => set("refundAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valS(p)}><input value={report.refundBrands} onChange={e => set("refundBrands", e.target.value)} style={inp()} /></td>
+              </tr>
+
+              {/* ── Spacer ── */}
+              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
+
+              {/* ── Blitz Records row ── */}
+              <tr>
+                <td style={lblS}>Blitz Records</td>
+                <td style={hdrS}>Daily FTDs</td>
+                <td style={hdrS}>Weekend FTDs</td>
+                <td style={hdrS}>Weekly FTDs</td>
+                <td style={hdrS} colSpan={2}>Monthly FTDs</td>
+              </tr>
+              <tr>
+                <td style={lblS}></td>
+                <td style={valS(g)}>
+                  <input value={report.dailyFtdsRecord} onChange={e => set("dailyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.dailyFtdsDate} onChange={e => set("dailyFtdsDate", e.target.value)} style={inp2(90)} placeholder="date" /></div>
                 </td>
-                <td style={valCell(greenBg)}>
-                  {admin ? <input value={records.weeklyFtds.value} onChange={e => setRecords(p => ({...p, weeklyFtds: {...p.weeklyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.weeklyFtds.value || 0)}
-                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
-                    {admin ? <input value={records.weeklyFtds.date} onChange={e => setRecords(p => ({...p, weeklyFtds: {...p.weeklyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.weeklyFtds.date || "—")}
-                  </div>
+                <td style={valS(g)}>
+                  <input value={report.weekendFtdsRecord} onChange={e => set("weekendFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.weekendFtdsDate} onChange={e => set("weekendFtdsDate", e.target.value)} style={inp2(90)} placeholder="date range" /></div>
                 </td>
-                <td style={valCell(greenBg)} colSpan={2}>
-                  {admin ? <input value={records.monthlyFtds.value} onChange={e => setRecords(p => ({...p, monthlyFtds: {...p.monthlyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.monthlyFtds.value || 0)}
-                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
-                    {admin ? <input value={records.monthlyFtds.date} onChange={e => setRecords(p => ({...p, monthlyFtds: {...p.monthlyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.monthlyFtds.date || "—")}
-                  </div>
+                <td style={valS(g)}>
+                  <input value={report.weeklyFtdsRecord} onChange={e => set("weeklyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.weeklyFtdsDate} onChange={e => set("weeklyFtdsDate", e.target.value)} style={inp2(90)} placeholder="date range" /></div>
+                </td>
+                <td style={valS(g)} colSpan={2}>
+                  <input value={report.monthlyFtdsRecord} onChange={e => set("monthlyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.monthlyFtdsDate} onChange={e => set("monthlyFtdsDate", e.target.value)} style={inp2(90)} placeholder="month" /></div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* ── Target Progress Bar ── */}
-        {salesTarget && (
-          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
+        {/* ── Target Progress (if targets filled) ── */}
+        {(report.salesTarget || report.superTarget) && report.monthlyFtds && (
+          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {monthLabel}</div>
             {[
-              { label: "Sales Target", target: parseInt(salesTarget) || 0, color: "#F59E0B" },
-              ...(superTarget ? [{ label: "Super Target", target: parseInt(superTarget) || 0, color: "#10B981" }] : []),
-            ].map(t => {
-              const pct = t.target > 0 ? Math.min(100, Math.round((monthlyFtds / t.target) * 100)) : 0;
-              const estPct = t.target > 0 ? Math.min(100, Math.round((monthlyEst / t.target) * 100)) : 0;
+              { label: "Sales Target", target: parseInt(report.salesTarget) || 0, color: "#F59E0B" },
+              ...(report.superTarget ? [{ label: "Super Target", target: parseInt(report.superTarget) || 0, color: "#10B981" }] : []),
+            ].filter(t => t.target > 0).map(t => {
+              const actual = parseInt(report.monthlyFtds) || 0;
+              const est = parseInt(report.monthlyEst) || 0;
+              const pct = Math.min(100, Math.round((actual / t.target) * 100));
+              const estPct = Math.min(100, Math.round((est / t.target) * 100));
               return (
                 <div key={t.label} style={{ marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 4 }}>
                     <span>{t.label}: {t.target}</span>
-                    <span>{monthlyFtds}/{t.target} ({pct}%) — EST: {monthlyEst} ({estPct}%)</span>
+                    <span>{actual}/{t.target} ({pct}%) — EST: {est} ({estPct}%)</span>
                   </div>
                   <div style={{ height: 20, background: "#F1F5F9", borderRadius: 10, overflow: "hidden", position: "relative" }}>
                     <div style={{ position: "absolute", height: "100%", width: `${estPct}%`, background: `${t.color}30`, borderRadius: 10, transition: "width 0.5s" }} />
@@ -3385,11 +3471,38 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
           </div>
         )}
 
-        {/* ── Admin: Save buttons ── */}
-        {admin && (
-          <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-            <button onClick={saveTargets} style={{ padding: "10px 20px", borderRadius: 10, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(245,158,11,0.3)" }}>💾 Save Targets</button>
-            <button onClick={saveRecords} style={{ padding: "10px 20px", borderRadius: 10, background: "linear-gradient(135deg,#6366F1,#818CF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}>🏆 Save Records</button>
+        {/* ═══ OLD REPORTS ═══ */}
+        {oldMonths.length > 0 && (
+          <div style={{ marginTop: 12 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: "#64748B", marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>📁 Previous Reports ({oldMonths.length})</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+              {oldMonths.map(month => {
+                const r = allReports[month] || {};
+                const [y, m] = month.split("-");
+                const label = `${MONTHS[parseInt(m) - 1]} ${y}`;
+                const saved = r.lastSaved ? new Date(r.lastSaved).toLocaleDateString() : "—";
+                return (
+                  <div key={month} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)", cursor: "pointer", transition: "all 0.15s" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#6366F1"; e.currentTarget.style.boxShadow = "0 4px 16px rgba(99,102,241,0.15)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; e.currentTarget.style.boxShadow = "0 1px 3px rgba(0,0,0,0.04)"; }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <span style={{ fontSize: 15, fontWeight: 800, color: "#334155" }}>{label}</span>
+                      <button onClick={(e) => { e.stopPropagation(); deleteReport(month); }} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 14, padding: 2 }} title="Delete">×</button>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 12, color: "#64748B", marginBottom: 10 }}>
+                      <span>FTDs: <b style={{ color: "#10B981" }}>{r.monthlyFtds || "—"}</b></span>
+                      <span>EST: <b style={{ color: "#0EA5E9" }}>{r.monthlyEst || "—"}</b></span>
+                      <span>Target: <b style={{ color: "#F59E0B" }}>{r.salesTarget || "—"}</b></span>
+                      <span>CRG Cap: <b style={{ color: "#8B5CF6" }}>{r.yCrgCap || "—"}</b></span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "#94A3B8" }}>Saved: {saved}</span>
+                      <button onClick={() => setActiveMonth(month)} style={{ padding: "4px 12px", borderRadius: 6, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>View / Edit</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </main>
@@ -3697,6 +3810,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
             </div>
             <button onClick={nextMonth} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, padding: 8, cursor: "pointer", color: "#64748B", display: "flex" }}>{I.chevR}</button>
           </div>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
@@ -4436,6 +4550,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
             </div>
             <button onClick={nextMonth} style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 10, padding: 8, cursor: "pointer", color: "#64748B", display: "flex" }}>{I.chevR}</button>
           </div>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
@@ -4787,6 +4902,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>CRG Deals</h1>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
@@ -5302,6 +5418,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
       <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Daily Cap</h1>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative" }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
@@ -5402,8 +5519,14 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
                               onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                             >{d.agent}</span>
                           </td>
-                          <InlineCell value={d.affiliates} onSave={v => updateField(d.id, "affiliates", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }} />
-                          <InlineCell value={d.brands} onSave={v => updateField(d.id, "brands", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1", borderRight: "1px solid #CBD5E1" }} />
+                          <td style={{ padding: "0", borderRight: "1px solid #CBD5E1", position: "relative" }}>
+                            <InlineCell value={d.affiliates} onSave={v => updateField(d.id, "affiliates", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.affiliates ? "#8B5CF6" : "#CBD5E1" }} />
+                            {isTopAff && <span style={{ position: "absolute", top: 2, right: 4, fontSize: 12 }} title="Top Affiliate Cap">🔥</span>}
+                          </td>
+                          <td style={{ padding: "0", borderRight: "1px solid #CBD5E1", position: "relative" }}>
+                            <InlineCell value={d.brands} onSave={v => updateField(d.id, "brands", v)} type="number" style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 16, color: d.brands ? "#0EA5E9" : "#CBD5E1" }} />
+                            {isTopBrands && <span style={{ position: "absolute", top: 2, right: 4, fontSize: 12 }} title="Top Brand Cap">🔥</span>}
+                          </td>
                           <td style={{ padding: "12px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 16, color: "#0F172A", borderRight: "1px solid #CBD5E1" }}>{t || ""}</td>
                           <td style={{ padding: "8px 8px", textAlign: "center" }}>
                             <div style={{ display: "flex", gap: 4, justifyContent: "center", alignItems: "center" }}>
@@ -5637,6 +5760,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Offers</h1>
+          <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 600, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
               <div style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }}>{I.search}</div>
@@ -5948,6 +6072,7 @@ function PartnersPage({ user, onLogout, onNav, onAdmin, partners: rawPartners, s
             <p style={{ margin: 0, fontSize: 13, color: "#64748B" }}>Successful monthly partnerships</p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CurrencyBadges />
             <button onClick={() => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); }}
               style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>{I.chevL}</button>
             <span style={{ fontWeight: 700, fontSize: 15, color: "#334155", minWidth: 120, textAlign: "center" }}>{MONTHS[month]} {year}</span>
@@ -6175,7 +6300,12 @@ function AppInner() {
     // mode: 'init' = initial load (merge local into server), 'sync' = poll/WS (server is authority)
     // Server returned null = fetch failed, keep local
     if (serverArr === null || serverArr === undefined) return localArr || [];
-    // Server returned [] = intentionally empty (e.g. all records deleted) — respect it
+    // v9.09 FIX: Don't blindly trust empty server response if local has data
+    // This prevents data wipe when server was corrupted to 0 records
+    if (serverArr.length === 0 && Array.isArray(localArr) && localArr.length > 5) {
+      console.warn(`⚠️ Server returned 0 records for ${tableName} but local has ${localArr.length}. Keeping local data and pushing to server.`);
+      return localArr;
+    }
     if (serverArr.length === 0) return [];
     if (!localArr || localArr.length === 0) return serverArr;
 
@@ -6336,7 +6466,7 @@ function AppInner() {
 
       setLoaded(true);
       serverFetchDone.current = true;
-      setTimeout(() => { skipSave.current = false; }, 8000); // v9.05: 8s safety window (was 5s)
+      setTimeout(() => { skipSave.current = false; console.log('🔓 Save lock released — auto-save enabled'); }, 12000); // v9.09: 12s safety window (was 8s)
     })();
   }, [user]); // Re-run when user logs in
 
@@ -6382,6 +6512,8 @@ function AppInner() {
     const poll = async () => {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
       if (!serverOnline) { try { const h = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); if (h.ok) { serverOnline = true; console.log("🔌 Server back online"); connectWebSocket(); } } catch {} }
+      // v9.09: If server is online but WS isn't connected, keep trying
+      if (serverOnline && (!wsConnection || wsConnection.readyState !== WebSocket.OPEN)) { connectWebSocket(); }
       if (!serverOnline) return;
       const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
@@ -6495,7 +6627,7 @@ function AppInner() {
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
-  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} userAccess={userAccess} /></>);
+  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} setCrgDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
