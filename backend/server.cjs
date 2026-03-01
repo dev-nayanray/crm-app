@@ -52,7 +52,7 @@ process.on('unhandledRejection', (reason) => {
   console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
 const PORT = 3001;
-const VERSION = "9.05";
+const VERSION = "9.06";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -3079,6 +3079,15 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
       if (dirs.length > 1) backupInfo.oldest = dirs[dirs.length - 1];
     }
   } catch {}
+  // v9.06: Snapshot info
+  let snapshotInfo = { count: 0, latest: null };
+  try {
+    if (fs.existsSync(SNAPSHOT_DIR)) {
+      const sdirs = fs.readdirSync(SNAPSHOT_DIR).sort().reverse();
+      snapshotInfo.count = sdirs.length;
+      if (sdirs.length > 0) snapshotInfo.latest = sdirs[0];
+    }
+  } catch {}
 
   res.json({
     server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid, crashes: crashCount, recentCrashes: CRASH_LOG.slice(-10) },
@@ -3086,6 +3095,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
     telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
     backups: backupInfo,
+    snapshots: snapshotInfo,
     data: { payments: readJSON("payments.json",[]).length, customerPayments: readJSON("customer-payments.json",[]).length, crgDeals: readJSON("crg-deals.json",[]).length, dailyCap: readJSON("daily-cap.json",[]).length, offers: readJSON("deals.json",[]).length, telegramOffers: readJSON("offers.json",[]).length, wallets: readJSON("wallets.json",[]).length },
     recentAudit,
   });
