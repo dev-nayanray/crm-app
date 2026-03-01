@@ -337,7 +337,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "8.01";
+const VERSION = "9.00";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -473,7 +473,7 @@ function handleConflictResolution(endpoint, serverData, serverVersion) {
   const lsData = lsGet(endpoint, null) || [];
   const setter = conflictSetters[endpoint];
   if (setter && typeof mergeByIDGlobal === 'function') {
-    const merged = mergeByIDGlobal(lsData, serverData, endpoint);
+    const merged = mergeByIDGlobal(lsData, serverData, endpoint, 'sync');
     lsSave(endpoint, merged);
     if (JSON.stringify(merged) !== JSON.stringify(lsData)) {
       setter(merged);
@@ -1996,95 +1996,331 @@ function ServerDiagnostics() {
 // ═══════════════════════════════════════════════════════════════
 // OVERVIEW DASHBOARD — Dedicated analytics & KPI page
 // ═══════════════════════════════════════════════════════════════
-function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crgDeals: rawOvCrg, dcEntries: rawOvDc, cpPayments: rawOvCp, userAccess }) {
+function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crgDeals: rawOvCrg, dcEntries: rawOvDc, cpPayments: rawOvCp, dealsData: rawOvDeals, userAccess }) {
   const payments = Array.isArray(rawOvPayments) ? rawOvPayments : [];
   const crgDeals = Array.isArray(rawOvCrg) ? rawOvCrg : [];
   const dcEntries = Array.isArray(rawOvDc) ? rawOvDc : [];
   const cpPayments = Array.isArray(rawOvCp) ? rawOvCp : [];
+  const offers = Array.isArray(rawOvDeals) ? rawOvDeals : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
-  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-  // CRG Deals
-  const todayCrg = (crgDeals || []).filter(d => d.date === today);
-  const monthCrg = (crgDeals || []).filter(d => (d.date || "").startsWith(monthPrefix));
-  const todayCap = todayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-  const monthCap = monthCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-  const todayStarted = todayCrg.filter(d => d.started).length;
-  const monthStarted = monthCrg.filter(d => d.started).length;
-  const todayFtd = todayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-  const monthFtd = monthCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-  const todayNewDeals = todayCrg.length;
-  const monthNewDeals = monthCrg.length;
+  // ── Period selector state ──
+  const [period, setPeriod] = useState("today"); // today | week | month | custom
+  const [compare, setCompare] = useState(true);
+  const [customRange, setCustomRange] = useState({ from: today, to: today });
+  const [periodDropOpen, setPeriodDropOpen] = useState(false);
 
-  // Daily Cap / Agents
-  const todayDc = (dcEntries || []).filter(d => d.date === today);
-  const activeAgents = todayDc.length;
+  // ── Date range helpers ──
+  const getDateRange = (p) => {
+    const d = new Date();
+    if (p === "today") return { from: today, to: today, label: "Today", prevLabel: "Yesterday" };
+    if (p === "yesterday") { d.setDate(d.getDate() - 1); const y = d.toISOString().split("T")[0]; return { from: y, to: y, label: "Yesterday", prevLabel: "Day before" }; }
+    if (p === "week") {
+      const dayOfWeek = d.getDay() || 7;
+      const mon = new Date(d); mon.setDate(d.getDate() - dayOfWeek + 1);
+      return { from: mon.toISOString().split("T")[0], to: today, label: "This Week", prevLabel: "Last Week" };
+    }
+    if (p === "month") {
+      const first = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+      return { from: first, to: today, label: "This Month", prevLabel: "Last Month" };
+    }
+    if (p === "custom") return { from: customRange.from, to: customRange.to, label: "Custom", prevLabel: "Prev Period" };
+    return { from: today, to: today, label: "Today", prevLabel: "Yesterday" };
+  };
 
-  // Payments — Paid totals
-  const todayPaid = (payments || []).filter(p => p.status === "Paid" && p.paidDate === today);
-  const todayPaidTotal = todayPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const monthPaid = (payments || []).filter(p => p.status === "Paid" && p.month === now.getMonth() && p.year === now.getFullYear());
-  const monthPaidTotal = monthPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const openPayments = (payments || []).filter(p => OPEN_STATUSES.includes(p.status));
-  const openPaymentsTotal = openPayments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const getPrevRange = (range) => {
+    const fromDate = new Date(range.from + "T00:00:00");
+    const toDate = new Date(range.to + "T00:00:00");
+    const span = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
+    const prevTo = new Date(fromDate); prevTo.setDate(prevTo.getDate() - 1);
+    const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - span + 1);
+    return { from: prevFrom.toISOString().split("T")[0], to: prevTo.toISOString().split("T")[0] };
+  };
 
-  // Customer Payments
-  const todayCp = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(today));
-  const todayCpTotal = todayCp.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
-  const monthCpAll = (cpPayments || []).filter(p => (p.date || p.receivedDate || "").startsWith(monthPrefix));
-  const monthCpTotal = monthCpAll.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const range = getDateRange(period);
+  const prevRange = getPrevRange(range);
 
-  // 7-Day CAP Trend
-  const last7Days = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    return d.toISOString().split("T")[0];
+  // Filter helpers
+  const inRange = (dateStr, r) => dateStr >= r.from && dateStr <= r.to;
+  const inRangeMonth = (month, year, r) => {
+    // For payment records that store month/year separately
+    const payDate = `${year}-${String(month + 1).padStart(2, "0")}-15`;
+    return payDate >= r.from && payDate <= r.to;
+  };
+
+  // ── FINANCE — current period ──
+  const curPaid = payments.filter(p => p.status === "Paid" && inRange(p.paidDate || "", range));
+  const curPaidTotal = curPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const curCp = cpPayments.filter(p => inRange(p.date || p.receivedDate || "", range));
+  const curCpTotal = curCp.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const openPay = payments.filter(p => OPEN_STATUSES.includes(p.status));
+  const openPayTotal = openPay.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  // Previous period
+  const prevPaid = payments.filter(p => p.status === "Paid" && inRange(p.paidDate || "", prevRange));
+  const prevPaidTotal = prevPaid.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+  const prevCp = cpPayments.filter(p => inRange(p.date || p.receivedDate || "", prevRange));
+  const prevCpTotal = prevCp.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
+
+  // ── CRG DEALS ──
+  const curCrg = crgDeals.filter(d => inRange(d.date || "", range));
+  const curCap = curCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const curStarted = curCrg.filter(d => d.started).length;
+  const curFtd = curCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+  const curConv = curStarted > 0 ? ((curFtd / curStarted) * 100).toFixed(1) : "0";
+
+  const prevCrg = crgDeals.filter(d => inRange(d.date || "", prevRange));
+  const prevCapVal = prevCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const prevStartedVal = prevCrg.filter(d => d.started).length;
+  const prevFtdVal = prevCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+
+  // Extract country from CRG affiliate field (e.g. "33 AU" → "AU")
+  const extractCountry = (aff) => { const m = (aff || "").match(/[A-Z]{2,4}$/); return m ? m[0] : "??"; };
+
+  // Top 5 countries
+  const crgCountryMap = {};
+  curCrg.forEach(d => { const c = extractCountry(d.affiliate); crgCountryMap[c] = (crgCountryMap[c] || 0) + 1; });
+  const topCrgCountries = Object.entries(crgCountryMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Top brokers
+  const brokerCapMap = {};
+  curCrg.forEach(d => { const b = (d.brokerCap || "").trim(); if (b) brokerCapMap[b] = (brokerCapMap[b] || 0) + (parseInt(d.cap) || 0); });
+  const topBrokers = Object.entries(brokerCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Top affiliates
+  const affCapMap = {};
+  curCrg.forEach(d => { const a = (d.affiliate || "").trim(); if (a) affCapMap[a] = (affCapMap[a] || 0) + (parseInt(d.cap) || 0); });
+  const topAffCap = Object.entries(affCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // ── AGENTS ──
+  const curDc = dcEntries.filter(d => inRange(d.date || "", range));
+  const agentAff = {}, agentBrand = {};
+  curDc.forEach(d => {
+    const agent = normalizeAgent((d.agent || "").trim());
+    if (!agent) return;
+    agentAff[agent] = (agentAff[agent] || 0) + (parseInt(d.affiliates) || 0);
+    agentBrand[agent] = (agentBrand[agent] || 0) + (parseInt(d.brands) || 0);
   });
-  const capTrend = last7Days.map(date => {
-    const dayDeals = (crgDeals || []).filter(d => d.date === date);
+  const agentList = [...new Set([...Object.keys(agentAff), ...Object.keys(agentBrand)])].sort();
+
+  // Agent CRG CAP
+  const agentCap = {};
+  curCrg.forEach(d => { const a = normalizeAgent((d.manageAff || "").trim()); if (a) agentCap[a] = (agentCap[a] || 0) + (parseInt(d.cap) || 0); });
+  const topAgents = Object.entries(agentCap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // ── OFFERS ──
+  const offerCountryMap = {};
+  offers.forEach(d => { const c = (d.country || "").trim().toUpperCase(); if (c) offerCountryMap[c] = (offerCountryMap[c] || 0) + 1; });
+  const topOfferCountries = Object.entries(offerCountryMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  // ── CHART DATA — daily breakdown for the period ──
+  const getDaysArray = (from, to) => {
+    const days = []; const d = new Date(from + "T00:00:00");
+    const end = new Date(to + "T00:00:00");
+    while (d <= end) { days.push(d.toISOString().split("T")[0]); d.setDate(d.getDate() + 1); }
+    return days;
+  };
+  const chartDays = getDaysArray(range.from, range.to);
+  const prevDays = getDaysArray(prevRange.from, prevRange.to);
+
+  const chartData = chartDays.map((date, i) => {
+    const dayCrg = crgDeals.filter(d => d.date === date);
+    const dayPay = payments.filter(p => p.status === "Paid" && p.paidDate === date);
+    const prevDate = prevDays[i] || "";
+    const prevDayCrg = crgDeals.filter(d => d.date === prevDate);
+    const prevDayPay = payments.filter(p => p.status === "Paid" && p.paidDate === prevDate);
     return {
-      date: date.slice(5),
-      cap: dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
-      ftd: dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0),
-      started: dayDeals.filter(d => d.started).length,
+      date: date.slice(5), // MM-DD
+      fullDate: date,
+      cap: dayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
+      ftd: dayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0),
+      deals: dayCrg.length,
+      paid: dayPay.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
+      prevCap: prevDayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
+      prevFtd: prevDayCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0),
+      prevDeals: prevDayCrg.length,
+      prevPaid: prevDayPay.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0),
     };
   });
-  const maxCap = Math.max(...capTrend.map(d => d.cap), 1);
 
-  // Top Agents Today (by CAP)
-  const agentCapMap = {};
-  todayCrg.forEach(d => {
-    const agent = normalizeAgent((d.manageAff || "").trim());
-    if (agent) agentCapMap[agent] = (agentCapMap[agent] || 0) + (parseInt(d.cap) || 0);
-  });
-  const topAgents = Object.entries(agentCapMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  // Chart metric selector
+  const [chartMetric, setChartMetric] = useState("cap"); // cap | ftd | deals | paid
 
-  // Monthly Agent CAP (for targets)
-  const agentMonthCap = {};
-  monthCrg.forEach(d => {
-    const agent = normalizeAgent((d.manageAff || "").trim());
-    if (agent) agentMonthCap[agent] = (agentMonthCap[agent] || 0) + (parseInt(d.cap) || 0);
-  });
+  // ── Comparison % helper ──
+  const pctChange = (cur, prev) => {
+    if (prev === 0 && cur === 0) return null;
+    if (prev === 0) return { pct: 100, up: true };
+    const change = ((cur - prev) / prev) * 100;
+    return { pct: Math.abs(change).toFixed(1), up: change >= 0 };
+  };
 
-  // 30-Day CAP Trend for monthly chart
-  const last30Days = Array.from({ length: 30 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (29 - i));
-    return d.toISOString().split("T")[0];
-  });
-  const capTrend30 = last30Days.map(date => {
-    const dayDeals = (crgDeals || []).filter(d => d.date === date);
-    return {
-      date: date.slice(5),
-      cap: dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0),
-    };
-  });
-  const maxCap30 = Math.max(...capTrend30.map(d => d.cap), 1);
-
-  // Conversion rate
-  const todayConv = todayStarted > 0 ? ((todayFtd / todayStarted) * 100).toFixed(1) : "0";
-  const monthConv = monthStarted > 0 ? ((monthFtd / monthStarted) * 100).toFixed(1) : "0";
-
+  // ── Styles ──
   const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+  const sectionTitle = (icon, title) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+      <span style={{ fontSize: 18 }}>{icon}</span>
+      <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: "#334155" }}>{title}</h3>
+    </div>
+  );
+
+  const rankedBar = (entries, maxVal, color, unit) => entries.map(([name, val], i) => (
+    <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: "#334155", minWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={name}>{name}</span>
+      <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: (maxVal > 0 ? (val / maxVal) * 100 : 0) + "%", background: i === 0 ? color : "#CBD5E1", borderRadius: 5, transition: "width 0.4s" }} />
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 45, textAlign: "right" }}>{val.toLocaleString()}{unit ? " " + unit : ""}</span>
+    </div>
+  ));
+
+  // KPI card with comparison
+  const KpiCard = ({ label, value, prevValue, icon, accent, bg, onClick, prefix, suffix }) => {
+    const ch = compare ? pctChange(typeof value === "string" ? parseFloat(value) || 0 : value, prevValue || 0) : null;
+    return (
+      <div onClick={onClick} style={{ background: bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", cursor: onClick ? "pointer" : "default", transition: "transform 0.15s" }}
+        onMouseEnter={e => { if (onClick) e.currentTarget.style.transform = "translateY(-2px)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent }} />
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: accent }}>{prefix || ""}{typeof value === "number" ? value.toLocaleString() : value}{suffix || ""}</div>
+            {compare && ch !== null && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: ch.up ? "#10B981" : "#EF4444" }}>
+                  {ch.up ? "↑" : "↓"} {ch.pct}%
+                </span>
+                <span style={{ fontSize: 10, color: "#94A3B8" }}>vs {range.prevLabel.toLowerCase()}</span>
+              </div>
+            )}
+            {compare && ch === null && prevValue !== undefined && (
+              <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Prev: {prefix || ""}{(prevValue || 0).toLocaleString()}{suffix || ""}</div>
+            )}
+          </div>
+          <span style={{ fontSize: 24 }}>{icon}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Period selector dropdown ──
+  const PeriodSelector = () => (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <button onClick={() => setPeriodDropOpen(!periodDropOpen)}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", borderRadius: 10, background: "#FFF", border: "2px solid #6366F1", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#6366F1" }}>
+        <span>{range.label}</span>
+        <span style={{ fontSize: 10 }}>▼</span>
+      </button>
+      {periodDropOpen && (
+        <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,0.12)", zIndex: 100, minWidth: 220, overflow: "hidden" }}>
+          {[
+            { key: "today", label: "Today", icon: "📅" },
+            { key: "yesterday", label: "Yesterday", icon: "⏪" },
+            { key: "week", label: "This Week", icon: "📆" },
+            { key: "month", label: "This Month", icon: "🗓️" },
+          ].map(opt => (
+            <div key={opt.key} onClick={() => { setPeriod(opt.key); setPeriodDropOpen(false); }}
+              style={{ padding: "10px 16px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, background: period === opt.key ? "#EEF2FF" : "transparent", borderLeft: period === opt.key ? "3px solid #6366F1" : "3px solid transparent", transition: "all 0.15s" }}
+              onMouseEnter={e => { if (period !== opt.key) e.currentTarget.style.background = "#F8FAFC"; }}
+              onMouseLeave={e => { if (period !== opt.key) e.currentTarget.style.background = "transparent"; }}>
+              <span>{opt.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: period === opt.key ? 700 : 500, color: period === opt.key ? "#6366F1" : "#334155" }}>{opt.label}</span>
+              {period === opt.key && <span style={{ marginLeft: "auto", color: "#6366F1", fontSize: 14 }}>✓</span>}
+            </div>
+          ))}
+          <div style={{ borderTop: "1px solid #E2E8F0", padding: "10px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" }}
+              onClick={() => setCompare(!compare)}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#475569" }}>Compare to previous period</span>
+              <div style={{ width: 36, height: 20, borderRadius: 10, background: compare ? "#6366F1" : "#CBD5E1", padding: 2, transition: "background 0.2s", cursor: "pointer" }}>
+                <div style={{ width: 16, height: 16, borderRadius: 8, background: "#FFF", transform: compare ? "translateX(16px)" : "translateX(0)", transition: "transform 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid #E2E8F0", padding: "10px 16px" }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#64748B", marginBottom: 6 }}>Custom Range</div>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="date" value={customRange.from} onChange={e => setCustomRange(p => ({ ...p, from: e.target.value }))}
+                style={{ flex: 1, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 11 }} />
+              <span style={{ color: "#94A3B8", fontSize: 11 }}>→</span>
+              <input type="date" value={customRange.to} onChange={e => setCustomRange(p => ({ ...p, to: e.target.value }))}
+                style={{ flex: 1, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 11 }} />
+            </div>
+            <button onClick={() => { setPeriod("custom"); setPeriodDropOpen(false); }}
+              style={{ marginTop: 6, width: "100%", padding: "6px", borderRadius: 6, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>Apply</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Area Chart Component ──
+  const AreaChart = ({ data, currentKey, prevKey, color, prevColor, height, showLabels }) => {
+    if (!data || data.length === 0) return null;
+    const vals = data.map(d => d[currentKey] || 0);
+    const prevVals = compare ? data.map(d => d[prevKey] || 0) : [];
+    const allVals = [...vals, ...prevVals];
+    const maxVal = Math.max(...allVals, 1);
+    const w = 100;
+    const h = height || 120;
+    const padX = 0; const padY = 5;
+    const plotW = w; const plotH = h - padY * 2;
+
+    const toPoint = (arr, i) => {
+      const x = arr.length > 1 ? (i / (arr.length - 1)) * plotW : plotW / 2;
+      const y = padY + plotH - (arr[i] / maxVal) * plotH;
+      return `${x},${y}`;
+    };
+
+    const makePath = (arr) => arr.map((_, i) => toPoint(arr, i)).join(" ");
+    const makeArea = (arr) => {
+      const points = arr.map((_, i) => toPoint(arr, i));
+      return `${padX},${h - padY} ${points.join(" ")} ${plotW},${h - padY}`;
+    };
+
+    return (
+      <div style={{ position: "relative", width: "100%", height: h }}>
+        <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+          {/* Grid lines */}
+          {[0, 0.25, 0.5, 0.75, 1].map(pct => (
+            <line key={pct} x1={0} x2={w} y1={padY + plotH * (1 - pct)} y2={padY + plotH * (1 - pct)} stroke="#F1F5F9" strokeWidth="0.3" />
+          ))}
+          {/* Previous period area */}
+          {compare && prevVals.length > 0 && (
+            <>
+              <polygon points={makeArea(prevVals)} fill={prevColor || "#FDE68A"} opacity="0.4" />
+              <polyline points={makePath(prevVals)} fill="none" stroke={prevColor || "#F59E0B"} strokeWidth="0.5" opacity="0.6" />
+            </>
+          )}
+          {/* Current period area */}
+          <polygon points={makeArea(vals)} fill={color || "#818CF8"} opacity="0.3" />
+          <polyline points={makePath(vals)} fill="none" stroke={color || "#6366F1"} strokeWidth="0.7" />
+          {/* Data points */}
+          {vals.map((v, i) => (
+            <circle key={i} cx={parseFloat(toPoint(vals, i).split(",")[0])} cy={parseFloat(toPoint(vals, i).split(",")[1])} r="0.8" fill={color || "#6366F1"} />
+          ))}
+        </svg>
+        {/* X-axis labels */}
+        {showLabels !== false && data.length <= 31 && (
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+            {data.filter((_, i) => data.length <= 7 || i % Math.ceil(data.length / 7) === 0 || i === data.length - 1).map((d, i) => (
+              <span key={i} style={{ fontSize: 9, color: "#94A3B8" }}>{d.date}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const metricOptions = [
+    { key: "cap", label: "CAP", color: "#6366F1", prev: "prevCap" },
+    { key: "ftd", label: "FTD", color: "#F59E0B", prev: "prevFtd" },
+    { key: "deals", label: "Deals", color: "#10B981", prev: "prevDeals" },
+    { key: "paid", label: "Paid $", color: "#0EA5E9", prev: "prevPaid" },
+  ];
+  const activeMetric = metricOptions.find(m => m.key === chartMetric) || metricOptions[0];
 
   return (
     <div style={{ minHeight: "100vh", background: "#F1F5F9", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
@@ -2092,190 +2328,240 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
       <BlitzHeader user={user} activePage="overview" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
       <main className="blitz-main" style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 32px" }}>
-        {/* ═══ KPI Cards ═══ */}
-        <h2 style={{ margin: "0 0 16px", fontSize: 20, fontWeight: 800, color: "#334155" }}>📊 Dashboard</h2>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 20 }}>
-          {[
-            { label: "CAP", today: todayCap.toLocaleString(), month: monthCap.toLocaleString(), accent: "#6366F1", bg: "#EEF2FF", icon: "📊" },
-            { label: "Started", today: `${todayStarted}/${todayCrg.length}`, month: `${monthStarted}/${monthCrg.length}`, accent: "#10B981", bg: "#ECFDF5", icon: "🚀" },
-            { label: "Agents Active", today: activeAgents, month: null, accent: "#8B5CF6", bg: "#F5F3FF", icon: "👥" },
-            { label: "Paid Amount", today: `$${todayPaidTotal.toLocaleString()}`, month: `$${monthPaidTotal.toLocaleString()}`, accent: "#10B981", bg: "#ECFDF5", icon: "💰" },
-            { label: "Customer Payments", today: `$${todayCpTotal.toLocaleString()}`, month: `$${monthCpTotal.toLocaleString()}`, accent: "#0EA5E9", bg: "#EFF6FF", icon: "🏦" },
-            { label: "New CRG Deals", today: todayNewDeals, month: monthNewDeals, accent: "#F59E0B", bg: "#FFFBEB", icon: "📝" },
-            { label: "Conversion", today: `${todayConv}%`, month: `${monthConv}%`, accent: todayFtd > 0 ? "#10B981" : "#94A3B8", bg: "#F0FDF4", icon: "📈" },
-            { label: "Open Payments", today: openPayments.length, month: `$${openPaymentsTotal.toLocaleString()}`, accent: "#EF4444", bg: "#FEF2F2", icon: "⏳" },
-          ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: c.accent }} />
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{c.label}</div>
-                  <div style={{ fontSize: 20, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.today}</div>
-                  {c.month !== null && (
-                    <div style={{ fontSize: 11, color: "#64748B", marginTop: 4, fontWeight: 600 }}>
-                      <span style={{ color: "#94A3B8" }}>Month:</span> <span style={{ color: c.accent }}>{c.month}</span>
-                    </div>
-                  )}
-                </div>
-                <span style={{ fontSize: 22 }}>{c.icon}</span>
-              </div>
-            </div>
-          ))}
+        {/* ═══ Header + Period Selector ═══ */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0F172A" }}>📊 Dashboard</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {compare && <span style={{ fontSize: 11, color: "#94A3B8", background: "#F8FAFC", padding: "4px 10px", borderRadius: 6, border: "1px solid #E2E8F0" }}>vs {range.prevLabel} ({prevRange.from.slice(5)} → {prevRange.to.slice(5)})</span>}
+            <PeriodSelector />
+          </div>
         </div>
 
-        {/* ═══ 7-Day CAP Trend + Top Agents ═══ */}
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 20 }}>
-          <div style={cardStyle}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 16 }}>7-Day CAP Trend</div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 120 }}>
-              {capTrend.map((d, i) => {
-                const h = maxCap > 0 ? (d.cap / maxCap) * 100 : 0;
-                const isToday = i === capTrend.length - 1;
-                return (
-                  <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#334155", fontFamily: "'JetBrains Mono',monospace" }}>{d.cap || ""}</span>
-                    <div style={{ width: "100%", height: `${Math.max(h, 4)}%`, background: isToday ? "linear-gradient(180deg, #6366F1, #818CF8)" : "linear-gradient(180deg, #CBD5E1, #E2E8F0)", borderRadius: "6px 6px 0 0", minHeight: 4, transition: "height 0.3s" }} />
-                    <span style={{ fontSize: 9, color: isToday ? "#6366F1" : "#94A3B8", fontWeight: isToday ? 700 : 500 }}>{d.date}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: 16, marginTop: 12, borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
-              <span style={{ fontSize: 11, color: "#64748B" }}>7d total: <b style={{ color: "#6366F1" }}>{capTrend.reduce((s, d) => s + d.cap, 0).toLocaleString()}</b> CAP</span>
-              <span style={{ fontSize: 11, color: "#64748B" }}>FTDs: <b style={{ color: "#F59E0B" }}>{capTrend.reduce((s, d) => s + d.ftd, 0)}</b></span>
-              <span style={{ fontSize: 11, color: "#64748B" }}>Started: <b style={{ color: "#10B981" }}>{capTrend.reduce((s, d) => s + d.started, 0)}</b></span>
+        {/* ═══════════ FINANCE ═══════════ */}
+        {sectionTitle("💰", "Finance")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 28 }}>
+          <KpiCard label="Payments" value={curPaidTotal} prevValue={prevPaidTotal} icon="💳" accent="#10B981" bg="#ECFDF5" onClick={() => onNav("payments")} prefix="$" />
+          <KpiCard label="Customer Payments" value={curCpTotal} prevValue={prevCpTotal} icon="🏦" accent="#0EA5E9" bg="#EFF6FF" onClick={() => onNav("customers")} prefix="$" />
+          <KpiCard label="Open Payments" value={openPayTotal} icon="⏳" accent="#EF4444" bg="#FEF2F2" onClick={() => onNav("payments")} prefix="$" />
+          <KpiCard label={"Paid Count"} value={curPaid.length} prevValue={prevPaid.length} icon="📝" accent="#8B5CF6" bg="#F5F3FF" />
+          <KpiCard label="CP Count" value={curCp.length} prevValue={prevCp.length} icon="📋" accent="#6366F1" bg="#EEF2FF" />
+        </div>
+
+        {/* ═══════════ CRG DEALS ═══════════ */}
+        {sectionTitle("📋", "CRG Deals")}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+          <KpiCard label="CAP" value={curCap} prevValue={prevCapVal} icon="📊" accent="#6366F1" bg="#EEF2FF" onClick={() => onNav("crg")} />
+          <KpiCard label="Deals" value={curCrg.length} prevValue={prevCrg.length} icon="📝" accent="#F59E0B" bg="#FFFBEB" onClick={() => onNav("crg")} />
+          <KpiCard label="Started" value={curStarted} prevValue={prevStartedVal} icon="🚀" accent="#10B981" bg="#ECFDF5" />
+          <KpiCard label="FTD" value={curFtd} prevValue={prevFtdVal} icon="🎯" accent="#F59E0B" bg="#FFFBEB" />
+          <KpiCard label="Conversion" value={curConv} icon="📈" accent="#0EA5E9" bg="#EFF6FF" suffix="%" />
+        </div>
+
+        {/* ═══ Chart — Period Trend with metric selector ═══ */}
+        <div style={{ ...cardStyle, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>📉 {range.label} Trend</div>
+            <div style={{ display: "flex", gap: 4 }}>
+              {metricOptions.map(m => (
+                <button key={m.key} onClick={() => setChartMetric(m.key)}
+                  style={{ padding: "4px 12px", borderRadius: 6, border: chartMetric === m.key ? `2px solid ${m.color}` : "1px solid #E2E8F0", background: chartMetric === m.key ? m.color + "15" : "#FFF", color: chartMetric === m.key ? m.color : "#64748B", fontSize: 11, fontWeight: 700, cursor: "pointer", transition: "all 0.15s" }}>{m.label}</button>
+              ))}
             </div>
           </div>
+          <AreaChart data={chartData} currentKey={activeMetric.key} prevKey={activeMetric.prev} color={activeMetric.color} prevColor="#F59E0B" height={140} />
+          <div style={{ display: "flex", gap: 20, marginTop: 10, borderTop: "1px solid #F1F5F9", paddingTop: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 12, height: 4, borderRadius: 2, background: activeMetric.color }} /><span style={{ fontSize: 11, color: "#64748B" }}>{range.label}: <b style={{ color: activeMetric.color }}>{chartData.reduce((s, d) => s + (d[activeMetric.key] || 0), 0).toLocaleString()}</b></span></div>
+            {compare && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ width: 12, height: 4, borderRadius: 2, background: "#F59E0B" }} /><span style={{ fontSize: 11, color: "#64748B" }}>{range.prevLabel}: <b style={{ color: "#F59E0B" }}>{chartData.reduce((s, d) => s + (d[activeMetric.prev] || 0), 0).toLocaleString()}</b></span></div>}
+          </div>
+        </div>
+
+        {/* ═══ CRG Rankings ═══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 28 }}>
           <div style={cardStyle}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>Top Agents Today</div>
-            {topAgents.length === 0 && <div style={{ color: "#94A3B8", fontSize: 13 }}>No data yet today</div>}
-            {topAgents.map(([name, cap], i) => {
-              const pct = topAgents[0][1] > 0 ? (cap / topAgents[0][1]) * 100 : 0;
-              return (
-                <div key={name} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
-                  <span style={{ display: "inline-block", padding: "4px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12, textAlign: "center", width: 70, borderRadius: 4 }}>{name}</span>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🌍 Top 5 Countries (CRG)</div>
+            {topCrgCountries.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> : rankedBar(topCrgCountries, topCrgCountries[0]?.[1] || 1, "#6366F1", "deals")}
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🏢 Top Broker CAP</div>
+            {topBrokers.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> : rankedBar(topBrokers, topBrokers[0]?.[1] || 1, "#10B981", "cap")}
+          </div>
+          <div style={cardStyle}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 12 }}>👤 Top Affiliate CAP</div>
+            {topAffCap.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> : rankedBar(topAffCap, topAffCap[0]?.[1] || 1, "#F59E0B", "cap")}
+          </div>
+        </div>
+
+        {/* ═══════════ AGENTS ═══════════ */}
+        {sectionTitle("👥", `Agents — ${range.label} Summary`)}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 16 }}>
+          {/* Top Agents by CAP */}
+          <div style={cardStyle}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>🔥 Top Agents (CAP)</div>
+            {topAgents.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> :
+              topAgents.map(([name, cap], i) => (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
+                  <span style={{ display: "inline-block", padding: "3px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 60, borderRadius: 4 }}>{name}</span>
                   <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${pct}%`, background: i === 0 ? "linear-gradient(90deg, #F59E0B, #FBBF24)" : "linear-gradient(90deg, #CBD5E1, #E2E8F0)", borderRadius: 4, transition: "width 0.3s" }} />
+                    <div style={{ height: "100%", width: (topAgents[0][1] > 0 ? (cap / topAgents[0][1]) * 100 : 0) + "%", background: i === 0 ? "linear-gradient(90deg, #F59E0B, #FBBF24)" : "#CBD5E1", borderRadius: 4 }} />
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 40, textAlign: "right" }}>{cap}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 35, textAlign: "right" }}>{cap}</span>
                 </div>
-              );
-            })}
+              ))
+            }
+          </div>
+          {/* Affiliates per Agent */}
+          <div style={cardStyle}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>📊 Affiliates / Agent</div>
+            {agentList.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> :
+              agentList.map(agent => (
+                <div key={agent} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  <span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 55, borderRadius: 4 }}>{agent}</span>
+                  <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: (Math.max(...Object.values(agentAff), 1) > 0 ? ((agentAff[agent] || 0) / Math.max(...Object.values(agentAff), 1)) * 100 : 0) + "%", background: "#6366F1", borderRadius: 4 }} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 30, textAlign: "right" }}>{(agentAff[agent] || 0)}</span>
+                </div>
+              ))
+            }
+            {agentList.length > 0 && <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: 4, marginTop: 6, textAlign: "right", fontSize: 11, fontWeight: 800, color: "#6366F1" }}>Total: {Object.values(agentAff).reduce((s, v) => s + v, 0)}</div>}
+          </div>
+          {/* Brands per Agent */}
+          <div style={cardStyle}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>🏢 Brands / Agent</div>
+            {agentList.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No data</div> :
+              agentList.map(agent => (
+                <div key={agent} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  <span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 55, borderRadius: 4 }}>{agent}</span>
+                  <div style={{ flex: 1, height: 8, background: "#F1F5F9", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: (Math.max(...Object.values(agentBrand), 1) > 0 ? ((agentBrand[agent] || 0) / Math.max(...Object.values(agentBrand), 1)) * 100 : 0) + "%", background: "#10B981", borderRadius: 4 }} />
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 30, textAlign: "right" }}>{(agentBrand[agent] || 0)}</span>
+                </div>
+              ))
+            }
+            {agentList.length > 0 && <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: 4, marginTop: 6, textAlign: "right", fontSize: 11, fontWeight: 800, color: "#10B981" }}>Total: {Object.values(agentBrand).reduce((s, v) => s + v, 0)}</div>}
           </div>
         </div>
 
-        {/* ═══ 30-Day Monthly CAP Trend ═══ */}
-        <div style={{ ...cardStyle, marginBottom: 20 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 16 }}>30-Day CAP Trend</div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 80 }}>
-            {capTrend30.map((d, i) => {
-              const h = maxCap30 > 0 ? (d.cap / maxCap30) * 100 : 0;
-              const isToday = i === capTrend30.length - 1;
-              return (
-                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${d.date}: ${d.cap} CAP`}>
-                  <div style={{ width: "100%", height: `${Math.max(h, 2)}%`, background: isToday ? "#6366F1" : d.cap > 0 ? "#93C5FD" : "#F1F5F9", borderRadius: "3px 3px 0 0", minHeight: 2, transition: "height 0.3s" }} />
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-            <span style={{ fontSize: 9, color: "#94A3B8" }}>{capTrend30[0]?.date}</span>
-            <span style={{ fontSize: 9, color: "#94A3B8" }}>30d total: <b style={{ color: "#6366F1" }}>{capTrend30.reduce((s, d) => s + d.cap, 0).toLocaleString()}</b> CAP</span>
-            <span style={{ fontSize: 9, color: "#6366F1", fontWeight: 700 }}>{capTrend30[capTrend30.length - 1]?.date}</span>
-          </div>
-        </div>
-
-        {/* ═══ Agent CAP Targets vs Actual ═══ */}
+        {/* ═══ Agent Targets Table ═══ */}
         {(() => {
           const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
-          const [targets, setTargetsState] = [
-            JSON.parse(localStorage.getItem(targetKey) || '{}'),
-            (t) => { localStorage.setItem(targetKey, JSON.stringify(t)); }
-          ];
-          const [editingTargets, setET] = useState(false);
-          const [tempTargets, setTT] = useState(targets);
-
+          const [targets, setTargetsState] = [JSON.parse(localStorage.getItem(targetKey) || '{}'), (t) => localStorage.setItem(targetKey, JSON.stringify(t))];
+          const [editTgt, setEditTgt] = useState(false);
+          const [tmpTgt, setTmpTgt] = useState(targets);
           const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
           const dayOfMonth = now.getDate();
-          const expectedPace = dayOfMonth / daysInMonth;
-
-          const allAgents = [...new Set([...Object.keys(targets), ...Object.keys(agentMonthCap)])].sort();
-
-          return allAgents.length > 0 || isAdmin(user.email) ? (
-            <div style={{ ...cardStyle, marginBottom: 20 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} CAP Targets vs Actual</div>
-                {isAdmin(user.email) && (
-                  <button onClick={() => { setET(!editingTargets); setTT({...targets}); }}
-                    style={{ padding: "4px 12px", borderRadius: 6, background: editingTargets ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
-                  >{editingTargets ? "Cancel" : "Set Targets"}</button>
-                )}
+          const pace = dayOfMonth / daysInMonth;
+          // Use MONTH data for targets regardless of period selector
+          const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          const monthCrgAll = crgDeals.filter(d => (d.date || "").startsWith(monthPrefix));
+          const monthDcAll = dcEntries.filter(d => (d.date || "").startsWith(monthPrefix));
+          const mAgentCap = {}; monthCrgAll.forEach(d => { const a = normalizeAgent((d.manageAff || "").trim()); if (a) mAgentCap[a] = (mAgentCap[a] || 0) + (parseInt(d.cap) || 0); });
+          const mAgentAff = {}; const mAgentBrand = {};
+          monthDcAll.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
+          const allA = [...new Set([...Object.keys(targets), ...Object.keys(mAgentCap), ...Object.keys(mAgentAff), ...Object.keys(mAgentBrand)])].sort();
+          return allA.length > 0 || isAdmin(user.email) ? (
+            <div style={{ ...cardStyle, marginBottom: 28 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Targets vs Actual</div>
+                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpTgt({...targets}); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
               </div>
-              {editingTargets && (
-                <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, marginBottom: 8 }}>Set monthly CAP target per agent:</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {[...new Set([...Object.keys(agentMonthCap), ...Object.keys(tempTargets)])].sort().map(agent => (
+              {editTgt && (
+                <div style={{ marginBottom: 12, padding: 10, background: "#F8FAFC", borderRadius: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 6 }}>
+                    {allA.map(agent => (
                       <div key={agent} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ display: "inline-block", padding: "2px 8px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{agent}</span>
-                        <input value={tempTargets[agent] || ""} onChange={e => setTT(p => ({ ...p, [agent]: e.target.value }))}
-                          style={{ width: 60, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} placeholder="CAP" />
+                        <span style={{ display: "inline-block", padding: "2px 6px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 50, textAlign: "center" }}>{agent}</span>
+                        {["CAP","Brand","Aff"].map((lbl, li) => (
+                          <input key={lbl} value={((tmpTgt[agent] || "").split(",")[li]) || ""} onChange={e => { const parts = (tmpTgt[agent] || ",,").split(","); parts[li] = e.target.value; setTmpTgt(p => ({ ...p, [agent]: parts.join(",") })); }}
+                            style={{ width: 48, padding: "3px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} placeholder={lbl} />
+                        ))}
                       </div>
                     ))}
                   </div>
-                  <button onClick={() => { setTargetsState(tempTargets); setET(false); window.location.reload(); }}
-                    style={{ marginTop: 8, padding: "4px 16px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Save Targets</button>
+                  <button onClick={() => { setTargetsState(tmpTgt); setEditTgt(false); window.location.reload(); }} style={{ marginTop: 6, padding: "4px 14px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Save</button>
                 </div>
               )}
-              {allAgents.filter(a => parseInt(targets[a]) > 0).length > 0 ? (
-                <div style={{ display: "grid", gap: 10 }}>
-                  {allAgents.filter(a => parseInt(targets[a]) > 0).map(agent => {
-                    const target = parseInt(targets[agent]) || 0;
-                    const actual = agentMonthCap[agent] || 0;
-                    const pct = target > 0 ? Math.min((actual / target) * 100, 150) : 0;
-                    const barPct = Math.min(pct, 100);
-                    const expectedCap = Math.round(target * expectedPace);
-                    const onTrack = actual >= expectedCap;
-                    const barColor = pct >= 100 ? "#10B981" : onTrack ? "#10B981" : actual >= expectedCap * 0.7 ? "#F59E0B" : "#EF4444";
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ background: "#F8FAFC" }}>
+                    <th style={{ padding: "7px 8px", textAlign: "left", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Agent</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#6366F1", fontSize: 10 }}>CAP</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#6366F1", fontSize: 10 }}>Tgt</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#10B981", fontSize: 10 }}>Brands</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#10B981", fontSize: 10 }}>Tgt</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Aff</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Tgt</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Status</th>
+                  </tr></thead>
+                  <tbody>{allA.filter(a => (mAgentCap[a] || 0) > 0 || (mAgentAff[a] || 0) > 0 || targets[a]).map(agent => {
+                    const p = (targets[agent] || ",,").split(",");
+                    const cT = parseInt(p[0]) || 0; const bT = parseInt(p[1]) || 0; const aT = parseInt(p[2]) || 0;
+                    const cA = mAgentCap[agent] || 0; const bA = mAgentBrand[agent] || 0; const aA = mAgentAff[agent] || 0;
+                    const cP = cT > 0 ? Math.round((cA / cT) * 100) : null;
+                    const onTrack = cT > 0 ? cA >= Math.round(cT * pace) : true;
+                    const pc = (v) => !v ? "#94A3B8" : v >= 100 ? "#10B981" : v >= 70 ? "#F59E0B" : "#EF4444";
                     return (
-                      <div key={agent} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <span style={{ display: "inline-block", padding: "4px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span>
-                        <div style={{ flex: 1, position: "relative", height: 22, background: "#F1F5F9", borderRadius: 6, overflow: "hidden" }}>
-                          <div style={{ position: "absolute", top: 0, left: 0, height: "100%", width: `${barPct}%`, background: barColor, borderRadius: 6, transition: "width 0.5s" }} />
-                          <div style={{ position: "absolute", left: `${Math.min(expectedPace * 100, 100)}%`, top: 0, bottom: 0, width: 2, background: "#334155", opacity: 0.4 }} title={`Expected pace: ${expectedCap} CAP by day ${dayOfMonth}`} />
-                          <span style={{ position: "relative", zIndex: 1, fontSize: 10, fontWeight: 700, color: barPct > 40 ? "#FFF" : "#334155", padding: "0 8px", lineHeight: "22px" }}>{actual.toLocaleString()} / {target.toLocaleString()} CAP ({pct.toFixed(0)}%)</span>
-                        </div>
-                        <span style={{ fontSize: 10, fontWeight: 600, color: onTrack ? "#10B981" : "#EF4444", minWidth: 55 }}>{pct >= 100 ? "🏆 Done" : onTrack ? "✓ On track" : "⚠ Behind"}</span>
-                      </div>
+                      <tr key={agent} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                        <td style={{ padding: "7px 8px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 55, borderRadius: 4 }}>{agent}</span></td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{cA}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{cT || "—"}{cP !== null && <span style={{ color: pc(cP), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({cP}%)</span>}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{bA}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{bT || "—"}{bT > 0 && <span style={{ color: pc(Math.round((bA/bT)*100)), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({Math.round((bA/bT)*100)}%)</span>}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{aA}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{aT || "—"}{aT > 0 && <span style={{ color: pc(Math.round((aA/aT)*100)), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({Math.round((aA/aT)*100)}%)</span>}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 10, fontWeight: 700, color: cP !== null && cP >= 100 ? "#10B981" : onTrack ? "#10B981" : "#EF4444" }}>{cP !== null && cP >= 100 ? "🏆" : onTrack ? "✓" : "⚠"}</td>
+                      </tr>
                     );
-                  })}
-                  <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Dark line = expected pace for day {dayOfMonth}/{daysInMonth}</div>
-                </div>
-              ) : (
-                <div style={{ color: "#94A3B8", fontSize: 13 }}>{isAdmin(user.email) ? 'Click "Set Targets" to configure monthly CAP goals per agent.' : "No targets set for this month yet."}</div>
-              )}
+                  })}</tbody>
+                </table>
+                <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Day {dayOfMonth}/{daysInMonth} — {Math.round(pace * 100)}% through month</div>
+              </div>
             </div>
           ) : null;
         })()}
 
+        {/* ═══════════ OFFERS ═══════════ */}
+        {sectionTitle("🤝", "Offers — Top 8 Countries")}
+        <div style={{ ...cardStyle, marginBottom: 28 }}>
+          {topOfferCountries.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No offers data</div> : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 }}>
+              {topOfferCountries.map(([country, count], i) => {
+                const maxC = topOfferCountries[0][1];
+                const colors = ["#6366F1", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#0EA5E9", "#EC4899", "#14B8A6"];
+                return (
+                  <div key={country} style={{ textAlign: "center", padding: "12px 8px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0" }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 2 }}>{country}</div>
+                    <div style={{ height: 6, background: "#E2E8F0", borderRadius: 3, margin: "6px 0", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: (maxC > 0 ? (count / maxC) * 100 : 0) + "%", background: colors[i] || "#CBD5E1", borderRadius: 3 }} />
+                    </div>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: colors[i] || "#334155", fontFamily: "'JetBrains Mono',monospace" }}>{count}</div>
+                    <div style={{ fontSize: 9, color: "#94A3B8", fontWeight: 600 }}>offers</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ marginTop: 10, textAlign: "right", fontSize: 11, color: "#64748B" }}>Total: <b>{offers.length}</b> offers across <b>{Object.keys(offerCountryMap).length}</b> countries</div>
+        </div>
+
         {/* ═══ Quick Links ═══ */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
           {[
-            { label: "Payments", desc: `${openPayments.length} open`, key: "payments", accent: "#0EA5E9", icon: "💳" },
-            { label: "Customer Payments", desc: `${todayCp.length} today`, key: "customers", accent: "#0EA5E9", icon: "🏦" },
-            { label: "CRG Deals", desc: `${todayNewDeals} today`, key: "crg", accent: "#F59E0B", icon: "📋" },
-            { label: "Daily Cap", desc: `${activeAgents} agents`, key: "dailycap", accent: "#8B5CF6", icon: "📊" },
-            { label: "Offers", desc: `${monthNewDeals} this month`, key: "deals", accent: "#10B981", icon: "🤝" },
+            { label: "Payments", desc: `${openPay.length} open`, key: "payments", accent: "#0EA5E9", icon: "💳" },
+            { label: "Customer Pay", desc: `${curCp.length} ${range.label.toLowerCase()}`, key: "customers", accent: "#0EA5E9", icon: "🏦" },
+            { label: "CRG Deals", desc: `${curCrg.length} ${range.label.toLowerCase()}`, key: "crg", accent: "#F59E0B", icon: "📋" },
+            { label: "Daily Cap", desc: `${curDc.length} entries`, key: "dailycap", accent: "#8B5CF6", icon: "📊" },
+            { label: "Offers", desc: `${offers.length} total`, key: "deals", accent: "#10B981", icon: "🤝" },
           ].map((q, i) => (
-            <button key={i} onClick={() => onNav(q.key)} style={{ ...cardStyle, cursor: "pointer", border: `1px solid #E2E8F0`, textAlign: "left", display: "flex", alignItems: "center", gap: 12, transition: "all 0.2s" }}
+            <button key={i} onClick={() => onNav(q.key)} style={{ ...cardStyle, cursor: "pointer", border: "1px solid #E2E8F0", textAlign: "left", display: "flex", alignItems: "center", gap: 12, transition: "all 0.2s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = q.accent; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; e.currentTarget.style.transform = "none"; }}
-            >
-              <span style={{ fontSize: 28 }}>{q.icon}</span>
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "#E2E8F0"; e.currentTarget.style.transform = "none"; }}>
+              <span style={{ fontSize: 26 }}>{q.icon}</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>{q.label}</div>
-                <div style={{ fontSize: 12, color: "#64748B" }}>{q.desc}</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>{q.label}</div>
+                <div style={{ fontSize: 11, color: "#64748B" }}>{q.desc}</div>
               </div>
             </button>
           ))}
@@ -4643,7 +4929,8 @@ function AppInner() {
   // GOLDEN RULE: NEVER replace local state with server data. ALWAYS merge.
   // ═══════════════════════════════════════════════════════════════
 
-  function mergeByID(localArr, serverArr, tableName) {
+  function mergeByID(localArr, serverArr, tableName, mode) {
+    // mode: 'init' = initial load (merge local into server), 'sync' = poll/WS (server is authority)
     // Server returned null = fetch failed, keep local
     if (serverArr === null || serverArr === undefined) return localArr || [];
     // Server returned [] = intentionally empty (e.g. all records deleted) — respect it
@@ -4661,7 +4948,19 @@ function AppInner() {
     localArr.forEach(r => {
       if (!r || !r.id) return;
       const srv = merged.get(r.id);
-      if (!srv) { merged.set(r.id, r); added++; }
+      if (!srv) {
+        // Local record not on server
+        if (mode === 'sync') {
+          // During sync: server is authority — DON'T add old local records
+          // Only add if it was created recently (within last 5 minutes = likely user just created it)
+          const age = Date.now() - (r.createdAt || r.updatedAt || 0);
+          if (age < 5 * 60 * 1000) { merged.set(r.id, r); added++; }
+          // else: skip — this is a ghost record from stale localStorage
+        } else {
+          // During init: push local records to server (offline edits)
+          merged.set(r.id, r); added++;
+        }
+      }
       else {
         const lt = r.updatedAt || r.lastModified || 0;
         const st = srv.updatedAt || srv.lastModified || 0;
@@ -4669,7 +4968,7 @@ function AppInner() {
       }
     });
     const result = Array.from(merged.values());
-    if (added > 0 || updated > 0) console.log(`\u{1F500} MERGE [${tableName}]: server=${serverArr.length} +local_new=${added} +local_updated=${updated} = ${result.length}`);
+    if (added > 0 || updated > 0) console.log(`\u{1F500} MERGE [${tableName}] (${mode || 'init'}): server=${serverArr.length} +local_new=${added} +local_updated=${updated} = ${result.length}`);
     return result;
   }
 
@@ -4825,7 +5124,7 @@ function AppInner() {
       const setter = setters[msg.table];
       if (setter) {
         const lsData = lsGet(msg.table, null) || [];
-        const merged = mergeByID(lsData, msg.data, msg.table);
+        const merged = mergeByID(lsData, msg.data, msg.table, 'sync');
         if (JSON.stringify(merged) !== JSON.stringify(lsData)) {
           skipSave.current = true;
           lsSave(msg.table, merged);
@@ -4855,7 +5154,7 @@ function AppInner() {
         if (t.d !== null) {
           // Compare server data with localStorage BEFORE touching React state
           const lsData = lsGet(t.k, null) || [];
-          const merged = mergeByID(lsData, t.d, t.k);
+          const merged = mergeByID(lsData, t.d, t.k, 'sync');
           const lsStr = JSON.stringify(lsData);
           const mergedStr = JSON.stringify(merged);
           if (mergedStr !== lsStr) {
@@ -4950,7 +5249,7 @@ function AppInner() {
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
-  return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} userAccess={userAccess} /></>);
+  return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} userAccess={userAccess} /></>);
 }
 
 // ── Error Boundary — prevents white screen crashes ──
