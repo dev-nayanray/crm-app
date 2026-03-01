@@ -52,7 +52,7 @@ process.on('unhandledRejection', (reason) => {
   console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
 const PORT = 3001;
-const VERSION = "9.07";
+const VERSION = "9.10";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1063,9 +1063,14 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     // If client sends significantly fewer records than server has, it likely has stale/demo data.
     // Create a safety backup BEFORE merging so we can always recover.
     const existingBeforeMerge = readJSON(file, []);
-    if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5) {
+    if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.3) {
       console.log(`🛡️ SHRINKAGE WARNING [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Creating safety backup.`);
       createBackup(`safety-${ep}-${Date.now()}`);
+    }
+    // v9.09: Hard block if client sends less than 20% of server data (almost certainly a bug)
+    if (existingBeforeMerge.length > 5 && records.length === 0 && deleteSet.size === 0) {
+      console.log(`🛑 HARD BLOCK [${ep}]: client sending 0 records, server has ${existingBeforeMerge.length}. Rejected.`);
+      return res.status(400).json({ error: "Cannot replace existing data with empty payload", serverCount: existingBeforeMerge.length });
     }
 
     // SPECIAL HANDLING: customer-payments status change notifications
@@ -1280,17 +1285,25 @@ let wss = null;
 
 if (WS_AVAILABLE) {
   wss = new WebSocketServer({ server, path: "/ws" });
+  console.log("🔌 WebSocket server listening on /ws");
+
+  // v9.09: Log upgrade requests for debugging connection issues
+  server.on('upgrade', (req, socket, head) => {
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    console.log(`🔌 WebSocket upgrade request from ${ip} — path: ${req.url}`);
+  });
 
   wss.on('connection', (ws, req) => {
     // FIX H1: Require auth token for WebSocket connections
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get("token");
     if (!token || !activeSessions.has(token)) {
+      console.log(`🔌 WebSocket rejected — invalid token`);
       ws.close(4001, "Authentication required");
       return;
     }
     wsClients.add(ws);
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
     console.log(`🔌 WebSocket connected: ${ip} (${wsClients.size} total)`);
 
     // Send current versions on connect
