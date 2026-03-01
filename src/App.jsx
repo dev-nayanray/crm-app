@@ -337,11 +337,11 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.02";
+const VERSION = "9.03";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
-const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers' };
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers', 'partners': 'blitz_partners' };
 const LS_VERSIONS_KEY = 'blitz_data_versions';
 
 // ── Version change detection: clear stale localStorage on upgrade ──
@@ -418,7 +418,7 @@ let justLoggedIn = false; // Grace period — don't expire session right after l
 
 async function apiGet(endpoint) {
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
+    const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) }); // v9.03: 6s timeout (was 4s)
     if (res.status === 401) {
       // Don't expire session if we JUST logged in (race condition with fresh token)
       if (justLoggedIn) {
@@ -549,7 +549,7 @@ async function apiSave(endpoint, data, userEmail) {
   if (Array.isArray(data) && lastKnownCounts[endpoint] > 0) {
     const prev = lastKnownCounts[endpoint];
     const curr = data.length;
-    const maxAllowedDrop = Math.max(prev * 0.5, pendingDeleteCount + 5); // Allow 50% drop or explicit deletes + small buffer
+    const maxAllowedDrop = Math.max(prev * 0.3, pendingDeleteCount + 3); // v9.03: stricter 30% drop (was 50%)
     if (prev - curr > maxAllowedDrop) {
       console.error(`🛑 BLOCKED suspicious save to ${endpoint}: ${prev} → ${curr} records (drop of ${prev - curr}, only ${pendingDeleteCount} explicit deletes). This looks like a crash-induced data loss.`);
       return false;
@@ -562,7 +562,7 @@ async function apiSave(endpoint, data, userEmail) {
     if (Array.isArray(lsData) && lsData.length > 0) {
       lastKnownCounts[endpoint] = lsData.length;
       // Now apply the same guard
-      if (lsData.length > 10 && data.length < lsData.length * 0.5 && pendingDeleteCount === 0) {
+      if (lsData.length > 10 && data.length < lsData.length * 0.3 && pendingDeleteCount === 0) { // v9.03: 30% (was 50%)
         console.error(`🛑 BLOCKED suspicious save to ${endpoint}: localStorage has ${lsData.length} but saving only ${data.length}. Likely stale data after version upgrade.`);
         return false;
       }
@@ -684,6 +684,8 @@ function connectWebSocket() {
           wsListeners.forEach(fn => fn(msg));
         } else if (msg.type === 'versions') {
           Object.entries(msg.versions).forEach(([k, v]) => { dataVersions[k] = v; });
+        } else if (msg.type === 'heartbeat' && msg.v && msg.v !== VERSION) {
+          console.warn(`⚠️ Server v${msg.v} ≠ Client v${VERSION} — consider refreshing`);
         }
       } catch {}
     };
@@ -864,32 +866,36 @@ function NameCombo({ value, onChange, placeholder }) {
 
 function SyncStatus() {
   const [status, setStatus] = useState("checking");
+  const [pendingCount, setPendingCount] = useState(0);
   useEffect(() => {
     const iv = setInterval(() => {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) setStatus("live");
-      else if (serverOnline) setStatus("live");
+      else if (serverOnline) setStatus("poll");
       else setStatus("offline");
+      setPendingCount(pendingSaves.size);
     }, 2000);
     return () => clearInterval(iv);
   }, []);
   const isOk = status === "live";
+  const isPoll = status === "poll";
   const isBad = status === "offline";
   const cfg = {
-    live: { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.30)", color: "#10B981", text: "Connected" },
+    live: { bg: "rgba(16,185,129,0.10)", border: "rgba(16,185,129,0.30)", color: "#10B981", text: "Live" },
+    poll: { bg: "rgba(56,189,248,0.10)", border: "rgba(56,189,248,0.30)", color: "#38BDF8", text: "Synced" },
     offline: { bg: "rgba(239,68,68,0.10)", border: "rgba(239,68,68,0.30)", color: "#EF4444", text: "Offline" },
     checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." },
   }[status] || { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." };
   return (
-    <div title={isOk ? "Connected to production server \u2014 all data synced" : isBad ? "Server offline \u2014 data saved locally only" : "Checking connection..."}
+    <div title={isOk ? "WebSocket live — real-time sync" : isPoll ? "Connected via polling" : isBad ? "Server offline — data saved locally" : "Checking..."}
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "default",
         background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3 }}>
       <span style={{ width: 18, height: 18, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
         fontSize: 11, fontWeight: 900, color: "#FFF", lineHeight: 1,
-        background: isOk ? "linear-gradient(135deg, #059669, #10B981)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : "#94A3B8",
-        boxShadow: isOk ? "0 0 8px rgba(16,185,129,0.5)" : isBad ? "0 0 8px rgba(239,68,68,0.5)" : "none" }}>
-        {isOk ? "\u2713" : isBad ? "!" : "\u2022"}
+        background: isOk ? "linear-gradient(135deg, #059669, #10B981)" : isPoll ? "linear-gradient(135deg, #0284C7, #38BDF8)" : isBad ? "linear-gradient(135deg, #DC2626, #EF4444)" : "#94A3B8",
+        boxShadow: isOk ? "0 0 8px rgba(16,185,129,0.5)" : isPoll ? "0 0 8px rgba(56,189,248,0.4)" : isBad ? "0 0 8px rgba(239,68,68,0.5)" : "none" }}>
+        {isOk ? "\u2713" : isPoll ? "\u2713" : isBad ? "!" : "\u2022"}
       </span>
-      {cfg.text}
+      {cfg.text}{pendingCount > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}>({pendingCount}⏳)</span>}
     </div>
   );
 }
@@ -987,6 +993,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     { key: "crg", label: "CRG Deals", color: "#F59E0B" },
     { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
     { key: "deals", label: "Offers", color: "#10B981" },
+    { key: "partners", label: "Partners", color: "#EC4899" },
     { key: "settings", label: "Settings", color: "#64748B" },
   ];
   if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
@@ -1391,6 +1398,7 @@ const ALL_PAGES = [
   { key: "crg", label: "CRG Deals", color: "#F59E0B" },
   { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
   { key: "deals", label: "Offers", color: "#10B981" },
+  { key: "partners", label: "Partners", color: "#EC4899" },
   { key: "settings", label: "Settings", color: "#64748B" },
 ];
 
@@ -1996,12 +2004,13 @@ function ServerDiagnostics() {
 // ═══════════════════════════════════════════════════════════════
 // OVERVIEW DASHBOARD — Dedicated analytics & KPI page
 // ═══════════════════════════════════════════════════════════════
-function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crgDeals: rawOvCrg, dcEntries: rawOvDc, cpPayments: rawOvCp, dealsData: rawOvDeals, userAccess }) {
+function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crgDeals: rawOvCrg, dcEntries: rawOvDc, cpPayments: rawOvCp, dealsData: rawOvDeals, partnersData: rawOvPartners, userAccess }) {
   const payments = Array.isArray(rawOvPayments) ? rawOvPayments : [];
   const crgDeals = Array.isArray(rawOvCrg) ? rawOvCrg : [];
   const dcEntries = Array.isArray(rawOvDc) ? rawOvDc : [];
   const cpPayments = Array.isArray(rawOvCp) ? rawOvCp : [];
   const offers = Array.isArray(rawOvDeals) ? rawOvDeals : [];
+  const partnersAll = Array.isArray(rawOvPartners) ? rawOvPartners : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
@@ -2546,6 +2555,57 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
           <div style={{ marginTop: 10, textAlign: "right", fontSize: 11, color: "#64748B" }}>Total: <b>{offers.length}</b> offers across <b>{Object.keys(offerCountryMap).length}</b> countries</div>
         </div>
 
+        {/* ═══════════ PARTNERS ═══════════ */}
+        {(() => {
+          const monthPfx = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          const monthPartners = partnersAll.filter(p => (p.date || "").startsWith(monthPfx));
+          const partnerAgentMap = {};
+          monthPartners.forEach(p => {
+            const a = normalizeAgent((p.agent || "").trim());
+            if (a) partnerAgentMap[a] = (partnerAgentMap[a] || 0) + 1;
+          });
+          const topPartnerAgents = Object.entries(partnerAgentMap).sort((a, b) => b[1] - a[1]);
+          const typeBreakdown = {};
+          monthPartners.forEach(p => { typeBreakdown[p.type || "?"] = (typeBreakdown[p.type || "?"] || 0) + 1; });
+
+          return (
+            <>
+              {sectionTitle("🤝", `Partners — ${MONTHS[now.getMonth()]} ${now.getFullYear()}`)}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 28 }}>
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#334155" }}>🏆 Partnerships per Agent</div>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: "#EC4899", fontFamily: "'JetBrains Mono',monospace" }}>{monthPartners.length}</span>
+                  </div>
+                  {topPartnerAgents.length === 0 ? <div style={{ color: "#94A3B8", fontSize: 12 }}>No partners this month</div> :
+                    topPartnerAgents.map(([name, count], i) => (
+                      <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 20 }}>#{i + 1}</span>
+                        <span style={{ display: "inline-block", padding: "3px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 60, borderRadius: 4 }}>{name}</span>
+                        <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: (topPartnerAgents[0][1] > 0 ? (count / topPartnerAgents[0][1]) * 100 : 0) + "%", background: i === 0 ? "linear-gradient(90deg, #EC4899, #F472B6)" : "#CBD5E1", borderRadius: 5 }} />
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace", minWidth: 25, textAlign: "right" }}>{count}</span>
+                      </div>
+                    ))
+                  }
+                </div>
+                <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>📊 Type Breakdown</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {[["Brand", "#6366F1"], ["Network", "#0EA5E9"], ["Affiliate", "#10B981"]].map(([type, color]) => (
+                      <div key={type} style={{ flex: 1, minWidth: 90, textAlign: "center", padding: "14px 8px", background: color + "08", borderRadius: 12, border: `1px solid ${color}20` }}>
+                        <div style={{ fontSize: 28, fontWeight: 800, color, fontFamily: "'JetBrains Mono',monospace" }}>{typeBreakdown[type] || 0}</div>
+                        <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, marginTop: 2 }}>{type}s</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
         {/* ═══ Quick Links ═══ */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
           {[
@@ -2554,6 +2614,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
             { label: "CRG Deals", desc: `${curCrg.length} ${range.label.toLowerCase()}`, key: "crg", accent: "#F59E0B", icon: "📋" },
             { label: "Daily Cap", desc: `${curDc.length} entries`, key: "dailycap", accent: "#8B5CF6", icon: "📊" },
             { label: "Offers", desc: `${offers.length} total`, key: "deals", accent: "#10B981", icon: "🤝" },
+            { label: "Partners", desc: `${partnersAll.filter(p => (p.date||"").startsWith(now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0"))).length} this month`, key: "partners", accent: "#EC4899", icon: "💼" },
           ].map((q, i) => (
             <button key={i} onClick={() => onNav(q.key)} style={{ ...cardStyle, cursor: "pointer", border: "1px solid #E2E8F0", textAlign: "left", display: "flex", alignItems: "center", gap: 12, transition: "all 0.2s" }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = q.accent; e.currentTarget.style.transform = "translateY(-2px)"; }}
@@ -4976,6 +5037,274 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
 /* ── App ── */
 
 // Session management with token
+// ═══════════════════════════════════════════════════════════════
+// PARTNERS PAGE — Monthly Successful Partnerships
+// ═══════════════════════════════════════════════════════════════
+const PARTNER_TYPES = ["Brand", "Network", "Affiliate"];
+const PARTNER_ACTIVITY = ["CPA", "CRG", "CPA + CRG"];
+const PARTNER_STATUS_COLORS = {
+  Brand: { background: "#6366F1", color: "#FFF" },
+  Network: { background: "#0EA5E9", color: "#FFF" },
+  Affiliate: { background: "#10B981", color: "#FFF" },
+};
+const PARTNER_ACT_COLORS = {
+  CPA: { background: "#FEF3C7", color: "#92400E" },
+  CRG: { background: "#ECFDF5", color: "#065F46" },
+  "CPA + CRG": { background: "#EEF2FF", color: "#3730A3" },
+};
+
+function PartnerForm({ partner, onSave, onClose }) {
+  const userName = getSession()?.name || "";
+  const [f, setF] = useState(partner || {
+    name: "", agent: "", type: "Brand", activity: "CRG", notes: "",
+    date: new Date().toISOString().split("T")[0], openBy: userName
+  });
+  const [error, setError] = useState("");
+  const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
+
+  const handleSave = () => {
+    if (!f.name.trim()) { setError("Partner name is required"); return; }
+    if (!f.agent.trim()) { setError("Agent is required"); return; }
+    onSave(f);
+  };
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <Field label="Partner Name"><input style={inp} value={f.name} onChange={e => s("name", e.target.value)} placeholder="e.g. Finzeratix" /></Field>
+        <Field label="Agent (Hunter)"><NameCombo value={f.agent} onChange={v => s("agent", v)} /></Field>
+        <Field label="Type">
+          <select style={{ ...inp, cursor: "pointer" }} value={f.type} onChange={e => s("type", e.target.value)}>
+            {PARTNER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="Financial Activity">
+          <select style={{ ...inp, cursor: "pointer" }} value={f.activity} onChange={e => s("activity", e.target.value)}>
+            {PARTNER_ACTIVITY.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </Field>
+        <Field label="Date"><input style={inp} type="date" value={f.date} onChange={e => s("date", e.target.value)} /></Field>
+        <Field label="Notes"><input style={inp} value={f.notes || ""} onChange={e => s("notes", e.target.value)} placeholder="Optional notes" /></Field>
+      </div>
+      {error && <div style={{ color: "#EF4444", fontSize: 13, marginBottom: 12, padding: "8px 12px", background: "#FEF2F2", borderRadius: 8 }}>{error}</div>}
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+        <button onClick={onClose} style={{ padding: "8px 20px", borderRadius: 10, background: "#F1F5F9", border: "none", color: "#64748B", cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+        <button onClick={handleSave} style={{ padding: "8px 24px", borderRadius: 10, background: "linear-gradient(135deg, #EC4899, #F472B6)", border: "none", color: "#FFF", cursor: "pointer", fontWeight: 700, boxShadow: "0 4px 14px rgba(236,72,153,0.3)" }}>Save Partner</button>
+      </div>
+    </>
+  );
+}
+
+function PartnersPage({ user, onLogout, onNav, onAdmin, partners: rawPartners, setPartners, userAccess }) {
+  const partners = Array.isArray(rawPartners) ? rawPartners : [];
+  const now = new Date();
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const [search, setSearch] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editPartner, setEditPartner] = useState(null);
+  const [delConfirm, setDelConfirm] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+
+  useDebouncedSave("partners", partners, 500, user.email);
+
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const filtered = partners.filter(p => {
+    const d = p.date || "";
+    if (!d.startsWith(monthPrefix)) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [p.name, p.agent, p.type, p.activity, p.notes, p.openBy].some(v => (v || "").toLowerCase().includes(q));
+  });
+
+  const handleSave = (data) => {
+    if (editPartner) {
+      setPartners(prev => prev.map(p => p.id === editPartner.id ? { ...editPartner, ...data, updatedAt: Date.now() } : p));
+    } else {
+      const newP = { ...data, id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2), createdAt: Date.now(), updatedAt: Date.now() };
+      setPartners(prev => [...prev, newP]);
+    }
+    setModalOpen(false);
+    setEditPartner(null);
+  };
+
+  const handleDelete = (id) => {
+    setPartners(prev => prev.filter(p => p.id !== id));
+    setDelConfirm(null);
+  };
+
+  const handleBulkDelete = (ids) => {
+    setPartners(prev => prev.filter(p => !ids.includes(p.id)));
+    setSelected(new Set());
+  };
+
+  // Monthly stats
+  const agentMap = {};
+  filtered.forEach(p => {
+    const a = normalizeAgent((p.agent || "").trim());
+    if (a) agentMap[a] = (agentMap[a] || 0) + 1;
+  });
+  const topAgents = Object.entries(agentMap).sort((a, b) => b[1] - a[1]);
+
+  const typeMap = {};
+  filtered.forEach(p => { const t = p.type || "?"; typeMap[t] = (typeMap[t] || 0) + 1; });
+
+  const actMap = {};
+  filtered.forEach(p => { const a = p.activity || "?"; actMap[a] = (actMap[a] || 0) + 1; });
+
+  const allSelected = filtered.length > 0 && filtered.every(p => selected.has(p.id));
+  const toggleAll = () => { if (allSelected) setSelected(new Set()); else setSelected(new Set(filtered.map(p => p.id))); };
+
+  const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="partners" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#EC4899" />
+
+      <main className="blitz-main" style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 32px" }}>
+        {/* ═══ Header ═══ */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h2 style={{ margin: "0 0 4px", fontSize: 22, fontWeight: 800, color: "#0F172A" }}>🤝 Partners</h2>
+            <p style={{ margin: 0, fontSize: 13, color: "#64748B" }}>Successful monthly partnerships</p>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button onClick={() => { if (month === 0) { setMonth(11); setYear(y => y - 1); } else setMonth(m => m - 1); }}
+              style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>{I.chevL}</button>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#334155", minWidth: 120, textAlign: "center" }}>{MONTHS[month]} {year}</span>
+            <button onClick={() => { if (month === 11) { setMonth(0); setYear(y => y + 1); } else setMonth(m => m + 1); }}
+              style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 8, padding: "6px 10px", cursor: "pointer" }}>{I.chevR}</button>
+            <div style={{ position: "relative", marginLeft: 8 }}>
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", pointerEvents: "none" }}>{I.search}</span>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..."
+                style={{ ...inp, paddingLeft: 36, width: 180 }} />
+            </div>
+            <button onClick={() => { setEditPartner(null); setModalOpen(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 20px", borderRadius: 12, background: "linear-gradient(135deg, #EC4899, #F472B6)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(236,72,153,0.3)" }}>
+              {I.plus} New Partner
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ Monthly Summary Cards ═══ */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 20 }}>
+          <div style={{ ...cardStyle, borderTop: "3px solid #EC4899" }}>
+            <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>Total Partners</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: "#EC4899", fontFamily: "'JetBrains Mono',monospace" }}>{filtered.length}</div>
+          </div>
+          {PARTNER_TYPES.map(t => (
+            <div key={t} style={{ ...cardStyle, borderTop: `3px solid ${PARTNER_STATUS_COLORS[t].background}` }}>
+              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>{t}s</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: PARTNER_STATUS_COLORS[t].background, fontFamily: "'JetBrains Mono',monospace" }}>{typeMap[t] || 0}</div>
+            </div>
+          ))}
+          {PARTNER_ACTIVITY.map(a => (
+            <div key={a} style={{ ...cardStyle, borderTop: `3px solid ${PARTNER_ACT_COLORS[a]?.background || "#E2E8F0"}` }}>
+              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>{a}</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: PARTNER_ACT_COLORS[a]?.color || "#334155", fontFamily: "'JetBrains Mono',monospace" }}>{actMap[a] || 0}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ═══ Agent Leaderboard ═══ */}
+        {topAgents.length > 0 && (
+          <div style={{ ...cardStyle, marginBottom: 20 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🏆 Top Agents — Partnerships This Month</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {topAgents.map(([name, count], i) => (
+                <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: i === 0 ? "#FFFBEB" : "#F8FAFC", borderRadius: 10, border: `1px solid ${i === 0 ? "#FDE68A" : "#E2E8F0"}` }}>
+                  <span style={{ fontSize: 14, fontWeight: 800, color: i === 0 ? "#F59E0B" : "#64748B" }}>#{i + 1}</span>
+                  <span style={{ display: "inline-block", padding: "3px 10px", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 12, borderRadius: 6 }}>{name}</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" }}>{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ═══ Table ═══ */}
+        <div style={{ ...cardStyle, padding: 0, overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#F8FAFC" }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", width: 32 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ cursor: "pointer" }} />
+                  </th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Partner Name</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Agent</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Type</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Activity</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Date</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Notes</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 && (
+                  <tr><td colSpan={8} style={{ padding: "40px 16px", textAlign: "center", color: "#94A3B8", fontSize: 14 }}>No partners for {MONTHS[month]} {year}. Click "New Partner" to add one.</td></tr>
+                )}
+                {filtered.map((p, idx) => (
+                  <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", background: selected.has(p.id) ? "#FDF2F8" : idx % 2 === 0 ? "#FFF" : "#FAFBFC" }}>
+                    <td style={{ padding: "10px 12px" }}>
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => { const s = new Set(selected); s.has(p.id) ? s.delete(p.id) : s.add(p.id); setSelected(s); }} style={{ cursor: "pointer" }} />
+                    </td>
+                    <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A", fontSize: 14 }}>{p.name}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <span style={{ display: "inline-block", padding: "3px 10px", background: getPersonColor(normalizeAgent(p.agent || "")), color: "#FFF", fontWeight: 700, fontSize: 12, borderRadius: 6 }}>{p.agent}</span>
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                      <span style={{ display: "inline-block", padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 700, ...(PARTNER_STATUS_COLORS[p.type] || { background: "#E2E8F0", color: "#334155" }) }}>{p.type}</span>
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                      <span style={{ display: "inline-block", padding: "3px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, ...(PARTNER_ACT_COLORS[p.activity] || { background: "#F1F5F9", color: "#64748B" }) }}>{p.activity}</span>
+                    </td>
+                    <td style={{ padding: "10px 12px", textAlign: "center", fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace" }}>{p.date}</td>
+                    <td style={{ padding: "10px 12px", fontSize: 12, color: "#64748B", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.notes}>{p.notes || "—"}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "center" }}>
+                      <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
+                        <button onClick={() => { setEditPartner(p); setModalOpen(true); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#0EA5E9", padding: 4 }} title="Edit">{I.edit}</button>
+                        <button onClick={() => setDelConfirm(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", padding: 4 }} title="Delete">{I.trash}</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Footer */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderTop: "1px solid #F1F5F9", background: "#FAFBFC" }}>
+            <span style={{ padding: "5px 16px", borderRadius: 20, background: "#EC4899", color: "#FFF", fontWeight: 700, fontSize: 13 }}>{filtered.length} partners</span>
+            {selected.size > 0 && (
+              <button onClick={() => { if (confirm(`Delete ${selected.size} selected partner(s)?`)) handleBulkDelete([...selected]); }}
+                style={{ padding: "6px 16px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#DC2626", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Delete {selected.size} selected</button>
+            )}
+          </div>
+        </div>
+      </main>
+
+      {/* Modal */}
+      {modalOpen && (
+        <Modal title={editPartner ? "Edit Partner" : "New Partner"} onClose={() => { setModalOpen(false); setEditPartner(null); }}>
+          <PartnerForm partner={editPartner} onSave={handleSave} onClose={() => { setModalOpen(false); setEditPartner(null); }} />
+        </Modal>
+      )}
+
+      {/* Delete confirmation */}
+      {delConfirm && (
+        <Modal title="Delete Partner" onClose={() => setDelConfirm(null)}>
+          <p style={{ color: "#64748B", marginBottom: 20 }}>Are you sure you want to delete this partner?</p>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button onClick={() => setDelConfirm(null)} style={{ padding: "8px 20px", borderRadius: 10, background: "#F1F5F9", border: "none", color: "#64748B", cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+            <button onClick={() => handleDelete(delConfirm)} style={{ padding: "8px 20px", borderRadius: 10, background: "#EF4444", border: "none", color: "#FFF", cursor: "pointer", fontWeight: 700 }}>Delete</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function generateSessionToken() {
   const arr = new Uint8Array(32);
   crypto.getRandomValues(arr);
@@ -5037,6 +5366,7 @@ function AppInner() {
   const [dcEntries, setDcEntries] = useState(() => lsGet('daily-cap', null) || []);
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
+  const [partnersData, setPartnersData] = useState(() => lsGet('partners', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
 
@@ -5115,6 +5445,7 @@ function AppInner() {
   registerConflictSetter('daily-cap', setDcEntries);
   registerConflictSetter('deals', setDealsData);
   registerConflictSetter('wallets', setWalletsData);
+  registerConflictSetter('partners', setPartnersData);
 
   useEffect(() => {
     (async () => {
@@ -5144,17 +5475,17 @@ function AppInner() {
 
       // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
-        const [su, sp, scp, scrg, sdc, sdl, swl, sof] = await Promise.all([
+        const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
-          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'),
+          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
         ]);
         if (sessionExpiredFlag) {
           sessionExpiredFlag = false; setUser(null); skipSave.current = false; serverFetchDone.current = false; setLoaded(true); return;
         }
-        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof].some(d => d !== null);
+        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof, spt].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
-          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 5000); return;
+          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 8000); return; // v9.03: 8s
         }
 
         if (anySuccess) {
@@ -5184,6 +5515,7 @@ function AppInner() {
             { key: 'daily-cap', srv: sdc, setter: setDcEntries, ref: 'daily-cap' },
             { key: 'deals', srv: sdl, setter: setDealsData, ref: 'deals' },
             { key: 'wallets', srv: swl, setter: setWalletsData, ref: 'wallets' },
+            { key: 'partners', srv: spt, setter: setPartnersData, ref: 'partners' },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -5226,7 +5558,7 @@ function AppInner() {
 
       setLoaded(true);
       serverFetchDone.current = true;
-      setTimeout(() => { skipSave.current = false; }, 5000); // 5s safety window after init
+      setTimeout(() => { skipSave.current = false; }, 8000); // v9.03: 8s safety window (was 5s)
     })();
   }, [user]); // Re-run when user logs in
 
@@ -5273,15 +5605,15 @@ function AppInner() {
       if (wsConnection && wsConnection.readyState === WebSocket.OPEN) return;
       if (!serverOnline) { try { await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) }); serverOnline = true; } catch {} }
       if (!serverOnline) return;
-      const [su, sp, scp, scrg, sdc, sdl, swl, sof] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'),
+      const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
       ]);
       skipSave.current = true;
       const all = [
         { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
-        { d: swl, s: setWalletsData, k: 'wallets' },
+        { d: swl, s: setWalletsData, k: 'wallets' }, { d: spt, s: setPartnersData, k: 'partners' },
       ];
       let anyChanged = false;
       for (const t of all) {
@@ -5346,6 +5678,7 @@ function AppInner() {
   useEffect(() => { debouncedSave('daily-cap', dcEntries); }, [dcEntries]);
   useEffect(() => { debouncedSave('deals', dealsData); }, [dealsData]);
   useEffect(() => { debouncedSave('wallets', walletsData); }, [walletsData]);
+  useEffect(() => { debouncedSave('partners', partnersData); }, [partnersData]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
@@ -5356,7 +5689,7 @@ function AppInner() {
       <div style={{ textAlign: "center", animation: "fadeUp 0.5s ease" }}>
         {I.logo}
         <div style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9", marginBottom: 8, marginTop: 16, fontFamily: "'JetBrains Mono',monospace" }}>Blitz CRM</div>
-        <div style={{ color: "#64748B", fontSize: 14 }}>Initializing system...</div>
+        <div style={{ color: "#64748B", fontSize: 14 }}>Initializing v{VERSION}...</div>
         <div style={{ width: 120, height: 2, background: "rgba(56,189,248,0.15)", borderRadius: 2, margin: "20px auto 0", overflow: "hidden", position: "relative" }}>
           <div style={{ width: "40%", height: "100%", background: "linear-gradient(90deg, transparent, #38BDF8, transparent)", borderRadius: 2, animation: "shimmer 1.5s ease infinite", backgroundSize: "200% 100%" }} />
         </div>
@@ -5382,8 +5715,9 @@ function AppInner() {
   if (page === "crg" && canAccess("crg")) return (<><CRGDeals user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={crgDeals} setDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
+  if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
-  return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} userAccess={userAccess} /></>);
+  return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
 
 // ── Error Boundary — prevents white screen crashes ──
@@ -5403,7 +5737,7 @@ class CrashGuard extends React.Component {
       return React.createElement("div", { style: { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F172A", fontFamily: "monospace", color: "#E2E8F0", padding: 20 } },
         React.createElement("div", { style: { maxWidth: 700, width: "100%" } },
           React.createElement("h1", { style: { color: "#EF4444", fontSize: 24, marginBottom: 8 } }, "⚠️ Blitz CRM Crash Report"),
-          React.createElement("p", { style: { color: "#94A3B8", fontSize: 14, marginBottom: 20 } }, "Copy this info and send it for debugging:"),
+          React.createElement("p", { style: { color: "#94A3B8", fontSize: 14, marginBottom: 20 } }, `v${VERSION} — Copy this info and send it for debugging:`),
           React.createElement("div", { style: { background: "#1E293B", border: "1px solid #334155", borderRadius: 8, padding: 16, marginBottom: 16, fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 300, overflow: "auto" } },
             "Error: " + String(err?.message || err) + "\n\n" +
             "Stack:\n" + stack.split("\n").slice(0, 8).join("\n") + "\n\n" +
