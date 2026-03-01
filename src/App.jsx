@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.10";
+const VERSION = "9.11";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2760,74 +2760,101 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
         {/* ═══ Agent Targets Table ═══ */}
         {(() => {
           const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
-          const [targets, setTargetsState] = [JSON.parse(localStorage.getItem(targetKey) || '{}'), (t) => localStorage.setItem(targetKey, JSON.stringify(t))];
+          const savedTgt = JSON.parse(localStorage.getItem(targetKey) || '{}');
+          const globalBrandTarget = parseInt(savedTgt.__brandTarget) || 0;
+          const globalAffTarget = parseInt(savedTgt.__affTarget) || 0;
           const [editTgt, setEditTgt] = useState(false);
-          const [tmpTgt, setTmpTgt] = useState(targets);
+          const [tmpBrand, setTmpBrand] = useState(String(globalBrandTarget || ""));
+          const [tmpAff, setTmpAff] = useState(String(globalAffTarget || ""));
           const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
           const dayOfMonth = now.getDate();
           const pace = dayOfMonth / daysInMonth;
-          // Use MONTH data for targets regardless of period selector
+          // Use MONTH data from Daily Cap for totals
           const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          const monthCrgAll = crgDeals.filter(d => (d.date || "").startsWith(monthPrefix));
           const monthDcAll = dcEntries.filter(d => (d.date || "").startsWith(monthPrefix));
-          const mAgentCap = {}; monthCrgAll.forEach(d => { const a = normalizeAgent((d.manageAff || "").trim()); if (a) mAgentCap[a] = (mAgentCap[a] || 0) + (parseInt(d.cap) || 0); });
           const mAgentAff = {}; const mAgentBrand = {};
           monthDcAll.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
-          const allA = [...new Set([...Object.keys(targets), ...Object.keys(mAgentCap), ...Object.keys(mAgentAff), ...Object.keys(mAgentBrand)])].sort();
+          const totalBrands = Object.values(mAgentBrand).reduce((s, v) => s + v, 0);
+          const totalAff = Object.values(mAgentAff).reduce((s, v) => s + v, 0);
+          const allA = [...new Set([...Object.keys(mAgentAff), ...Object.keys(mAgentBrand)])].sort();
+          const brandPct = globalBrandTarget > 0 ? Math.round((totalBrands / globalBrandTarget) * 100) : null;
+          const affPct = globalAffTarget > 0 ? Math.round((totalAff / globalAffTarget) * 100) : null;
           return allA.length > 0 || isAdmin(user.email) ? (
             <div style={{ ...cardStyle, marginBottom: 28 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Targets vs Actual</div>
-                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpTgt({...targets}); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
+                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpBrand(String(globalBrandTarget || "")); setTmpAff(String(globalAffTarget || "")); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
               </div>
               {editTgt && (
-                <div style={{ marginBottom: 12, padding: 10, background: "#F8FAFC", borderRadius: 8 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 6 }}>
-                    {allA.map(agent => (
-                      <div key={agent} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ display: "inline-block", padding: "2px 6px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 50, textAlign: "center" }}>{agent}</span>
-                        {["CAP","Brand","Aff"].map((lbl, li) => (
-                          <input key={lbl} value={((tmpTgt[agent] || "").split(",")[li]) || ""} onChange={e => { const parts = (tmpTgt[agent] || ",,").split(","); parts[li] = e.target.value; setTmpTgt(p => ({ ...p, [agent]: parts.join(",") })); }}
-                            style={{ width: 48, padding: "3px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 10, fontFamily: "'JetBrains Mono',monospace" }} placeholder={lbl} />
-                        ))}
-                      </div>
-                    ))}
+                <div style={{ marginBottom: 12, padding: 12, background: "#F8FAFC", borderRadius: 8, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", marginBottom: 4 }}>MONTHLY BRANDS TARGET</div>
+                    <input value={tmpBrand} onChange={e => setTmpBrand(e.target.value)} type="number" style={{ width: 100, padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 14, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }} placeholder="0" />
                   </div>
-                  <button onClick={() => { setTargetsState(tmpTgt); setEditTgt(false); window.location.reload(); }} style={{ marginTop: 6, padding: "4px 14px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Save</button>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#8B5CF6", marginBottom: 4 }}>MONTHLY AFFILIATES TARGET</div>
+                    <input value={tmpAff} onChange={e => setTmpAff(e.target.value)} type="number" style={{ width: 100, padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 14, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }} placeholder="0" />
+                  </div>
+                  <button onClick={() => { const t = { ...savedTgt, __brandTarget: tmpBrand, __affTarget: tmpAff }; localStorage.setItem(targetKey, JSON.stringify(t)); toast("✅ Targets saved!"); setEditTgt(false); window.location.reload(); }} style={{ padding: "6px 16px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Save</button>
+                </div>
+              )}
+              {/* Global progress bars */}
+              {(globalBrandTarget > 0 || globalAffTarget > 0) && (
+                <div style={{ marginBottom: 14 }}>
+                  {globalBrandTarget > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 3 }}>
+                        <span>Brands Cap: {totalBrands} / {globalBrandTarget}</span>
+                        <span style={{ color: brandPct >= 100 ? "#10B981" : brandPct >= Math.round(pace * 100) ? "#F59E0B" : "#EF4444" }}>{brandPct}%</span>
+                      </div>
+                      <div style={{ height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${Math.min(100, brandPct)}%`, background: brandPct >= 100 ? "#10B981" : "linear-gradient(90deg,#10B981,#34D399)", borderRadius: 5, transition: "width 0.5s" }} />
+                      </div>
+                    </div>
+                  )}
+                  {globalAffTarget > 0 && (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "#475569", marginBottom: 3 }}>
+                        <span>Affiliates Cap: {totalAff} / {globalAffTarget}</span>
+                        <span style={{ color: affPct >= 100 ? "#10B981" : affPct >= Math.round(pace * 100) ? "#F59E0B" : "#EF4444" }}>{affPct}%</span>
+                      </div>
+                      <div style={{ height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${Math.min(100, affPct)}%`, background: affPct >= 100 ? "#8B5CF6" : "linear-gradient(90deg,#8B5CF6,#A78BFA)", borderRadius: 5, transition: "width 0.5s" }} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead><tr style={{ background: "#F8FAFC" }}>
                     <th style={{ padding: "7px 8px", textAlign: "left", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Agent</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#6366F1", fontSize: 10 }}>CAP</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#6366F1", fontSize: 10 }}>Tgt</th>
                     <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#10B981", fontSize: 10 }}>Brands</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#10B981", fontSize: 10 }}>Tgt</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Aff</th>
-                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Tgt</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#8B5CF6", fontSize: 10 }}>Affiliates</th>
+                    <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#0EA5E9", fontSize: 10 }}>Total</th>
                     <th style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, color: "#64748B", fontSize: 10 }}>Status</th>
                   </tr></thead>
-                  <tbody>{allA.filter(a => (mAgentCap[a] || 0) > 0 || (mAgentAff[a] || 0) > 0 || targets[a]).map(agent => {
-                    const p = (targets[agent] || ",,").split(",");
-                    const cT = parseInt(p[0]) || 0; const bT = parseInt(p[1]) || 0; const aT = parseInt(p[2]) || 0;
-                    const cA = mAgentCap[agent] || 0; const bA = mAgentBrand[agent] || 0; const aA = mAgentAff[agent] || 0;
-                    const cP = cT > 0 ? Math.round((cA / cT) * 100) : null;
-                    const onTrack = cT > 0 ? cA >= Math.round(cT * pace) : true;
-                    const pc = (v) => !v ? "#94A3B8" : v >= 100 ? "#10B981" : v >= 70 ? "#F59E0B" : "#EF4444";
+                  <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0).map(agent => {
+                    const bA = mAgentBrand[agent] || 0; const aA = mAgentAff[agent] || 0;
+                    const total = bA + aA;
+                    const hasActivity = total > 0;
                     return (
                       <tr key={agent} style={{ borderBottom: "1px solid #F1F5F9" }}>
                         <td style={{ padding: "7px 8px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 55, borderRadius: 4 }}>{agent}</span></td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{cA}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{cT || "—"}{cP !== null && <span style={{ color: pc(cP), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({cP}%)</span>}</td>
                         <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{bA}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{bT || "—"}{bT > 0 && <span style={{ color: pc(Math.round((bA/bT)*100)), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({Math.round((bA/bT)*100)}%)</span>}</td>
                         <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{aA}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", color: "#94A3B8", fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{aT || "—"}{aT > 0 && <span style={{ color: pc(Math.round((aA/aT)*100)), fontWeight: 700, marginLeft: 3, fontSize: 9 }}>({Math.round((aA/aT)*100)}%)</span>}</td>
-                        <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 10, fontWeight: 700, color: cP !== null && cP >= 100 ? "#10B981" : onTrack ? "#10B981" : "#EF4444" }}>{cP !== null && cP >= 100 ? "🏆" : onTrack ? "✓" : "⚠"}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{total}</td>
+                        <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 14 }}>{hasActivity ? "✓" : "⚠"}</td>
                       </tr>
                     );
                   })}</tbody>
+                  <tfoot><tr style={{ background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
+                    <td style={{ padding: "7px 8px", fontWeight: 800, fontSize: 11 }}>Total</td>
+                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981" }}>{totalBrands}</td>
+                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6" }}>{totalAff}</td>
+                    <td style={{ padding: "7px 8px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{totalBrands + totalAff}</td>
+                    <td></td>
+                  </tr></tfoot>
                 </table>
                 <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Day {dayOfMonth}/{daysInMonth} — {Math.round(pace * 100)}% through month</div>
               </div>
@@ -2987,8 +3014,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
 
   // Stats
   const totalFtds = filtered.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-  const totalCap = filtered.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-  const totalRec = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
 
   const fmtDate = (ds) => { if (!ds) return "—"; const [y, m, d] = ds.split("-"); const dt = new Date(ds + "T00:00:00"); const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; return `${dn[dt.getDay()]}, ${d}/${m}/${y}`; };
 
@@ -3067,9 +3092,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10, marginBottom: 16 }}>
           {[
             { label: "FTDs", value: totalFtds, color: "#10B981" },
-            { label: "Cap", value: totalCap, color: "#0EA5E9" },
-            { label: "Received", value: totalRec, color: "#8B5CF6" },
-            { label: "Remaining", value: totalCap - totalRec, color: "#F59E0B" },
             { label: "Deals", value: filtered.length, color: "#EC4899" },
           ].map((c, i) => (
             <div key={i} style={{ padding: "12px 14px", background: "#FFF", borderRadius: 10, border: "1px solid #E2E8F0", borderLeft: `3px solid ${c.color}` }}>
@@ -3106,8 +3128,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
         ) : sortedDates.map(date => {
           const dayDeals = grouped[date];
           const dayFtd = dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-          const dayCap = dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
-          const dayRec = dayDeals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
           const dayAllSelected = dayDeals.length > 0 && dayDeals.every(d => selected.has(d.id));
 
           return (
@@ -3120,8 +3140,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
                 </div>
                 <div style={{ display: "flex", gap: 14, fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
                   <span style={{ color: "#10B981" }}>FTD: {dayFtd}</span>
-                  <span style={{ color: "#0EA5E9" }}>Cap: {dayCap}</span>
-                  <span style={{ color: "#8B5CF6" }}>Rec: {dayRec}</span>
                 </div>
               </div>
               <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -3134,12 +3152,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
                       <th style={thS}>Aff ID</th>
                       <th style={thS}>Brand</th>
                       <th style={thS}>Brand ID</th>
-                      <th style={{ ...thS, textAlign: "center" }}>Cap</th>
-                      <th style={{ ...thS, textAlign: "center" }}>Received</th>
-                      <th style={{ ...thS, textAlign: "center" }}>FTD</th>
-                      <th style={{ ...thS, textAlign: "center" }}>Started</th>
-                      <th style={thS}>Hours</th>
-                      <th style={thS}>Funnel</th>
                       <th style={{ ...thS, width: 50 }}>Actions</th>
                     </tr>
                   </thead>
@@ -3163,12 +3175,6 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
                           <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0EA5E9", fontWeight: 700 }}>{affId}</td>
                           <td style={tdS}><InlineCell value={brandName} onSave={v => { const newBroker = brandId ? `${brandId} ${v}` : v; updateField(d.id, "brokerCap", newBroker); }} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
                           <td style={tdS}><InlineCell value={d.brokerCap || ""} onSave={v => updateField(d.id, "brokerCap", v)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700, padding: "0 8px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.cap || ""} onSave={v => updateField(d.id, "cap", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, textAlign: "center", color: "#0EA5E9", padding: "0 6px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.capReceived || ""} onSave={v => updateField(d.id, "capReceived", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 13, textAlign: "center", color: "#8B5CF6", padding: "0 6px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.ftd || ""} onSave={v => updateField(d.id, "ftd", v)} type="number" style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 14, textAlign: "center", color: (parseInt(d.ftd) || 0) > 0 ? "#10B981" : "#94A3B8", padding: "0 6px" }} /></td>
-                          <td style={{ ...tdS, textAlign: "center" }}><InlineCell value={d.started} onSave={v => updateField(d.id, "started", v)} type="checkbox" style={{ textAlign: "center", padding: "0 6px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.hours || ""} onSave={v => updateField(d.id, "hours", v)} style={{ fontSize: 12, color: "#676879", padding: "0 6px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.funnel || ""} onSave={v => updateField(d.id, "funnel", v)} style={{ fontSize: 12, color: "#676879", padding: "0 6px", maxWidth: 100, overflow: "hidden", textOverflow: "ellipsis" }} /></td>
                           <td style={tdS}>
                             <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
                           </td>
@@ -3195,14 +3201,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <Field label="Affiliate (e.g. 211 UK)"><input style={inp} value={newFtd.affiliate} onChange={e => setNewFtd(p => ({ ...p, affiliate: e.target.value }))} placeholder="211 UK" /></Field>
             <Field label="Broker / Brand"><input style={inp} value={newFtd.brokerCap} onChange={e => setNewFtd(p => ({ ...p, brokerCap: e.target.value }))} placeholder="3102 Helios" /></Field>
-            <Field label="Cap"><input style={inp} type="number" value={newFtd.cap} onChange={e => setNewFtd(p => ({ ...p, cap: e.target.value }))} placeholder="0" /></Field>
-            <Field label="Cap Received"><input style={inp} type="number" value={newFtd.capReceived} onChange={e => setNewFtd(p => ({ ...p, capReceived: e.target.value }))} placeholder="0" /></Field>
-            <Field label="FTD"><input style={inp} type="number" value={newFtd.ftd} onChange={e => setNewFtd(p => ({ ...p, ftd: e.target.value }))} placeholder="0" /></Field>
             <Field label="Date"><input style={inp} type="date" value={newFtd.date} onChange={e => setNewFtd(p => ({ ...p, date: e.target.value }))} /></Field>
-            <Field label="Hours"><input style={inp} value={newFtd.hours} onChange={e => setNewFtd(p => ({ ...p, hours: e.target.value }))} placeholder="9-17" /></Field>
-            <Field label="Funnel"><input style={inp} value={newFtd.funnel} onChange={e => setNewFtd(p => ({ ...p, funnel: e.target.value }))} placeholder="funnel name" /></Field>
-            <Field label="Manager"><input style={inp} value={newFtd.manageAff} onChange={e => setNewFtd(p => ({ ...p, manageAff: e.target.value }))} placeholder="agent name" /></Field>
-            <Field label="Started"><label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}><input type="checkbox" checked={newFtd.started} onChange={e => setNewFtd(p => ({ ...p, started: e.target.checked }))} style={{ width: 18, height: 18, accentColor: "#10B981" }} /><span style={{ fontSize: 13 }}>Active</span></label></Field>
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setAddOpen(false)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
@@ -3582,39 +3581,36 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
           {/* Restore moved to Admin Panel */}
         </div>
 
-        {/* ═══ CAP Targets ═══ */}
+        {/* ═══ Monthly Targets ═══ */}
         {isAdmin(user.email) && (() => {
           const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
-          const savedTargets = JSON.parse(localStorage.getItem(targetKey) || '{}');
-          const [targets, setTargets] = useState(savedTargets);
+          const savedTgt = JSON.parse(localStorage.getItem(targetKey) || '{}');
+          const [brandTarget, setBrandTarget] = useState(String(savedTgt.__brandTarget || ""));
+          const [affTarget, setAffTarget] = useState(String(savedTgt.__affTarget || ""));
 
           const saveTargets = () => {
-            localStorage.setItem(targetKey, JSON.stringify(targets));
+            const t = { ...savedTgt, __brandTarget: brandTarget, __affTarget: affTarget };
+            localStorage.setItem(targetKey, JSON.stringify(t));
             alert("✅ Targets saved for " + MONTHS[now.getMonth()]);
           };
 
           return (
             <div style={sectionStyle}>
-              <div style={sectionTitle}>🎯 Monthly CAP Targets — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
-              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 12 }}>Set monthly CAP goals per agent. Progress will be shown on the Dashboard.</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-                {Object.keys(targets).length === 0 && <div style={{ color: "#94A3B8", fontSize: 12 }}>No targets set yet. They'll appear here once agents have CRG deals this month.</div>}
-                {Object.entries(targets).sort().map(([agent, val]) => (
-                  <div key={agent} style={{ display: "flex", alignItems: "center", gap: 6, background: "#F8FAFC", padding: "6px 10px", borderRadius: 8 }}>
-                    <span style={{ display: "inline-block", padding: "2px 8px", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 11, fontWeight: 700 }}>{agent}</span>
-                    <input value={val || ""} onChange={e => setTargets(p => ({ ...p, [agent]: e.target.value }))}
-                      style={{ width: 70, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} placeholder="CAP target" />
-                    <button onClick={() => setTargets(p => { const n = {...p}; delete n[agent]; return n; })} style={{ background: "none", border: "none", color: "#EF4444", cursor: "pointer", fontSize: 14 }}>×</button>
-                  </div>
-                ))}
+              <div style={sectionTitle}>🎯 Monthly Targets — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
+              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Set monthly cap targets. Actuals are calculated from Daily Cap totals. Progress is shown on the Dashboard.</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                <div style={{ padding: 16, background: "#ECFDF5", borderRadius: 12, border: "1px solid #A7F3D0" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>Monthly Brands Cap Target</div>
+                  <input value={brandTarget} onChange={e => setBrandTarget(e.target.value)} type="number"
+                    style={{ width: "100%", padding: "10px 12px", border: "2px solid #A7F3D0", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#10B981", background: "#FFF", outline: "none" }} placeholder="0" />
+                </div>
+                <div style={{ padding: 16, background: "#F5F3FF", borderRadius: 12, border: "1px solid #C4B5FD" }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 8, letterSpacing: 0.5 }}>Monthly Affiliates Cap Target</div>
+                  <input value={affTarget} onChange={e => setAffTarget(e.target.value)} type="number"
+                    style={{ width: "100%", padding: "10px 12px", border: "2px solid #C4B5FD", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6", background: "#FFF", outline: "none" }} placeholder="0" />
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => {
-                  const name = prompt("Agent name:");
-                  if (name && name.trim()) setTargets(p => ({ ...p, [name.trim()]: "" }));
-                }} style={btnStyle("#0EA5E9")}>+ Add Agent</button>
-                <button onClick={saveTargets} style={btnStyle("#10B981")}>Save Targets</button>
-              </div>
+              <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>💾 Save Targets</button>
             </div>
           );
         })()}
