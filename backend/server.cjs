@@ -40,7 +40,7 @@ process.on('unhandledRejection', (reason) => {
   // Don't process.exit() — let the server keep running
 });
 const PORT = 3001;
-const VERSION = "8.01";
+const VERSION = "9.02";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -2368,6 +2368,9 @@ async function handleOfferMessage(bot, msg, messageText) {
     
     const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
     
+    // Declare existingOffers at the top to avoid initialization errors
+    let existingOffers = [];
+
     // Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
     const simpleMatch = messageText.match(/^Offer:\s*(\d+)\s+(\w+)\s+(\S+)\s+(\d+[\+\%]\d+)/i);
     if (simpleMatch) {
@@ -2378,7 +2381,6 @@ async function handleOfferMessage(bot, msg, messageText) {
       
       // Get existing offers
       const offersFile = path.join(DATA_DIR, "offers.json");
-      let existingOffers = [];
       try {
         if (fs.existsSync(offersFile)) {
           existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
@@ -2439,7 +2441,7 @@ async function handleOfferMessage(bot, msg, messageText) {
         if (affiliateId && country) {
           // Get existing offers
           const offersFile = path.join(DATA_DIR, "offers.json");
-          let existingOffers = [];
+          existingOffers = [];
           try {
             if (fs.existsSync(offersFile)) {
               existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
@@ -2527,53 +2529,54 @@ async function handleOfferMessage(bot, msg, messageText) {
         }
         
         if (affiliateId && country) {
-          // Get existing offers
-          const offersFile = path.join(DATA_DIR, "offers.json");
-          let existingOffers = [];
+          // FIX: Save to deals.json (not offers.json) - this is what the CRM Offers tab reads
+          const dealsFile = path.join(DATA_DIR, "deals.json");
+          let existingDeals = [];
           try {
-            if (fs.existsSync(offersFile)) {
-              existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
+            if (fs.existsSync(dealsFile)) {
+              existingDeals = JSON.parse(fs.readFileSync(dealsFile, "utf8"));
             }
           } catch (e) {}
           
-          // Remove existing offers for this affiliate
-          existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
+          // Remove existing deals for this affiliate and country
+          existingDeals = existingDeals.filter(d => 
+            String(d.affiliate) !== String(affiliateId) || 
+            (d.country && d.country.toUpperCase()) !== country
+          );
           
-          // Add new offer
-          const timestamp = new Date().toISOString().split("T")[0];
-          existingOffers.push({
+          // Add new deal in deals.json format
+          existingDeals.push({
             id: crypto.randomBytes(4).toString('hex'),
-            affiliateId: affiliateId,
+            affiliate: affiliateId,
             country: country,
+            price: '',
             crg: crg,
-            crgAmount: crg ? crg.split('+')[0] : '',
-            crgPercentage: crg ? (crg.split('+')[1] || '') : '',
-            brands: brand,
-            traffic: '',
-            deduction: deduction,
-            status: "Open",
-            createdDate: timestamp,
-            rawMessage: messageText
+            dealType: "CRG",
+            funnels: brand,
+            source: '',
+            deduction: deduction || '',
+            date: new Date().toISOString().split("T")[0],
+            openBy: 'telegram-bot'
           });
           
-          // Save to file
-          await lockedWrite("offers.json", existingOffers, {
+          // Save to deals.json
+          await lockedWrite("deals.json", existingDeals, {
             action: "create",
             user: "telegram-bot",
             details: `Added offer for affiliate ${affiliateId}`
           });
           
           // Broadcast to connected clients
-          broadcastUpdate("offers", existingOffers);
-          
+          broadcastUpdate("deals", existingDeals);
+
           // Send confirmation to offer group
           let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
           confirmMsg += `🌍 Country: <b>${country}</b>\n`;
           confirmMsg += `🏷️ Brand: <b>${brand}</b>\n`;
           if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
           if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
-          confirmMsg += `\n💾 Saved to offers.json`;
-          
+          confirmMsg += `\n💾 Saved to deals`;
+
           bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
           
           return;
@@ -2685,7 +2688,7 @@ async function handleOfferMessage(bot, msg, messageText) {
     
     // Get existing offers
     const offersFile = path.join(DATA_DIR, "offers.json");
-    let existingOffers = [];
+    existingOffers = [];
     try {
       if (fs.existsSync(offersFile)) {
         existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
