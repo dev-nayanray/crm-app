@@ -52,7 +52,7 @@ process.on('unhandledRejection', (reason) => {
   console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
 const PORT = 3001;
-const VERSION = "9.10";
+const VERSION = "9.11";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
