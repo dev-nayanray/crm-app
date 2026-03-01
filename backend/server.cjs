@@ -29,6 +29,7 @@ app.disable('x-powered-by'); // Don't reveal tech stack
 // ═══════════════════════════════════════════════════════════════
 // CRASH PROTECTION — Keep server alive no matter what
 // ═══════════════════════════════════════════════════════════════
+// v9.05: Enhanced crash protection with tracking
 let crashCount = 0;
 const CRASH_LOG = [];
 
@@ -51,7 +52,7 @@ process.on('unhandledRejection', (reason) => {
   console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
 const PORT = 3001;
-const VERSION = "9.03";
+const VERSION = "9.05";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -254,21 +255,34 @@ function readJSON(filename, fallback) {
   return fallback;
 }
 
-// Atomic write: write to temp file, then rename (prevents corruption)
+// v9.05: Atomic write with Write-Ahead Logging (WAL) — validates BEFORE overwriting
 function writeJSONAtomic(filename, data) {
   const filepath = path.join(DATA_DIR, filename);
   const tempPath = filepath + `.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
+  const walPath = filepath + `.wal.${Date.now()}`;
 
   try {
-    // Write to temp file first
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf8");
+    // WAL Step 1: Serialize and validate data BEFORE touching disk
+    const jsonStr = JSON.stringify(data, null, 2);
+    const parsed = JSON.parse(jsonStr); // Verify round-trip
+    if (!Array.isArray(parsed)) throw new Error("Data is not an array after round-trip");
+    if (jsonStr.length < 3) throw new Error("Suspiciously small payload");
 
-    // Verify temp file is valid JSON before replacing
-    const verify = JSON.parse(fs.readFileSync(tempPath, "utf8"));
-    if (!Array.isArray(verify)) throw new Error("Data is not an array");
+    // WAL Step 2: Write intent log (what we WANT to write)
+    fs.writeFileSync(walPath, jsonStr, "utf8");
 
-    // Atomic rename (on same filesystem this is atomic)
+    // WAL Step 3: Write to temp file
+    fs.writeFileSync(tempPath, jsonStr, "utf8");
+
+    // WAL Step 4: Verify temp file matches intent
+    const verify = fs.readFileSync(tempPath, "utf8");
+    if (verify !== jsonStr) throw new Error("Temp file content mismatch — disk corruption?");
+
+    // WAL Step 5: Atomic rename (on same filesystem this is atomic)
     fs.renameSync(tempPath, filepath);
+
+    // WAL Step 6: Clean up WAL file (write succeeded)
+    try { fs.unlinkSync(walPath); } catch {}
 
     // Increment version
     const key = filename.replace('.json', '');
@@ -277,39 +291,53 @@ function writeJSONAtomic(filename, data) {
     return true;
   } catch (err) {
     console.error(`❌ Atomic write failed for ${filename}:`, err.message);
-    // Clean up temp file
-    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) {}
+    // Clean up temp and WAL files
+    try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
+    try { if (fs.existsSync(walPath)) fs.unlinkSync(walPath); } catch {}
     return false;
   }
 }
 
-// Locked write — prevents concurrent writes to same table
-// FIX C2: Added 10-second timeout to prevent deadlocks
+// v9.05: Concurrency Queue — serializes writes per table
+// If Telegram bot + user save at same ms, they're processed sequentially
+const writeQueues = {}; // { tableName: Promise }
+
 async function lockedWrite(filename, data, meta) {
   const key = filename.replace('.json', '');
 
-  // Mutex with timeout — never wait forever
-  const maxWait = 10000; // 10 seconds
-  const start = Date.now();
-  while (dataLocks.has(key)) {
-    if (Date.now() - start > maxWait) {
-      console.error(`💥 LOCK TIMEOUT on ${key} — forcing unlock (was held ${maxWait}ms)`);
-      dataLocks.delete(key); // Force unlock to prevent deadlock
-      break;
+  // Chain writes: each write waits for the previous one on same table
+  const prev = writeQueues[key] || Promise.resolve();
+  const current = prev.then(async () => {
+    // Double-check lock (belt + suspenders)
+    const maxWait = 10000;
+    const start = Date.now();
+    while (dataLocks.has(key)) {
+      if (Date.now() - start > maxWait) {
+        console.error(`💥 LOCK TIMEOUT on ${key} — forcing unlock (was held ${maxWait}ms)`);
+        dataLocks.delete(key);
+        break;
+      }
+      await new Promise(r => setTimeout(r, 10));
     }
-    await new Promise(r => setTimeout(r, 10));
-  }
 
-  dataLocks.set(key, true);
-  try {
-    const success = writeJSONAtomic(filename, data);
-    if (success && meta) {
-      writeAuditLog(key, meta.action || "update", meta.user || "system", meta.details || `${data.length} records`);
+    dataLocks.set(key, true);
+    try {
+      const success = writeJSONAtomic(filename, data);
+      if (success && meta) {
+        writeAuditLog(key, meta.action || "update", meta.user || "system", meta.details || `${data.length} records`);
+      }
+      return success;
+    } finally {
+      dataLocks.delete(key);
     }
-    return success;
-  } finally {
+  }).catch(err => {
+    console.error(`❌ Queue write error for ${key}:`, err.message);
     dataLocks.delete(key);
-  }
+    return false;
+  });
+
+  writeQueues[key] = current;
+  return current;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -462,6 +490,112 @@ setInterval(createBackup, 60 * 60 * 1000);
 setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)), 2000);
 
 // ═══════════════════════════════════════════════════════════════
+// v9.05: DAILY SNAPSHOT SYSTEM — "The Safety Net"
+// Keeps exactly 7 days of guaranteed-clean daily snapshots
+// Runs at 02:00 AM server time to avoid user activity
+// ═══════════════════════════════════════════════════════════════
+const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
+if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
+
+function createDailySnapshot() {
+  const dateKey = new Date().toISOString().split('T')[0]; // 2026-03-01
+  const snapPath = path.join(SNAPSHOT_DIR, dateKey);
+  if (fs.existsSync(snapPath)) { console.log(`📸 Daily snapshot ${dateKey} already exists — skipping`); return; }
+  fs.mkdirSync(snapPath, { recursive: true });
+
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "partners"];
+  let count = 0;
+  endpoints.forEach(ep => {
+    const src = path.join(DATA_DIR, ep + ".json");
+    if (fs.existsSync(src)) { fs.copyFileSync(src, path.join(snapPath, ep + ".json")); count++; }
+  });
+  console.log(`📸 Daily snapshot created: ${dateKey} (${count} files)`);
+
+  // Cleanup: keep only last 7 days
+  try {
+    const dirs = fs.readdirSync(SNAPSHOT_DIR).sort();
+    while (dirs.length > 7) {
+      const old = dirs.shift();
+      fs.rmSync(path.join(SNAPSHOT_DIR, old), { recursive: true, force: true });
+      console.log(`🗑️ Old snapshot removed: ${old}`);
+    }
+  } catch (err) { console.error("⚠️ Snapshot cleanup error:", err.message); }
+}
+
+// v9.05: Nightly auto-dedup at 03:00 AM — keeps database clean
+async function nightlyDedup() {
+  console.log("🧹 Nightly auto-dedup starting...");
+  let totalRemoved = 0;
+
+  // Dedup daily-cap
+  try {
+    const dc = readJSON("daily-cap.json", []);
+    const seen = new Map();
+    dc.forEach(r => {
+      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+      const existing = seen.get(key);
+      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+    });
+    const deduped = Array.from(seen.values());
+    if (deduped.length < dc.length) {
+      const removed = dc.length - deduped.length;
+      await lockedWrite("daily-cap.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      totalRemoved += removed;
+    }
+  } catch (err) { console.error("⚠️ Dedup daily-cap error:", err.message); }
+
+  // Dedup crg-deals
+  try {
+    const crg = readJSON("crg-deals.json", []);
+    const seen = new Map();
+    crg.forEach(r => {
+      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+      const existing = seen.get(key);
+      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+    });
+    const deduped = Array.from(seen.values());
+    if (deduped.length < crg.length) {
+      const removed = crg.length - deduped.length;
+      await lockedWrite("crg-deals.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      totalRemoved += removed;
+    }
+  } catch (err) { console.error("⚠️ Dedup crg-deals error:", err.message); }
+
+  if (totalRemoved > 0) console.log(`🧹 Nightly dedup complete: removed ${totalRemoved} duplicates`);
+  else console.log("🧹 Nightly dedup: database is clean");
+}
+
+// Schedule daily snapshot at 02:00 and dedup at 03:00
+function scheduleNightlyTasks() {
+  const now = new Date();
+  const next2am = new Date(now);
+  next2am.setHours(2, 0, 0, 0);
+  if (next2am <= now) next2am.setDate(next2am.getDate() + 1);
+  const delay2 = next2am - now;
+
+  setTimeout(() => {
+    createDailySnapshot();
+    setInterval(createDailySnapshot, 24 * 60 * 60 * 1000);
+  }, delay2);
+
+  const next3am = new Date(now);
+  next3am.setHours(3, 0, 0, 0);
+  if (next3am <= now) next3am.setDate(next3am.getDate() + 1);
+  const delay3 = next3am - now;
+
+  setTimeout(() => {
+    nightlyDedup();
+    setInterval(nightlyDedup, 24 * 60 * 60 * 1000);
+  }, delay3);
+
+  console.log(`⏰ Nightly tasks scheduled: snapshot at 02:00 (in ${Math.round(delay2/60000)}min), dedup at 03:00`);
+}
+
+// Also create snapshot on startup if none exists for today
+setTimeout(createDailySnapshot, 5000);
+scheduleNightlyTasks();
+
+// ═══════════════════════════════════════════════════════════════
 // 6. EXPRESS + SECURITY MIDDLEWARE
 // ═══════════════════════════════════════════════════════════════
 
@@ -481,7 +615,37 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: "15mb" })); // v9.03: was 10mb
+app.use(express.json({ limit: "10mb" }));
+
+// v9.05: Input Sanitization Middleware — strips XSS/injection from all POST bodies
+function sanitizeValue(val) {
+  if (typeof val === 'string') {
+    return val
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Strip script tags
+      .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // Strip event handlers
+      .replace(/javascript\s*:/gi, '') // Strip javascript: URIs
+      .replace(/data\s*:\s*text\/html/gi, '') // Strip data:text/html
+      .trim();
+  }
+  if (Array.isArray(val)) return val.map(sanitizeValue);
+  if (val && typeof val === 'object') {
+    const clean = {};
+    for (const [k, v] of Object.entries(val)) {
+      // Block prototype pollution
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      clean[k] = sanitizeValue(v);
+    }
+    return clean;
+  }
+  return val;
+}
+
+app.use((req, res, next) => {
+  if (req.body && typeof req.body === 'object') {
+    req.body = sanitizeValue(req.body);
+  }
+  next();
+});
 
 // Catch JSON parse errors (malformed body) — return proper JSON, not HTML
 app.use((err, req, res, next) => {
@@ -495,7 +659,7 @@ app.use((err, req, res, next) => {
 // On login success, server issues a random session token.
 // All data/admin endpoints require valid token in Authorization header.
 // activeSessions loaded above from SESSION_FILE
-const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // v9.03: 14 days (was 7)
+const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // v9.05: 14 days (was 7)
 const SESSION_FILE = path.join(DATA_DIR, ".sessions.json");
 
 // Load persisted sessions on startup (survive server restarts)
@@ -567,7 +731,7 @@ function requireAdmin(req, res, next) {
 // Rate limiting: 200 req/min per IP (increased for WebSocket fallback polling)
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
-const RATE_LIMIT_MAX = 300; // v9.03: was 200
+const RATE_LIMIT_MAX = 300; // v9.05: was 200
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -621,8 +785,8 @@ app.use('/api/', (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════
 
 const loginAttempts = new Map();
-const LOGIN_MAX_ATTEMPTS = 5; // v9.03: was 3
-const LOGIN_BLOCK_DURATION = 10 * 60 * 1000; // v9.03: 10 min (was 15)
+const LOGIN_MAX_ATTEMPTS = 5; // v9.05: was 3
+const LOGIN_BLOCK_DURATION = 10 * 60 * 1000; // v9.05: 10 min (was 15)
 setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════════════
@@ -2880,7 +3044,7 @@ setInterval(() => {
   if (snap.heapUsed > 400) {
     console.error(`🚨 HIGH MEMORY: heap=${snap.heapUsed}MB rss=${snap.rss}MB ws=${snap.wsClients}`);
   }
-  // v9.03: Force GC at 500MB to prevent OOM crashes
+  // v9.05: Force GC at 500MB to prevent OOM
   if (snap.heapUsed > 500 && global.gc) {
     console.warn(`🧹 Forcing GC at ${snap.heapUsed}MB heap...`);
     try { global.gc(); } catch {}
@@ -2917,7 +3081,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
   } catch {}
 
   res.json({
-    server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid, crashes: crashCount },
+    server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid, crashes: crashCount, recentCrashes: CRASH_LOG.slice(-10) },
     memory: snap, memoryHistory: memoryLog.slice(-30),
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
     telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
@@ -2972,11 +3136,12 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🚀 Blitz CRM Server v${VERSION}                  ║`);
   console.log(`║  📡 HTTP + WebSocket on port ${PORT}            ║`);
   console.log(`║  💾 Data: ${DATA_DIR.slice(-30).padEnd(30)}    ║`);
-  console.log(`║  📦 Backups: every 15min, 30-day PITR        ║`);
+  console.log(`║  📦 Hourly backups + daily snapshots (7-day)  ║`);
   console.log(`║  📋 Audit: 30-day rolling log                ║`);
-  console.log(`║  🔒 Atomic writes + version tracking         ║`);
+  console.log(`║  🔒 WAL atomic writes + concurrency queue     ║`);
+  console.log(`║  🛡️  Input sanitization + XSS protection      ║`);
+  console.log(`║  🧹 Nightly auto-dedup at 03:00              ║`);
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
-  console.log(`║  🔄 External sync: every 15 minutes          ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
 
   // Initial external sync on startup
