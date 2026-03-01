@@ -121,7 +121,7 @@ seedUsers();
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 
 // Telegram Group Chat IDs (hardcoded)
-const FINANCE_GROUP_CHAT_ID = "-1002830517753";
+const AFFILIte_FINANCE_GROUP_CHAT_ID = "-1002830517753";
 const BRANDS_GROUP_CHAT_ID = "-1002796530029";        // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
@@ -164,7 +164,7 @@ function getChatIdVariants(chatId) {
 // Test and log all configured chat IDs on startup
 function testChatIds() {
   const groups = [
-    { name: 'Finance', id: FINANCE_GROUP_CHAT_ID },
+    { name: 'Finance', id: AFFILIte_FINANCE_GROUP_CHAT_ID },
     { name: 'Brands', id: BRANDS_GROUP_CHAT_ID },
     { name: 'Offer', id: OFFER_GROUP_CHAT_ID },
     { name: 'Open Payment', id: OPEN_PAYMENT_GROUP_CHAT_ID },
@@ -960,9 +960,9 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         // Send to Affiliate group ONLY -1002830517753
         // Removed: send to Brands group for Paid status
         sendAffiliatePaymentNotification(p, true);
-      } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
-        // Send to Customer Payment group (Brands) only - removed Affiliate group notification
-        sendBrandPaymentNotification(p, false);
+    } else if (["Open", "On the way", "Approved to pay"].includes(p.status)) {
+        // Send to Affiliate group only (not to Brands group)
+        sendAffiliatePaymentNotification(p, false);
         // Send Approved to pay notification with tag to Open Payment group
         if (p.status === "Approved to pay") {
           sendApprovedToPayNotification(p);
@@ -977,8 +977,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       // Re-opening a previously paid payment notification
       else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") {
         sendOpenPaymentNotification(p);
-        // Also notify brands group
-        sendBrandPaymentNotification(p, false);
+        // Also notify affiliate group (not brands group)
+        sendAffiliatePaymentNotification(p, false);
         // Send Approved to pay notification with tag if status is Approved to pay
         if (p.status === "Approved to pay") {
           sendApprovedToPayNotification(p);
@@ -1485,7 +1485,7 @@ app.get("/api/health", (req, res) => {
 // 13. TELEGRAM BOT (preserved from v2.03)
 // ═══════════════════════════════════════════════════════════════
 
-function sendTelegramNotification(message, chatId = FINANCE_GROUP_CHAT_ID) {
+function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
     console.log("📱 Telegram notification skipped (no token configured)");
     return;
