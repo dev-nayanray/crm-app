@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.11";
+const VERSION = "9.12";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -2761,116 +2761,133 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
         {(() => {
           const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
           const savedTgt = JSON.parse(localStorage.getItem(targetKey) || '{}');
-          const globalBrandTarget = parseInt(savedTgt.__brandTarget) || 0;
-          const globalAffTarget = parseInt(savedTgt.__affTarget) || 0;
+          const getAgentTgt = (agent) => { const v = savedTgt[agent]; if (!v) return [0,0]; const p = String(v).split(","); return [parseInt(p[0]) || 0, parseInt(p[1]) || 0]; };
           const [editTgt, setEditTgt] = useState(false);
-          const [tmpBrand, setTmpBrand] = useState(String(globalBrandTarget || ""));
-          const [tmpAff, setTmpAff] = useState(String(globalAffTarget || ""));
+          const [tmpTgt, setTmpTgt] = useState({...savedTgt});
           const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
           const dayOfMonth = now.getDate();
           const pace = dayOfMonth / daysInMonth;
-          // Use MONTH data from Daily Cap
           const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
           const monthDcAll = dcEntries.filter(d => (d.date || "").startsWith(monthPrefix));
-          // Today's daily cap
           const todayStr = now.toISOString().split("T")[0];
           const todayDc = dcEntries.filter(d => d.date === todayStr);
           const todayBrands = todayDc.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
           const todayAff = todayDc.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
-          // Per-agent monthly totals
           const mAgentAff = {}; const mAgentBrand = {};
           monthDcAll.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
-          // Per-agent today
           const tAgentAff = {}; const tAgentBrand = {};
           todayDc.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; tAgentAff[a] = (tAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); tAgentBrand[a] = (tAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
           const totalBrands = Object.values(mAgentBrand).reduce((s, v) => s + v, 0);
           const totalAff = Object.values(mAgentAff).reduce((s, v) => s + v, 0);
           const avgBrands = dayOfMonth > 0 ? (totalBrands / dayOfMonth).toFixed(1) : 0;
           const avgAff = dayOfMonth > 0 ? (totalAff / dayOfMonth).toFixed(1) : 0;
-          const allA = [...new Set([...Object.keys(mAgentAff), ...Object.keys(mAgentBrand), ...Object.keys(tAgentAff), ...Object.keys(tAgentBrand)])].sort();
-          const brandPct = globalBrandTarget > 0 ? Math.round((totalBrands / globalBrandTarget) * 100) : null;
-          const affPct = globalAffTarget > 0 ? Math.round((totalAff / globalAffTarget) * 100) : null;
-          const thC = { padding: "7px 6px", textAlign: "center", fontWeight: 700, fontSize: 9, whiteSpace: "nowrap" };
+          const tgtAgents = Object.keys(savedTgt).filter(k => !k.startsWith("__"));
+          const allA = [...new Set([...Object.keys(mAgentAff), ...Object.keys(mAgentBrand), ...Object.keys(tAgentAff), ...Object.keys(tAgentBrand), ...tgtAgents])].sort();
+          const totalBrandTgt = allA.reduce((s, a) => s + getAgentTgt(a)[0], 0);
+          const totalAffTgt = allA.reduce((s, a) => s + getAgentTgt(a)[1], 0);
+          const brandPct = totalBrandTgt > 0 ? Math.round((totalBrands / totalBrandTgt) * 100) : null;
+          const affPct = totalAffTgt > 0 ? Math.round((totalAff / totalAffTgt) * 100) : null;
+          const pc = (v) => v === null ? "#94A3B8" : v >= 100 ? "#10B981" : v >= 70 ? "#F59E0B" : "#EF4444";
+          const thC = { padding: "7px 5px", textAlign: "center", fontWeight: 700, fontSize: 9, whiteSpace: "nowrap" };
           return allA.length > 0 || isAdmin(user.email) ? (
             <div style={{ ...cardStyle, marginBottom: 28 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Daily Sales & Targets</div>
-                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpBrand(String(globalBrandTarget || "")); setTmpAff(String(globalAffTarget || "")); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
+                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpTgt({...savedTgt}); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
               </div>
               {editTgt && (
-                <div style={{ marginBottom: 12, padding: 12, background: "#F8FAFC", borderRadius: 8, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", marginBottom: 4 }}>MONTHLY BRANDS TARGET</div>
-                    <input value={tmpBrand} onChange={e => setTmpBrand(e.target.value)} type="number" style={{ width: 100, padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 14, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }} placeholder="0" />
+                <div style={{ marginBottom: 12, padding: 12, background: "#F8FAFC", borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#64748B", marginBottom: 8 }}>SET MONTHLY TARGETS PER AGENT</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 6 }}>
+                    {allA.map(agent => { const cur = String(tmpTgt[agent] || ",").split(","); return (
+                      <div key={agent} style={{ display: "flex", alignItems: "center", gap: 4, background: "#FFF", padding: "4px 8px", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                        <span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", borderRadius: 4, fontSize: 10, fontWeight: 700, minWidth: 60, textAlign: "center" }}>{agent}</span>
+                        <span style={{ fontSize: 9, color: "#10B981", fontWeight: 700 }}>B:</span>
+                        <input value={cur[0] || ""} onChange={e => { const p = String(tmpTgt[agent] || ",").split(","); p[0] = e.target.value; setTmpTgt(prev => ({ ...prev, [agent]: p.join(",") })); }}
+                          style={{ width: 52, padding: "3px 4px", border: "1px solid #A7F3D0", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }} placeholder="0" type="number" />
+                        <span style={{ fontSize: 9, color: "#8B5CF6", fontWeight: 700 }}>A:</span>
+                        <input value={cur[1] || ""} onChange={e => { const p = String(tmpTgt[agent] || ",").split(","); p[1] = e.target.value; setTmpTgt(prev => ({ ...prev, [agent]: p.join(",") })); }}
+                          style={{ width: 52, padding: "3px 4px", border: "1px solid #C4B5FD", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }} placeholder="0" type="number" />
+                      </div>
+                    ); })}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#8B5CF6", marginBottom: 4 }}>MONTHLY AFFILIATES TARGET</div>
-                    <input value={tmpAff} onChange={e => setTmpAff(e.target.value)} type="number" style={{ width: 100, padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 6, fontSize: 14, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700 }} placeholder="0" />
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <button onClick={() => { const name = prompt("Agent name:"); if (name && name.trim()) setTmpTgt(p => ({ ...p, [name.trim()]: "," })); }} style={{ padding: "4px 12px", borderRadius: 6, background: "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Agent</button>
+                    <button onClick={() => { localStorage.setItem(targetKey, JSON.stringify(tmpTgt)); toast("✅ Targets saved!"); setEditTgt(false); window.location.reload(); }} style={{ padding: "4px 14px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Save</button>
                   </div>
-                  <button onClick={() => { const t = { ...savedTgt, __brandTarget: tmpBrand, __affTarget: tmpAff }; localStorage.setItem(targetKey, JSON.stringify(t)); toast("✅ Targets saved!"); setEditTgt(false); window.location.reload(); }} style={{ padding: "6px 16px", borderRadius: 6, background: "#10B981", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Save</button>
                 </div>
               )}
-              {/* Summary cards: Daily / Monthly / Average / Target */}
+              {/* Summary cards */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
                 <div style={{ padding: 12, background: "#ECFDF5", borderRadius: 10, border: "1px solid #A7F3D0" }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 6 }}>Brands Cap</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                     <div><div style={{ fontSize: 9, color: "#64748B" }}>Today</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{todayBrands}</div></div>
-                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{totalBrands}{globalBrandTarget > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{globalBrandTarget}</span>}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{totalBrands}{totalBrandTgt > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{totalBrandTgt}</span>}</div></div>
                     <div><div style={{ fontSize: 9, color: "#64748B" }}>Avg/day</div><div style={{ fontSize: 16, fontWeight: 800, color: "#10B981", fontFamily: "'JetBrains Mono',monospace" }}>{avgBrands}</div></div>
                   </div>
-                  {globalBrandTarget > 0 && <div style={{ height: 6, background: "#D1FAE5", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, brandPct)}%`, background: "#10B981", borderRadius: 3 }} /></div>}
+                  {totalBrandTgt > 0 && <div style={{ height: 6, background: "#D1FAE5", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, brandPct)}%`, background: "#10B981", borderRadius: 3 }} /></div>}
                 </div>
                 <div style={{ padding: 12, background: "#F5F3FF", borderRadius: 10, border: "1px solid #C4B5FD" }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 6 }}>Affiliates Cap</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                     <div><div style={{ fontSize: 9, color: "#64748B" }}>Today</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{todayAff}</div></div>
-                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{totalAff}{globalAffTarget > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{globalAffTarget}</span>}</div></div>
+                    <div><div style={{ fontSize: 9, color: "#64748B" }}>Monthly</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{totalAff}{totalAffTgt > 0 && <span style={{ fontSize: 9, color: "#94A3B8" }}>/{totalAffTgt}</span>}</div></div>
                     <div><div style={{ fontSize: 9, color: "#64748B" }}>Avg/day</div><div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", fontFamily: "'JetBrains Mono',monospace" }}>{avgAff}</div></div>
                   </div>
-                  {globalAffTarget > 0 && <div style={{ height: 6, background: "#EDE9FE", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, affPct)}%`, background: "#8B5CF6", borderRadius: 3 }} /></div>}
+                  {totalAffTgt > 0 && <div style={{ height: 6, background: "#EDE9FE", borderRadius: 3, overflow: "hidden", marginTop: 6 }}><div style={{ height: "100%", width: `${Math.min(100, affPct)}%`, background: "#8B5CF6", borderRadius: 3 }} /></div>}
                 </div>
               </div>
-              {/* Per-agent table */}
+              {/* Per-agent table with per-agent targets */}
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                   <thead><tr style={{ background: "#F8FAFC" }}>
                     <th style={{ ...thC, textAlign: "left", color: "#64748B" }}>Agent</th>
-                    <th style={{ ...thC, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>Today Brands</th>
+                    <th style={{ ...thC, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>Today B</th>
                     <th style={{ ...thC, color: "#10B981" }}>Monthly</th>
+                    <th style={{ ...thC, color: "#10B981" }}>Tgt</th>
                     <th style={{ ...thC, color: "#10B981" }}>Avg/d</th>
-                    <th style={{ ...thC, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>Today Aff</th>
+                    <th style={{ ...thC, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>Today A</th>
                     <th style={{ ...thC, color: "#8B5CF6" }}>Monthly</th>
+                    <th style={{ ...thC, color: "#8B5CF6" }}>Tgt</th>
                     <th style={{ ...thC, color: "#8B5CF6" }}>Avg/d</th>
                     <th style={{ ...thC, color: "#64748B", borderLeft: "2px solid #E2E8F0" }}>Status</th>
                   </tr></thead>
-                  <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0 || (tAgentAff[a] || 0) > 0 || (tAgentBrand[a] || 0) > 0).map(agent => {
+                  <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0 || (tAgentAff[a] || 0) > 0 || (tAgentBrand[a] || 0) > 0 || getAgentTgt(a)[0] > 0 || getAgentTgt(a)[1] > 0).map(agent => {
                     const bM = mAgentBrand[agent] || 0; const aM = mAgentAff[agent] || 0;
-                    const bT = tAgentBrand[agent] || 0; const aT = tAgentAff[agent] || 0;
+                    const bToday = tAgentBrand[agent] || 0; const aToday = tAgentAff[agent] || 0;
+                    const [bTgt, aTgt] = getAgentTgt(agent);
                     const bAvg = dayOfMonth > 0 ? (bM / dayOfMonth).toFixed(1) : "0";
                     const aAvg = dayOfMonth > 0 ? (aM / dayOfMonth).toFixed(1) : "0";
-                    const hasToday = bT > 0 || aT > 0;
+                    const bPct = bTgt > 0 ? Math.round((bM / bTgt) * 100) : null;
+                    const aPct = aTgt > 0 ? Math.round((aM / aTgt) * 100) : null;
+                    const onTrack = (bPct === null || bPct >= Math.round(pace * 100)) && (aPct === null || aPct >= Math.round(pace * 100));
+                    const completed = (bPct !== null && bPct >= 100) || (aPct !== null && aPct >= 100);
                     return (
                       <tr key={agent} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                        <td style={{ padding: "7px 8px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span></td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: bT > 0 ? "#10B981" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{bT}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{bM}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#94A3B8" }}>{bAvg}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: aT > 0 ? "#8B5CF6" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{aT}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{aM}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#94A3B8" }}>{aAvg}</td>
-                        <td style={{ padding: "6px 6px", textAlign: "center", fontSize: 14, borderLeft: "2px solid #E2E8F0" }}>{hasToday ? "✓" : "—"}</td>
+                        <td style={{ padding: "7px 6px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span></td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: bToday > 0 ? "#10B981" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{bToday}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{bM}{bPct !== null && <span style={{ fontSize: 8, color: pc(bPct), marginLeft: 2 }}>({bPct}%)</span>}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: bTgt > 0 ? "#10B981" : "#CBD5E1" }}>{bTgt || "—"}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#94A3B8" }}>{bAvg}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: aToday > 0 ? "#8B5CF6" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{aToday}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{aM}{aPct !== null && <span style={{ fontSize: 8, color: pc(aPct), marginLeft: 2 }}>({aPct}%)</span>}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: aTgt > 0 ? "#8B5CF6" : "#CBD5E1" }}>{aTgt || "—"}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#94A3B8" }}>{aAvg}</td>
+                        <td style={{ padding: "5px 4px", textAlign: "center", fontSize: 13, borderLeft: "2px solid #E2E8F0" }}>{completed ? "🏆" : onTrack ? "✓" : "⚠"}</td>
                       </tr>
                     );
                   })}</tbody>
                   <tfoot><tr style={{ background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
-                    <td style={{ padding: "7px 8px", fontWeight: 800, fontSize: 11 }}>Total</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>{todayBrands}</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#10B981" }}>{totalBrands}</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#64748B" }}>{avgBrands}</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>{todayAff}</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: "#8B5CF6" }}>{totalAff}</td>
-                    <td style={{ padding: "6px 6px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#64748B" }}>{avgAff}</td>
+                    <td style={{ padding: "7px 6px", fontWeight: 800, fontSize: 11 }}>Total</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#10B981", borderLeft: "2px solid #E2E8F0" }}>{todayBrands}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#10B981" }}>{totalBrands}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#10B981" }}>{totalBrandTgt || "—"}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#64748B" }}>{avgBrands}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", borderLeft: "2px solid #E2E8F0" }}>{todayAff}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6" }}>{totalAff}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#8B5CF6" }}>{totalAffTgt || "—"}</td>
+                    <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#64748B" }}>{avgAff}</td>
                     <td style={{ borderLeft: "2px solid #E2E8F0" }}></td>
                   </tr></tfoot>
                 </table>
@@ -3606,40 +3623,48 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
           {/* Restore moved to Admin Panel */}
         </div>
 
-        {/* ═══ Monthly Targets ═══ */}
+        {/* ═══ Monthly Targets Per Agent ═══ */}
         {isAdmin(user.email) && (() => {
           const targetKey = `blitz_cap_targets_${now.getFullYear()}_${now.getMonth()}`;
           const savedTgt = JSON.parse(localStorage.getItem(targetKey) || '{}');
-          const [brandTarget, setBrandTarget] = useState(String(savedTgt.__brandTarget || ""));
-          const [affTarget, setAffTarget] = useState(String(savedTgt.__affTarget || ""));
+          const [targets, setTargets] = useState({...savedTgt});
+          const agentKeys = Object.keys(targets).filter(k => !k.startsWith("__")).sort();
+
+          const getVal = (agent, idx) => { const p = String(targets[agent] || ",").split(","); return p[idx] || ""; };
+          const setVal = (agent, idx, val) => { const p = String(targets[agent] || ",").split(","); p[idx] = val; setTargets(prev => ({ ...prev, [agent]: p.join(",") })); };
 
           const saveTargets = () => {
-            const t = { ...savedTgt, __brandTarget: brandTarget, __affTarget: affTarget };
-            localStorage.setItem(targetKey, JSON.stringify(t));
+            localStorage.setItem(targetKey, JSON.stringify(targets));
             alert("✅ Targets saved for " + MONTHS[now.getMonth()]);
           };
 
           return (
             <div style={sectionStyle}>
-              <div style={sectionTitle}>🎯 Monthly Targets — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
-              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Set monthly cap targets. Actuals are calculated from Daily Cap totals. Dashboard shows daily/monthly/average breakdown per agent.</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-                <div style={{ padding: 16, background: "#ECFDF5", borderRadius: 12, border: "1px solid #A7F3D0" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#10B981", textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>Daily Sales — Brands Cap</div>
-                  <div style={{ fontSize: 10, color: "#64748B", marginBottom: 8 }}>Monthly target for total Brands cap across all agents</div>
-                  <input value={brandTarget} onChange={e => setBrandTarget(e.target.value)} type="number"
-                    style={{ width: "100%", padding: "10px 12px", border: "2px solid #A7F3D0", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#10B981", background: "#FFF", outline: "none" }} placeholder="0" />
-                  {brandTarget && <div style={{ fontSize: 10, color: "#64748B", marginTop: 6 }}>≈ {Math.round(parseInt(brandTarget) / 30)} avg/day needed</div>}
-                </div>
-                <div style={{ padding: 16, background: "#F5F3FF", borderRadius: 12, border: "1px solid #C4B5FD" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#8B5CF6", textTransform: "uppercase", marginBottom: 4, letterSpacing: 0.5 }}>Daily Sales — Affiliates Cap</div>
-                  <div style={{ fontSize: 10, color: "#64748B", marginBottom: 8 }}>Monthly target for total Affiliates cap across all agents</div>
-                  <input value={affTarget} onChange={e => setAffTarget(e.target.value)} type="number"
-                    style={{ width: "100%", padding: "10px 12px", border: "2px solid #C4B5FD", borderRadius: 8, fontSize: 20, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6", background: "#FFF", outline: "none" }} placeholder="0" />
-                  {affTarget && <div style={{ fontSize: 10, color: "#64748B", marginTop: 6 }}>≈ {Math.round(parseInt(affTarget) / 30)} avg/day needed</div>}
-                </div>
+              <div style={sectionTitle}>🎯 Monthly Targets Per Agent — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
+              <div style={{ fontSize: 12, color: "#64748B", marginBottom: 16 }}>Set individual Brands Cap and Affiliates Cap targets per agent. Dashboard will show progress vs these targets.</div>
+              {agentKeys.length === 0 && <div style={{ color: "#94A3B8", fontSize: 12, marginBottom: 12 }}>No agents yet. Add agents below or they will appear from Daily Cap data.</div>}
+              <div style={{ display: "grid", gap: 8, marginBottom: 16 }}>
+                {agentKeys.map(agent => (
+                  <div key={agent} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#F8FAFC", borderRadius: 10, border: "1px solid #E2E8F0" }}>
+                    <span style={{ display: "inline-block", padding: "3px 0", background: getPersonColor(agent), color: "#FFF", borderRadius: 5, fontSize: 12, fontWeight: 700, minWidth: 75, textAlign: "center" }}>{agent}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", marginBottom: 2 }}>Brands Cap Target</div>
+                      <input value={getVal(agent, 0)} onChange={e => setVal(agent, 0, e.target.value)} type="number"
+                        style={{ width: "100%", padding: "6px 8px", border: "2px solid #A7F3D0", borderRadius: 6, fontSize: 16, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#10B981", background: "#FFF" }} placeholder="0" />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#8B5CF6", marginBottom: 2 }}>Affiliates Cap Target</div>
+                      <input value={getVal(agent, 1)} onChange={e => setVal(agent, 1, e.target.value)} type="number"
+                        style={{ width: "100%", padding: "6px 8px", border: "2px solid #C4B5FD", borderRadius: 6, fontSize: 16, fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6", background: "#FFF" }} placeholder="0" />
+                    </div>
+                    <button onClick={() => setTargets(p => { const n = {...p}; delete n[agent]; return n; })} title="Remove" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: "6px 8px", cursor: "pointer", color: "#DC2626", fontSize: 14, fontWeight: 700 }}>×</button>
+                  </div>
+                ))}
               </div>
-              <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>💾 Save Targets</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { const name = prompt("Agent name:"); if (name && name.trim()) setTargets(p => ({ ...p, [name.trim()]: "," })); }} style={btnStyle("#0EA5E9")}>+ Add Agent</button>
+                <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>💾 Save Targets</button>
+              </div>
             </div>
           );
         })()}
