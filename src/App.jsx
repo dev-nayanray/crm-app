@@ -283,8 +283,10 @@ function MobileNav({ pages, current, userAccess, onNav, onClose }) {
       { key: "deals", label: "🏷️ Offers", color: "#10B981" },
       { key: "dailycap", label: "📈 Daily Cap", color: "#8B5CF6" },
     ]},
-    { title: "Hunting", items: [
+    { title: "Info", items: [
       { key: "partners", label: "🎯 Partners", color: "#EC4899" },
+      { key: "monthlystats", label: "📊 Monthly Stats", color: "#6366F1" },
+      { key: "ftdsinfo", label: "📈 FTDs Info", color: "#10B981" },
     ]},
     { title: null, items: [
       { key: "settings", label: "⚙️ Settings", color: "#64748B" },
@@ -419,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.06";
+const VERSION = "9.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1180,8 +1182,10 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
       { key: "deals", label: "Offers", color: "#10B981" },
       { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
     ]},
-    { label: "Hunting", icon: "🎯", type: "dropdown", color: "#EC4899", items: [
+    { label: "Info", icon: "📊", type: "dropdown", color: "#EC4899", items: [
       { key: "partners", label: "Partners", color: "#EC4899" },
+      { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+      { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
     ]},
     { label: "Settings", icon: "⚙️", type: "single", key: "settings", color: "#64748B" },
   ];
@@ -1195,6 +1199,8 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
     { key: "deals", label: "Offers", color: "#10B981" },
     { key: "partners", label: "Partners", color: "#EC4899" },
+    { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+    { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
     { key: "settings", label: "Settings", color: "#64748B" },
   ];
   if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
@@ -1607,6 +1613,8 @@ const ALL_PAGES = [
   { key: "dailycap", label: "Daily Cap", color: "#8B5CF6" },
   { key: "deals", label: "Offers", color: "#10B981" },
   { key: "partners", label: "Partners", color: "#EC4899" },
+  { key: "monthlystats", label: "Monthly Stats", color: "#6366F1" },
+  { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
   { key: "settings", label: "Settings", color: "#64748B" },
 ];
 
@@ -2879,6 +2887,511 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
             </button>
           ))}
         </div>
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FTDS INFO PAGE — FTD tracking table grouped by day (v9.06)
+// ═══════════════════════════════════════════════════════════════
+function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, userAccess }) {
+  const crg = Array.isArray(rawCrg) ? rawCrg : [];
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+
+  // ── Period filter ──
+  const [period, setPeriod] = useState("month");
+  const [customFrom, setCustomFrom] = useState(today);
+  const [customTo, setCustomTo] = useState(today);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [countryFilter, setCountryFilter] = useState("all");
+
+  // Compute date range
+  const getRange = () => {
+    if (period === "today") return { from: today, to: today };
+    if (period === "yesterday") { const d = new Date(now); d.setDate(d.getDate() - 1); const y = d.toISOString().split("T")[0]; return { from: y, to: y }; }
+    if (period === "week") { const d = new Date(now); const dow = d.getDay() || 7; d.setDate(d.getDate() - dow + 1); return { from: d.toISOString().split("T")[0], to: today }; }
+    if (period === "month") { return { from: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`, to: today }; }
+    if (period === "custom") return { from: customFrom, to: customTo };
+    return { from: today, to: today };
+  };
+  const range = getRange();
+
+  // Extract country from affiliate field (e.g. "211 UK" → "UK", "47 DE" → "DE")
+  const extractCountry = (aff) => { const m = (aff || "").match(/[A-Z]{2,4}$/); return m ? m[0] : "??"; };
+
+  // Extract affiliate ID from affiliate field (e.g. "211 UK" → "211")
+  const extractAffId = (aff) => { const m = (aff || "").match(/^[*]?(\d+)/); return m ? m[1] : ""; };
+
+  // Extract affiliate name — from deals data the affiliate field is like "211 UK", brand info is in brokerCap
+  // Based on the Telegram messages: "211 - ExTraffic 🟢 -> 3102 - Helios New CRG"
+  // affiliate field stores "211 UK", brokerCap stores "3102" or brand name
+
+  // Filter CRG deals in range
+  const filtered = crg.filter(d => {
+    const date = d.date || "";
+    if (date < range.from || date > range.to) return false;
+    if (countryFilter !== "all" && extractCountry(d.affiliate) !== countryFilter) return false;
+    if (searchTerm) {
+      const s = searchTerm.toLowerCase();
+      const affMatch = (d.affiliate || "").toLowerCase().includes(s);
+      const brokerMatch = (d.brokerCap || "").toLowerCase().includes(s);
+      const managerMatch = (d.manageAff || "").toLowerCase().includes(s);
+      if (!affMatch && !brokerMatch && !managerMatch) return false;
+    }
+    return true;
+  });
+
+  // Group by date (descending)
+  const grouped = {};
+  filtered.forEach(d => {
+    const date = d.date || "unknown";
+    if (!grouped[date]) grouped[date] = [];
+    grouped[date].push(d);
+  });
+  const sortedDates = Object.keys(grouped).sort().reverse();
+
+  // All countries for filter
+  const allCountries = [...new Set(crg.filter(d => d.date >= range.from && d.date <= range.to).map(d => extractCountry(d.affiliate)))].sort();
+
+  // Summary stats
+  const totalFtds = filtered.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+  const totalCap = filtered.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+  const totalReceived = filtered.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+
+  // Format date for display
+  const fmtDate = (ds) => {
+    if (!ds) return "—";
+    const [y, m, d] = ds.split("-");
+    const dt = new Date(ds + "T00:00:00");
+    const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    return `${dayNames[dt.getDay()]}, ${d}/${m}/${y}`;
+  };
+
+  const btnStyle = (active) => ({
+    padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid",
+    background: active ? "linear-gradient(135deg,#10B981,#34D399)" : "#FFF",
+    borderColor: active ? "#10B981" : "#E2E8F0",
+    color: active ? "#FFF" : "#64748B",
+  });
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="ftdsinfo" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
+
+      <main className="blitz-main" style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 32px" }}>
+        <h2 style={{ margin: "0 0 20px", fontSize: 22, fontWeight: 800, color: "#334155" }}>📈 FTDs Info</h2>
+
+        {/* ── Summary Cards ── */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12, marginBottom: 20 }}>
+          {[
+            { label: "Total FTDs", value: totalFtds, color: "#10B981" },
+            { label: "Total Cap", value: totalCap, color: "#0EA5E9" },
+            { label: "Received", value: totalReceived, color: "#8B5CF6" },
+            { label: "Remaining", value: totalCap - totalReceived, color: "#F59E0B" },
+            { label: "Deals", value: filtered.length, color: "#EC4899" },
+            { label: "Days", value: sortedDates.length, color: "#6366F1" },
+          ].map((c, i) => (
+            <div key={i} style={{ padding: "14px 16px", background: "#FFF", borderRadius: 12, border: "1px solid #E2E8F0", borderLeft: `3px solid ${c.color}`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Filters ── */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16, alignItems: "center" }}>
+          {["today", "yesterday", "week", "month", "custom"].map(p => (
+            <button key={p} onClick={() => setPeriod(p)} style={btnStyle(period === p)}>{p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : p === "week" ? "This Week" : p === "month" ? "This Month" : "Custom"}</button>
+          ))}
+          {period === "custom" && <>
+            <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
+            <span style={{ color: "#94A3B8" }}>→</span>
+            <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontFamily: "'JetBrains Mono',monospace" }} />
+          </>}
+          <span style={{ color: "#CBD5E1" }}>|</span>
+          <select value={countryFilter} onChange={e => setCountryFilter(e.target.value)} style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, fontWeight: 600, color: "#475569", background: "#FFF" }}>
+            <option value="all">All Countries</option>
+            {allCountries.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search affiliate, brand..." style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: 12, width: 180 }} />
+        </div>
+
+        {/* ── FTD Table grouped by day ── */}
+        {sortedDates.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 60, color: "#94A3B8", fontSize: 14 }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📈</div>
+            No FTD data for the selected period.
+          </div>
+        ) : sortedDates.map(date => {
+          const dayDeals = grouped[date];
+          const dayFtd = dayDeals.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          const dayCap = dayDeals.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const dayRec = dayDeals.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+
+          return (
+            <div key={date} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              {/* Day Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px", background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)", borderBottom: "2px solid #E2E8F0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "#334155" }}>📅 {fmtDate(date)}</span>
+                  <span style={{ padding: "3px 10px", borderRadius: 20, background: "rgba(16,185,129,0.1)", color: "#10B981", fontSize: 11, fontWeight: 700 }}>{dayDeals.length} deals</span>
+                </div>
+                <div style={{ display: "flex", gap: 16, fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>
+                  <span style={{ color: "#10B981" }}>FTD: {dayFtd}</span>
+                  <span style={{ color: "#0EA5E9" }}>Cap: {dayCap}</span>
+                  <span style={{ color: "#8B5CF6" }}>Rec: {dayRec}</span>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: "#F8FAFC" }}>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>#</th>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Country</th>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Affiliate</th>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Aff ID</th>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Brand</th>
+                      <th style={{ padding: "8px 16px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Brand ID</th>
+                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Cap</th>
+                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Received</th>
+                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>FTD</th>
+                      <th style={{ padding: "8px 16px", textAlign: "center", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dayDeals.map((d, i) => {
+                      const country = extractCountry(d.affiliate);
+                      const affId = extractAffId(d.affiliate);
+                      const affName = (d.affiliate || "").replace(/^[*]?\d+\s*[-]?\s*/, "").replace(/\s*[A-Z]{2,4}$/, "").trim() || d.affiliate || "—";
+                      // Brand info: brokerCap might be "3102" or "Helios New CRG" or "3102 - Helios"
+                      const brokerRaw = (d.brokerCap || "").trim();
+                      const brandIdMatch = brokerRaw.match(/^(\d+)/);
+                      const brandId = brandIdMatch ? brandIdMatch[1] : "";
+                      const brandName = brokerRaw.replace(/^\d+\s*[-]?\s*/, "").trim() || brokerRaw || "—";
+                      const ftd = parseInt(d.ftd) || 0;
+                      const cap = parseInt(d.cap) || 0;
+                      const rec = parseInt(d.capReceived) || 0;
+                      const started = d.started;
+
+                      return (
+                        <tr key={d.id || i} style={{ borderBottom: "1px solid #F1F5F9" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "rgba(16,185,129,0.03)"}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "8px 16px", color: "#94A3B8", fontSize: 11 }}>{i + 1}</td>
+                          <td style={{ padding: "8px 16px", fontWeight: 700 }}>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", borderRadius: 6, background: `${getPersonColor(country)}15`, color: getPersonColor(country), fontSize: 12, fontWeight: 700 }}>
+                              {country}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 16px", fontWeight: 600, color: "#334155" }}>{affName}</td>
+                          <td style={{ padding: "8px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0EA5E9", fontWeight: 700 }}>{affId}</td>
+                          <td style={{ padding: "8px 16px", fontWeight: 600, color: "#334155" }}>{brandName}</td>
+                          <td style={{ padding: "8px 16px", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700 }}>{brandId}</td>
+                          <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#0EA5E9" }}>{cap}</td>
+                          <td style={{ padding: "8px 16px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: "#8B5CF6" }}>{rec}</td>
+                          <td style={{ padding: "8px 16px", textAlign: "center" }}>
+                            <span style={{ padding: "2px 10px", borderRadius: 8, fontWeight: 700, fontSize: 12, fontFamily: "'JetBrains Mono',monospace",
+                              background: ftd > 0 ? "rgba(16,185,129,0.1)" : "rgba(148,163,184,0.1)",
+                              color: ftd > 0 ? "#10B981" : "#94A3B8" }}>{ftd}</span>
+                          </td>
+                          <td style={{ padding: "8px 16px", textAlign: "center" }}>
+                            {started ? <span style={{ color: "#10B981", fontWeight: 700 }}>✅</span> : <span style={{ color: "#EF4444", fontWeight: 700 }}>❌</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MONTHLY STATISTICS PAGE — Blitz Report (v9.06)
+// ═══════════════════════════════════════════════════════════════
+function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dcEntries: rawDc, cpPayments: rawCp, payments: rawPay, dealsData: rawDeals, partnersData: rawPartners, userAccess }) {
+  const crg = Array.isArray(rawCrg) ? rawCrg : [];
+  const dc = Array.isArray(rawDc) ? rawDc : [];
+  const cp = Array.isArray(rawCp) ? rawCp : [];
+  const pay = Array.isArray(rawPay) ? rawPay : [];
+  const deals = Array.isArray(rawDeals) ? rawDeals : [];
+  const partners = Array.isArray(rawPartners) ? rawPartners : [];
+
+  const now = new Date();
+  const today = now.toISOString().split("T")[0];
+  const yesterday = (() => { const d = new Date(now); d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; })();
+  const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const dayOfMonth = now.getDate();
+
+  // ── FTD calculations ──
+  const ftdVal = (row) => parseInt(row.ftd) || 0;
+  const capVal = (row) => parseInt(row.cap) || 0;
+  const capRecVal = (row) => parseInt(row.capReceived) || 0;
+
+  // Yesterday FTDs
+  const yFtds = crg.filter(d => d.date === yesterday).reduce((s, d) => s + ftdVal(d), 0);
+  // Monthly FTDs (this month)
+  const monthlyFtds = crg.filter(d => d.date >= monthStart && d.date <= today).reduce((s, d) => s + ftdVal(d), 0);
+  // Monthly EST (projection based on current pace)
+  const monthlyEst = dayOfMonth > 0 ? Math.round((monthlyFtds / dayOfMonth) * daysInMonth) : monthlyFtds;
+
+  // ── Refund data (from customer-payments with negative amounts or "Refund" status) ──
+  const monthCp = cp.filter(p => {
+    const d = p.date || p.paidDate || p.receivedDate || "";
+    return d >= monthStart && d <= today;
+  });
+  const refundAffiliates = monthCp.filter(p => (p.type || "").toLowerCase().includes("refund") && !(p.brand || "")).length;
+  const refundBrands = monthCp.filter(p => (p.type || "").toLowerCase().includes("refund") && (p.brand || "")).length;
+
+  // ── CRG cap ──
+  const yCrgCap = crg.filter(d => d.date === yesterday).reduce((s, d) => s + capVal(d), 0);
+
+  // ── Partners (new this month) ──
+  const newAffiliates = partners.filter(p => (p.type || "").toLowerCase().includes("affiliate") && (p.createdAt || p.dateAdded || "") >= monthStart).length;
+  const newBrands = partners.filter(p => (p.type || "").toLowerCase().includes("brand") && (p.createdAt || p.dateAdded || "") >= monthStart).length;
+
+  // ── Records tracking (from localStorage or computed) ──
+  const recordsKey = `blitz_records_${now.getFullYear()}`;
+  const savedRecords = JSON.parse(localStorage.getItem(recordsKey) || '{}');
+  const [records, setRecords] = useState({
+    dailyFtds: savedRecords.dailyFtds || { value: 0, date: "" },
+    weekendFtds: savedRecords.weekendFtds || { value: 0, date: "" },
+    weeklyFtds: savedRecords.weeklyFtds || { value: 0, date: "" },
+    monthlyFtds: savedRecords.monthlyFtds || { value: 0, date: "" },
+    highestDailyCap: savedRecords.highestDailyCap || { value: 0, date: "" },
+  });
+  // ── Sales targets from localStorage ──
+  const targetKey = `blitz_sales_targets_${now.getFullYear()}_${now.getMonth()}`;
+  const savedTargets = JSON.parse(localStorage.getItem(targetKey) || '{}');
+  const [salesTarget, setSalesTarget] = useState(savedTargets.salesTarget || "");
+  const [superTarget, setSuperTarget] = useState(savedTargets.superTarget || "");
+
+  // ── Compute daily FTDs for today — auto-update records ──
+  const todayFtds = crg.filter(d => d.date === today).reduce((s, d) => s + ftdVal(d), 0);
+
+  // ── Compute yesterday's total CRG cap ──
+  const yCrgCapTotal = crg.filter(d => d.date === yesterday).reduce((s, d) => s + capVal(d), 0);
+
+  // Auto-check records
+  useEffect(() => {
+    let changed = false;
+    const updated = { ...records };
+    if (todayFtds > (records.dailyFtds.value || 0)) { updated.dailyFtds = { value: todayFtds, date: today }; changed = true; }
+    if (monthlyFtds > (records.monthlyFtds.value || 0)) { updated.monthlyFtds = { value: monthlyFtds, date: `${MONTHS[now.getMonth()]} ${now.getFullYear()}` }; changed = true; }
+    if (yCrgCapTotal > (records.highestDailyCap.value || 0)) { updated.highestDailyCap = { value: yCrgCapTotal, date: yesterday }; changed = true; }
+    if (changed) { setRecords(updated); localStorage.setItem(recordsKey, JSON.stringify(updated)); }
+  }, [todayFtds, monthlyFtds, yCrgCapTotal]);
+
+  // ── Yesterday's brand recap (🐦 icon from screenshot) ──
+  const yBrandFtds = 0; // Placeholder — can be wired to brand-specific tracking later
+  const monthlyBrandFtds = 0;
+  const monthlyBrandEst = 0;
+
+  const admin = isAdmin(user.email);
+
+  // Save targets handler
+  const saveTargets = () => {
+    localStorage.setItem(targetKey, JSON.stringify({ salesTarget, superTarget }));
+    alert("✅ Targets saved!");
+  };
+
+  // Save records handler (manual edit)
+  const saveRecords = () => {
+    localStorage.setItem(recordsKey, JSON.stringify(records));
+    alert("✅ Records saved!");
+  };
+
+  // ── Styles ──
+  const cellStyle = { padding: "10px 16px", fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", borderBottom: "1px solid #E2E8F0" };
+  const headerCell = { ...cellStyle, fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, background: "#F8FAFC" };
+  const labelCell = { ...cellStyle, textAlign: "left", fontWeight: 700, color: "#334155", fontSize: 13, background: "#F8FAFC", minWidth: 120 };
+  const valCell = (bg) => ({ ...cellStyle, background: bg || "#FFF", color: "#0F172A" });
+  const greenBg = "rgba(16,185,129,0.08)";
+  const blueBg = "rgba(56,189,248,0.08)";
+  const amberBg = "rgba(245,158,11,0.08)";
+  const pinkBg = "rgba(236,72,153,0.08)";
+  const sectionGap = { height: 16 };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
+
+      <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📊 Blitz Report</h2>
+          <span style={{ fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "4px 12px", borderRadius: 8 }}>{String(now.getDate()).padStart(2,"0")}/{String(now.getMonth()+1).padStart(2,"0")}/{now.getFullYear()}</span>
+        </div>
+
+        {/* ═══ MAIN REPORT TABLE ═══ */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: 20 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <tbody>
+              {/* ── Row 1: FTD summary ── */}
+              <tr>
+                <td style={labelCell}>{String(now.getDate()).padStart(2,"0")}/{String(now.getMonth()+1).padStart(2,"0")}/{now.getFullYear()}</td>
+                <td style={headerCell}>Y FTDs</td>
+                <td style={headerCell}>Monthly FTDs</td>
+                <td style={headerCell}>Monthly EST</td>
+                <td style={headerCell} colSpan={2}>Sales Target</td>
+              </tr>
+              <tr>
+                <td style={labelCell}></td>
+                <td style={valCell(blueBg)}>{yFtds}</td>
+                <td style={valCell(blueBg)}>{monthlyFtds}</td>
+                <td style={valCell(greenBg)}>{monthlyEst}</td>
+                <td style={{ ...cellStyle, background: amberBg, borderBottom: "1px solid #E2E8F0" }} colSpan={2}>
+                  {admin ? <input value={salesTarget} onChange={e => setSalesTarget(e.target.value)} style={{ width: 60, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} placeholder="—" /> : (salesTarget || "—")}
+                </td>
+              </tr>
+              <tr>
+                <td style={labelCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell} colSpan={2}>Super Target</td>
+              </tr>
+              <tr>
+                <td style={labelCell}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={{ ...cellStyle, background: greenBg }} colSpan={2}>
+                  {admin ? <input value={superTarget} onChange={e => setSuperTarget(e.target.value)} style={{ width: 60, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} placeholder="—" /> : (superTarget || "—")}
+                </td>
+              </tr>
+
+              {/* ── Spacer ── */}
+              <tr><td colSpan={6} style={sectionGap}></td></tr>
+
+              {/* ── Row 2: New affiliates & brands ── */}
+              <tr>
+                <td style={labelCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell}></td>
+                <td style={headerCell}>New Affiliates</td>
+                <td style={headerCell}>New Brands</td>
+              </tr>
+              <tr>
+                <td style={labelCell}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(blueBg)}>{newAffiliates}</td>
+                <td style={valCell(greenBg)}>{newBrands}</td>
+              </tr>
+
+              {/* ── Spacer ── */}
+              <tr><td colSpan={6} style={sectionGap}></td></tr>
+
+              {/* ── Row 3: CRG Cap ── */}
+              <tr>
+                <td style={headerCell}>Y CRG Cap</td>
+                <td style={headerCell}>Highest Daily CRG Cap</td>
+                <td style={headerCell} colSpan={2}></td>
+                <td style={headerCell}>Refund Affiliates</td>
+                <td style={headerCell}>Refund Brands</td>
+              </tr>
+              <tr>
+                <td style={valCell(blueBg)}>{yCrgCap}</td>
+                <td style={valCell(amberBg)}>
+                  <div>{records.highestDailyCap.value || 0}</div>
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>{records.highestDailyCap.date || "—"}</div>
+                </td>
+                <td style={valCell()} colSpan={2}></td>
+                <td style={valCell(pinkBg)}>{refundAffiliates}</td>
+                <td style={valCell(pinkBg)}>{refundBrands}</td>
+              </tr>
+
+              {/* ── Spacer ── */}
+              <tr><td colSpan={6} style={sectionGap}></td></tr>
+
+              {/* ── Row 4: Blitz Records ── */}
+              <tr>
+                <td style={labelCell}>Blitz Records</td>
+                <td style={headerCell}>Daily FTDs</td>
+                <td style={headerCell}>Weekend FTDs</td>
+                <td style={headerCell}>Weekly FTDs</td>
+                <td style={headerCell} colSpan={2}>Monthly FTDs</td>
+              </tr>
+              <tr>
+                <td style={labelCell}></td>
+                <td style={valCell(greenBg)}>
+                  {admin ? <input value={records.dailyFtds.value} onChange={e => setRecords(p => ({...p, dailyFtds: {...p.dailyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.dailyFtds.value || 0)}
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
+                    {admin ? <input value={records.dailyFtds.date} onChange={e => setRecords(p => ({...p, dailyFtds: {...p.dailyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.dailyFtds.date || "—")}
+                  </div>
+                </td>
+                <td style={valCell(greenBg)}>
+                  {admin ? <input value={records.weekendFtds.value} onChange={e => setRecords(p => ({...p, weekendFtds: {...p.weekendFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.weekendFtds.value || 0)}
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
+                    {admin ? <input value={records.weekendFtds.date} onChange={e => setRecords(p => ({...p, weekendFtds: {...p.weekendFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.weekendFtds.date || "—")}
+                  </div>
+                </td>
+                <td style={valCell(greenBg)}>
+                  {admin ? <input value={records.weeklyFtds.value} onChange={e => setRecords(p => ({...p, weeklyFtds: {...p.weeklyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.weeklyFtds.value || 0)}
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
+                    {admin ? <input value={records.weeklyFtds.date} onChange={e => setRecords(p => ({...p, weeklyFtds: {...p.weeklyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.weeklyFtds.date || "—")}
+                  </div>
+                </td>
+                <td style={valCell(greenBg)} colSpan={2}>
+                  {admin ? <input value={records.monthlyFtds.value} onChange={e => setRecords(p => ({...p, monthlyFtds: {...p.monthlyFtds, value: parseInt(e.target.value) || 0}}))} style={{ width: 50, padding: "2px 4px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }} /> : (records.monthlyFtds.value || 0)}
+                  <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 500 }}>
+                    {admin ? <input value={records.monthlyFtds.date} onChange={e => setRecords(p => ({...p, monthlyFtds: {...p.monthlyFtds, date: e.target.value}}))} style={{ width: 80, padding: "1px 3px", border: "1px solid #E2E8F0", borderRadius: 3, fontSize: 10, textAlign: "center" }} /> : (records.monthlyFtds.date || "—")}
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── Target Progress Bar ── */}
+        {salesTarget && (
+          <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {MONTHS[now.getMonth()]} {now.getFullYear()}</div>
+            {[
+              { label: "Sales Target", target: parseInt(salesTarget) || 0, color: "#F59E0B" },
+              ...(superTarget ? [{ label: "Super Target", target: parseInt(superTarget) || 0, color: "#10B981" }] : []),
+            ].map(t => {
+              const pct = t.target > 0 ? Math.min(100, Math.round((monthlyFtds / t.target) * 100)) : 0;
+              const estPct = t.target > 0 ? Math.min(100, Math.round((monthlyEst / t.target) * 100)) : 0;
+              return (
+                <div key={t.label} style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 4 }}>
+                    <span>{t.label}: {t.target}</span>
+                    <span>{monthlyFtds}/{t.target} ({pct}%) — EST: {monthlyEst} ({estPct}%)</span>
+                  </div>
+                  <div style={{ height: 20, background: "#F1F5F9", borderRadius: 10, overflow: "hidden", position: "relative" }}>
+                    <div style={{ position: "absolute", height: "100%", width: `${estPct}%`, background: `${t.color}30`, borderRadius: 10, transition: "width 0.5s" }} />
+                    <div style={{ position: "absolute", height: "100%", width: `${pct}%`, background: `linear-gradient(90deg, ${t.color}, ${t.color}CC)`, borderRadius: 10, transition: "width 0.5s", display: "flex", alignItems: "center", justifyContent: "flex-end", paddingRight: 8 }}>
+                      {pct > 15 && <span style={{ fontSize: 10, fontWeight: 700, color: "#FFF" }}>{pct}%</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Admin: Save buttons ── */}
+        {admin && (
+          <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+            <button onClick={saveTargets} style={{ padding: "10px 20px", borderRadius: 10, background: "linear-gradient(135deg,#F59E0B,#FBBF24)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(245,158,11,0.3)" }}>💾 Save Targets</button>
+            <button onClick={saveRecords} style={{ padding: "10px 20px", borderRadius: 10, background: "linear-gradient(135deg,#6366F1,#818CF8)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(99,102,241,0.3)" }}>🏆 Save Records</button>
+          </div>
+        )}
       </main>
     </div>
   );
@@ -5981,6 +6494,8 @@ function AppInner() {
   if (page === "dailycap" && canAccess("dailycap")) return (<><DailyCap user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} entries={dcEntries} setEntries={setDcEntries} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
+  if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
+  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
