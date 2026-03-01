@@ -167,10 +167,31 @@ const darkModeCSS = `
     filter: brightness(1.1) !important;
   }
 
-  /* Summary cards — glass bento */
-  .dark-mode [style*="borderRadius: 14"] {
-    backdrop-filter: blur(12px) !important;
-    -webkit-backdrop-filter: blur(12px) !important;
+  /* v9.05: Neon glow hover on all action buttons */
+  .dark-mode button:not([disabled]):hover {
+    box-shadow: 0 0 12px rgba(56,189,248,0.12), 0 2px 8px rgba(0,0,0,0.2) !important;
+  }
+
+  /* v9.05: Enhanced glass surfaces */
+  .dark-mode [style*="borderRadius: 14"],
+  .dark-mode [style*="borderRadius: 12"] {
+    backdrop-filter: blur(16px) saturate(160%) !important;
+    -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
+  }
+
+  /* v9.05: Table row hover — neon trace */
+  .dark-mode table tbody tr:hover {
+    background: rgba(56, 189, 248, 0.06) !important;
+    box-shadow: inset 3px 0 0 0 var(--neon-cyan), inset 0 0 0 1px rgba(56, 189, 248, 0.06) !important;
+  }
+
+  /* v9.05: Smooth page transitions */
+  .dark-mode .blitz-main { animation: fadeUp 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* v9.05: Enhanced summary cards — glass bento with neon border on hover */
+  .dark-mode [style*="borderRadius: 14"]:hover {
+    border-color: rgba(56,189,248,0.2) !important;
+    box-shadow: 0 0 20px rgba(56,189,248,0.08), 0 4px 16px rgba(0,0,0,0.3) !important;
   }
 
   /* Scrollbar */
@@ -215,9 +236,17 @@ const mobileCSS = `
   .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
   .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
   .blitz-form-grid { grid-template-columns: 1fr !important; }
+  /* v9.05: Better touch targets on mobile */
+  button { min-height: 44px !important; }
+  table td, table th { padding: 8px 6px !important; }
+  /* v9.05: Hide overflow columns on mobile tables */
+  .blitz-table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .blitz-table-responsive table { min-width: 600px; }
 }
 @media (max-width: 480px) {
   .blitz-summary { grid-template-columns: 1fr !important; }
+  /* v9.05: Stack action buttons on very small screens */
+  .blitz-main > div[style*="display: flex"][style*="gap"] { flex-direction: column !important; }
 }
 `;
 
@@ -337,7 +366,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.03";
+const VERSION = "9.05";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -418,14 +447,13 @@ let justLoggedIn = false; // Grace period — don't expire session right after l
 
 async function apiGet(endpoint) {
   try {
-    const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) }); // v9.03: 6s timeout (was 4s)
+    const res = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) }); // v9.05: 6s (was 4s)
     if (res.status === 401) {
-      // Don't expire session if we JUST logged in (race condition with fresh token)
+      // v9.05: Retry twice before expiring session — prevents flicker-based logouts
       if (justLoggedIn) {
         console.log(`⚠️ 401 on ${endpoint} during login grace period — retrying...`);
-        // Retry once after short delay
         await new Promise(r => setTimeout(r, 500));
-        const retry = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(4000) });
+        const retry = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) });
         if (retry.ok) {
           serverOnline = true;
           const json = await retry.json();
@@ -434,10 +462,22 @@ async function apiGet(endpoint) {
           if (Array.isArray(data)) lsSave(endpoint, data);
           return data;
         }
-        // Still 401 after retry — don't kill session, just return null
         return null;
       }
-      // Real session expiry — not during login
+      // Not during login — retry once more before killing session (network flicker protection)
+      try {
+        await new Promise(r => setTimeout(r, 1500));
+        const retry2 = await fetch(`${API_BASE}/${endpoint}`, { headers: authHeaders(), signal: AbortSignal.timeout(6000) });
+        if (retry2.ok) {
+          serverOnline = true;
+          const json = await retry2.json();
+          const data = json.data || json;
+          if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
+          if (Array.isArray(data)) lsSave(endpoint, data);
+          return data;
+        }
+      } catch {}
+      // Both retries failed — real session expiry
       setSessionToken(null);
       localStorage.removeItem('blitz_session');
       sessionExpiredFlag = true;
@@ -549,7 +589,7 @@ async function apiSave(endpoint, data, userEmail) {
   if (Array.isArray(data) && lastKnownCounts[endpoint] > 0) {
     const prev = lastKnownCounts[endpoint];
     const curr = data.length;
-    const maxAllowedDrop = Math.max(prev * 0.3, pendingDeleteCount + 3); // v9.03: stricter 30% drop (was 50%)
+    const maxAllowedDrop = Math.max(prev * 0.3, pendingDeleteCount + 3); // v9.05: stricter 30% drop (was 50%)
     if (prev - curr > maxAllowedDrop) {
       console.error(`🛑 BLOCKED suspicious save to ${endpoint}: ${prev} → ${curr} records (drop of ${prev - curr}, only ${pendingDeleteCount} explicit deletes). This looks like a crash-induced data loss.`);
       return false;
@@ -562,7 +602,7 @@ async function apiSave(endpoint, data, userEmail) {
     if (Array.isArray(lsData) && lsData.length > 0) {
       lastKnownCounts[endpoint] = lsData.length;
       // Now apply the same guard
-      if (lsData.length > 10 && data.length < lsData.length * 0.3 && pendingDeleteCount === 0) { // v9.03: 30% (was 50%)
+      if (lsData.length > 10 && data.length < lsData.length * 0.3 && pendingDeleteCount === 0) { // v9.05: 30% (was 50%)
         console.error(`🛑 BLOCKED suspicious save to ${endpoint}: localStorage has ${lsData.length} but saving only ${data.length}. Likely stale data after version upgrade.`);
         return false;
       }
@@ -886,7 +926,7 @@ function SyncStatus() {
     checking: { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." },
   }[status] || { bg: "rgba(148,163,184,0.1)", border: "rgba(148,163,184,0.3)", color: "#94A3B8", text: "..." };
   return (
-    <div title={isOk ? "WebSocket live — real-time sync" : isPoll ? "Connected via polling" : isBad ? "Server offline — data saved locally" : "Checking..."}
+    <div title={isOk ? "WebSocket live — real-time sync" : isPoll ? "Connected via polling — data synced" : isBad ? "Server offline — data saved locally" : "Checking..."}
       style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, cursor: "default",
         background: cfg.bg, border: `1px solid ${cfg.border}`, color: cfg.color, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0.3 }}>
       <span style={{ width: 18, height: 18, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center",
@@ -895,7 +935,7 @@ function SyncStatus() {
         boxShadow: isOk ? "0 0 8px rgba(16,185,129,0.5)" : isPoll ? "0 0 8px rgba(56,189,248,0.4)" : isBad ? "0 0 8px rgba(239,68,68,0.5)" : "none" }}>
         {isOk ? "\u2713" : isPoll ? "\u2713" : isBad ? "!" : "\u2022"}
       </span>
-      {cfg.text}{pendingCount > 0 && <span style={{ fontSize: 10, opacity: 0.7 }}>({pendingCount}⏳)</span>}
+      {cfg.text}{pendingCount > 0 && <span style={{ fontSize: 10, opacity: 0.7, marginLeft: 2 }}>({pendingCount}⏳)</span>}
     </div>
   );
 }
@@ -3799,6 +3839,16 @@ function InlineCell({ value, onSave, style, type = "text", placeholder = "" }) {
   useEffect(() => { setVal(value || ""); }, [value]);
   useEffect(() => { if (editing && ref.current) ref.current.focus(); }, [editing]);
   const save = () => { setEditing(false); if (val !== (value || "")) onSave(val); };
+  // v9.05: Tab to next cell — find next InlineCell sibling and click it
+  const tabToNext = (e) => {
+    if (e.key === "Tab") {
+      e.preventDefault();
+      save();
+      const td = e.target.closest("td");
+      const next = e.shiftKey ? td?.previousElementSibling : td?.nextElementSibling;
+      if (next) setTimeout(() => next.click(), 50);
+    }
+  };
   if (!editing) {
     return (
       <td style={{ ...style, cursor: "pointer", userSelect: "none" }} onClick={() => setEditing(true)} title="Click to edit">
@@ -3807,14 +3857,13 @@ function InlineCell({ value, onSave, style, type = "text", placeholder = "" }) {
     );
   }
   if (type === "checkbox") {
-    // Toggle immediately
     setTimeout(() => { onSave(!value); setEditing(false); }, 0);
     return <td style={style}><span style={{ color: "#00C875", fontSize: 18, fontWeight: 700 }}>✓</span></td>;
   }
   return (
     <td style={{ ...style, padding: 0 }}>
       <input ref={ref} value={val} onChange={e => setVal(e.target.value)}
-        onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value || ""); setEditing(false); } }}
+        onBlur={save} onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") { setVal(value || ""); setEditing(false); } tabToNext(e); }}
         style={{ width: "100%", height: "100%", padding: "4px 8px", border: "2px solid #0EA5E9", borderRadius: 0, outline: "none", fontSize: 13, fontFamily: type === "number" ? "'JetBrains Mono',monospace" : "inherit", fontWeight: 600, background: "#EFF6FF", boxSizing: "border-box" }}
       />
     </td>
@@ -5485,7 +5534,7 @@ function AppInner() {
         const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof, spt].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
-          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 8000); return; // v9.03: 8s
+          setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 8000); return; // v9.05
         }
 
         if (anySuccess) {
@@ -5558,7 +5607,7 @@ function AppInner() {
 
       setLoaded(true);
       serverFetchDone.current = true;
-      setTimeout(() => { skipSave.current = false; }, 8000); // v9.03: 8s safety window (was 5s)
+      setTimeout(() => { skipSave.current = false; }, 8000); // v9.05: 8s safety window (was 5s)
     })();
   }, [user]); // Re-run when user logs in
 
