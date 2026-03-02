@@ -1,4 +1,4 @@
-﻿// Load environment variables
+// Load environment variables
 // require("dotenv").config();
 
 const express = require("express");
@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.12";
+const VERSION = "9.15";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -505,6 +505,39 @@ function cleanupBackups() {
 setInterval(createBackup, 60 * 60 * 1000);
 // Backup on startup — CRITICAL: creates a snapshot before any new client code can write
 setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)), 2000);
+
+// v9.13: STARTUP INTEGRITY CHECK — restore from shutdown backup if data files are smaller
+(function startupIntegrityCheck() {
+  try {
+    const backupDirs = fs.readdirSync(BACKUP_DIR).filter(d => d.startsWith("shutdown-")).sort().reverse();
+    if (backupDirs.length === 0) { console.log("📋 No shutdown backups found — skipping integrity check"); return; }
+    const latestBackup = backupDirs[0];
+    const backupPath = path.join(BACKUP_DIR, latestBackup);
+    const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners"];
+    let restored = 0;
+    endpoints.forEach(ep => {
+      const dataFile = path.join(DATA_DIR, ep + ".json");
+      const backupFile = path.join(backupPath, ep + ".json");
+      if (!fs.existsSync(backupFile)) return;
+      try {
+        const backupData = JSON.parse(fs.readFileSync(backupFile, "utf8"));
+        if (!Array.isArray(backupData) || backupData.length === 0) return;
+        let currentData = [];
+        if (fs.existsSync(dataFile)) {
+          try { currentData = JSON.parse(fs.readFileSync(dataFile, "utf8")); } catch { currentData = []; }
+        }
+        if (!Array.isArray(currentData)) currentData = [];
+        if (currentData.length < backupData.length * 0.5 && backupData.length > 3) {
+          console.log(`🔧 STARTUP RESTORE [${ep}]: current=${currentData.length}, backup=${backupData.length} (from ${latestBackup}). Restoring.`);
+          fs.writeFileSync(dataFile, JSON.stringify(backupData, null, 2), "utf8");
+          restored++;
+        }
+      } catch (e) { console.error(`⚠️ Integrity check failed for ${ep}:`, e.message); }
+    });
+    if (restored > 0) console.log(`🔧 STARTUP: Restored ${restored} data files from ${latestBackup}`);
+    else console.log(`✅ STARTUP: All data files pass integrity check against ${latestBackup}`);
+  } catch (e) { console.error("⚠️ Startup integrity check error:", e.message); }
+})();
 
 // ═══════════════════════════════════════════════════════════════
 // v9.05: DAILY SNAPSHOT SYSTEM — "The Safety Net"
@@ -1089,6 +1122,16 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (existingBeforeMerge.length > 5 && records.length === 0 && deleteSet.size === 0) {
       console.log(`🛑 HARD BLOCK [${ep}]: client sending 0 records, server has ${existingBeforeMerge.length}. Rejected.`);
       return res.status(400).json({ error: "Cannot replace existing data with empty payload", serverCount: existingBeforeMerge.length });
+    }
+    // v9.13: Block stale client — if client sends <50% of server records and no explicit deletes, reject and force re-fetch
+    if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5 && deleteSet.size === 0) {
+      console.log(`🛑 STALE BLOCK [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Client likely has stale data. Rejected.`);
+      return res.status(409).json({ 
+        error: "stale_data", 
+        message: `Server has ${existingBeforeMerge.length} records, you sent ${records.length}. Please refresh to get latest data.`,
+        serverCount: existingBeforeMerge.length,
+        clientCount: records.length
+      });
     }
 
     // SPECIAL HANDLING: customer-payments status change notifications
