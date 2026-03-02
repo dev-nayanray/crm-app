@@ -2485,8 +2485,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
             // BTC doesn't have verification yet, just record it
 
-            // Use amounts[i] if available, otherwise fallback to blockchain amount, then to "0"
-            const amount = (amounts[i] || txResult.amount || "0").toString();
+            // v9.19 FIX: Prefer blockchain amount when available and non-zero
+            // Previously: (amounts[i] || txResult.amount || "0") — blockchain "0" was ignored
+            const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
+            const messageAmount = amounts[i] || null;
+            const amount = (blockchainAmount || messageAmount || "0").toString();
+            console.log(`💰 [Brands] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
             // A1: Always create as "Open" — CRM user will manually mark as Received
             const status = "Open";
@@ -2543,7 +2547,11 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
         else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
 
-        const amount = (amounts[i] || txResult.amount || "0").toString();
+        // v9.19 FIX: Prefer blockchain amount when available and non-zero
+        const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
+        const messageAmount = amounts[i] || null;
+        const amount = (blockchainAmount || messageAmount || "0").toString();
+        console.log(`💰 [Finance] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
         const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
         const status = walletVerify.matched ? "Received" : "Pending";
         const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
@@ -2697,24 +2705,132 @@ async function checkTRC20Transaction(txHash) {
 
 async function checkERC20Transaction(txHash) {
   try {
-    const CHAIN_ID = "1";
-    const receiptData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-    let txResult = null;
-    const txData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-    if (txData.status === "1" && txData.message === "OK" && txData.result) txResult = txData.result;
-    if (!txResult) {
-      console.log("⚠️ V2 failed, trying V1...");
-      const v1 = JSON.parse(await httpRequest(`${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-      if (v1.result && typeof v1.result === "object") txResult = v1.result;
+    console.log(`🔍 [ERC20] Checking transaction: ${txHash}`);
+    
+    // Known stablecoin contracts (lowercase for comparison)
+    const STABLECOINS = {
+      "0xdac17f958d2ee523a2206206994597c13d831ec7": { symbol: "USDT", decimals: 6 },
+      "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { symbol: "USDC", decimals: 6 },
+      "0x6b175474e89094c44da98b954eedeac495271d0f": { symbol: "DAI", decimals: 18 },
+    };
+    // Transfer event topic: keccak256("Transfer(address,address,uint256)")
+    const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+    
+    let amount = "0";
+    let fromAddress = "";
+    let toAddress = "";
+    let confirmed = false;
+    
+    // ═══ METHOD 1: Transaction Receipt (most reliable — has Transfer event logs) ═══
+    try {
+      const receiptUrl = `${ETHERSCAN_V2_API}?chainid=1&module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      const receiptRaw = await httpRequest(receiptUrl);
+      const receiptData = JSON.parse(receiptRaw);
+      
+      if (receiptData.result && typeof receiptData.result === 'object') {
+        const receipt = receiptData.result;
+        confirmed = receipt.status === "0x1";
+        fromAddress = receipt.from || "";
+        toAddress = receipt.to || "";
+        
+        // Parse Transfer event logs to find stablecoin transfers
+        if (receipt.logs && Array.isArray(receipt.logs)) {
+          for (const log of receipt.logs) {
+            if (log.topics && log.topics.length >= 3 && log.topics[0] === TRANSFER_TOPIC) {
+              const contractAddr = (log.address || "").toLowerCase();
+              const stablecoin = STABLECOINS[contractAddr];
+              
+              if (stablecoin) {
+                // Decode amount from log data field
+                const rawAmount = BigInt(log.data);
+                const divisor = 10n ** BigInt(stablecoin.decimals);
+                // Use Number for final result (safe for amounts up to ~9 quadrillion with 6 decimals)
+                const parsedAmount = Number(rawAmount) / Number(divisor);
+                amount = parsedAmount.toString();
+                
+                // Decode from/to addresses from indexed topics
+                if (log.topics[1]) {
+                  fromAddress = "0x" + log.topics[1].slice(26); // Remove 24 chars of zero-padding
+                }
+                if (log.topics[2]) {
+                  toAddress = "0x" + log.topics[2].slice(26);
+                }
+                
+                console.log(`✅ [ERC20] ${stablecoin.symbol} Transfer found via receipt logs: $${amount} from ${fromAddress} to ${toAddress}`);
+                break; // Use the first stablecoin transfer found
+              }
+            }
+          }
+        }
+        
+        if (amount !== "0") {
+          return { success: true, amount, toAddress, fromAddress, confirmed, hash: txHash };
+        }
+        console.log(`⚠️ [ERC20] No stablecoin Transfer event in receipt logs, trying input data...`);
+      } else {
+        console.log(`⚠️ [ERC20] Receipt API returned no result, trying transaction data...`);
+      }
+    } catch (receiptErr) {
+      console.log(`⚠️ [ERC20] Receipt API error: ${receiptErr.message}, trying transaction data...`);
     }
-    if (!txResult) return { success:false, error:"Could not fetch from Etherscan" };
-    const input = txResult.input || "";
-    let amount="0", fromAddress=txResult.from||"", toAddress=txResult.to||"";
-    if (input.startsWith("0xa9059cbb") && input.length >= 74) { amount=(parseInt("0x"+input.slice(-64),16)/1e6).toString(); toAddress="0x"+input.slice(34,74); }
-    else if (txResult.value && txResult.value !== "0x0") { amount=(parseInt(txResult.value,16)/1e18).toString(); }
-    const confirmed = receiptData.status==="1" && receiptData.result && receiptData.result.status==="1";
-    return { success:true, amount, toAddress, fromAddress, confirmed, hash:txHash };
-  } catch (err) { return { success:false, error:err.message }; }
+    
+    // ═══ METHOD 2: Transaction data (input field parsing) ═══
+    try {
+      const txUrl = `${ETHERSCAN_V2_API}?chainid=1&module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      const txRaw = await httpRequest(txUrl);
+      const txData = JSON.parse(txRaw);
+      
+      if (txData.result && typeof txData.result === 'object') {
+        const tx = txData.result;
+        if (!fromAddress) fromAddress = tx.from || "";
+        const contractAddress = (tx.to || "").toLowerCase();
+        const input = tx.input || "";
+        
+        // ERC20 transfer(address,uint256) selector = 0xa9059cbb
+        // Full input: 0xa9059cbb (10 chars) + address (64 chars) + amount (64 chars) = 138 chars
+        if (input.startsWith("0xa9059cbb") && input.length >= 138) {
+          const recipientAddr = "0x" + input.slice(34, 74); // Extract 40-char address
+          const rawAmountHex = "0x" + input.slice(74, 138); // Extract 64-char amount
+          const rawAmount = BigInt(rawAmountHex);
+          
+          // Check if the contract is a known stablecoin
+          const stablecoin = STABLECOINS[contractAddress];
+          const decimals = stablecoin ? stablecoin.decimals : 6; // Default to 6 (USDT standard)
+          const divisor = BigInt(Math.pow(10, decimals));
+          const parsedAmount = Number(rawAmount) / Number(divisor);
+          amount = parsedAmount.toString();
+          toAddress = recipientAddr;
+          
+          const symbol = stablecoin ? stablecoin.symbol : "ERC20";
+          console.log(`✅ [ERC20] ${symbol} Transfer found via input data: $${amount} to ${toAddress}`);
+        } else if (tx.value && tx.value !== "0x0" && tx.value !== "0x") {
+          // Native ETH transfer
+          const ethAmount = Number(BigInt(tx.value)) / 1e18;
+          amount = ethAmount.toString();
+          toAddress = tx.to || toAddress;
+          console.log(`✅ [ERC20] Native ETH transfer: ${amount} ETH to ${toAddress}`);
+        }
+        
+        // Get confirmation status if we don't have it yet
+        if (!confirmed) {
+          try {
+            const statusUrl = `${ETHERSCAN_V2_API}?chainid=1&module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+            const statusRaw = await httpRequest(statusUrl);
+            const statusData = JSON.parse(statusRaw);
+            confirmed = statusData.status === "1" && statusData.result && statusData.result.status === "1";
+          } catch {}
+        }
+      }
+    } catch (txErr) {
+      console.log(`⚠️ [ERC20] Transaction data API error: ${txErr.message}`);
+    }
+    
+    console.log(`📊 [ERC20] Final result: amount=$${amount}, to=${toAddress}, confirmed=${confirmed}`);
+    return { success: amount !== "0", amount, toAddress, fromAddress, confirmed, hash: txHash };
+  } catch (err) {
+    console.error(`❌ [ERC20] checkERC20Transaction error for ${txHash}:`, err.message);
+    return { success: false, error: err.message };
+  }
 }
 
 function verifyWalletAddress(address, wallets) {
