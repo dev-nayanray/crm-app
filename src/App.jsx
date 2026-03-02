@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.16";
+const VERSION = "9.17";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1315,7 +1315,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 }
 
 function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const availableStatuses = getAvailableStatuses(userEmail);
@@ -1376,6 +1376,10 @@ function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <CopyInput label="TRC Address" value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." />
         <CopyInput label="ERC Address" value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
+      </div>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <CopyInput label="USDC Address" value={f.usdcAddress || ""} onChange={e => s("usdcAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
+        <div />
       </div>
       <CopyInput label="Payment Hash (Crypto Wallet)" value={f.paymentHash} onChange={e => s("paymentHash", e.target.value)} placeholder="e.g. 0xabc123..."
         style={{ borderColor: error && f.status === "Paid" && !f.paymentHash.trim() ? "#EF4444" : undefined }} />
@@ -1490,10 +1494,11 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
                 <button onClick={() => onDelete(p.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
               </div>
             </div>
-            {(p.trcAddress || p.ercAddress || p.paymentHash) && (
+            {(p.trcAddress || p.ercAddress || p.usdcAddress || p.paymentHash) && (
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
                 {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
                 {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
+                {p.usdcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>USDC: {p.usdcAddress}</div>}
                 {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
               </div>
             )}
@@ -1530,7 +1535,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
             <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
               <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
             </th>
-            {["Affiliate ID","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+            {["Affiliate ID","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","USDC Address","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
@@ -1580,6 +1585,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
               </td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.usdcAddress || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
@@ -1919,6 +1925,11 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
                         <input value={walletForm.erc} onChange={e => setWalletForm(p => ({ ...p, erc: e.target.value }))}
                           style={{ ...inp, marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} placeholder="ERC20 address..." />
                       </div>
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>USDC</label>
+                        <input value={walletForm.usdc || ""} onChange={e => setWalletForm(p => ({ ...p, usdc: e.target.value }))}
+                          style={{ ...inp, marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }} placeholder="USDC address..." />
+                      </div>
                       <div style={{ marginBottom: 14 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5 }}>BTC</label>
                         <input value={walletForm.btc} onChange={e => setWalletForm(p => ({ ...p, btc: e.target.value }))}
@@ -1941,7 +1952,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
                           Wallets ({w.date ? (() => { const d = new Date(w.date + "T00:00:00"); return `${String(d.getDate()).padStart(2,"0")}.${String(d.getMonth()+1).padStart(2,"0")}.${d.getFullYear()}`; })() : "—"})
                         </span>
                         <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={() => { setEditingWallet(w.id); setWalletForm({ date: w.date || "", trc: w.trc || "", erc: w.erc || "", btc: w.btc || "" }); }}
+                          <button onClick={() => { setEditingWallet(w.id); setWalletForm({ date: w.date || "", trc: w.trc || "", erc: w.erc || "", usdc: w.usdc || "", btc: w.btc || "" }); }}
                             style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 6, padding: 5, cursor: "pointer", color: "#2563EB", display: "flex" }}>{I.edit}</button>
                           <button onClick={() => { trackDelete('wallets', w.id); setWallets(prev => prev.filter(ww => ww.id !== w.id)); }}
                             style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
@@ -1956,6 +1967,10 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
                           <tr style={{ borderBottom: "1px solid #CBD5E1" }}>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>ERC USDT/USDC:</td>
                             <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.erc || "—"}</td>
+                          </tr>
+                          <tr style={{ borderBottom: "1px solid #CBD5E1" }}>
+                            <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>USDC:</td>
+                            <td style={{ padding: "8px 0", fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0F172A", wordBreak: "break-all" }}>{w.usdc || "—"}</td>
                           </tr>
                           <tr>
                             <td style={{ padding: "8px 0", fontWeight: 700, color: "#64748B" }}>BTC:</td>
@@ -3797,7 +3812,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
+    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.usdcAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
   };
 
   // Open payments: any payment NOT "Paid"
@@ -4291,7 +4306,7 @@ const CP_TYPE_OPTIONS = ["Brand Payment", "Affiliate Refund"];
 const CP_INITIAL = []; // REMOVED: hardcoded demo data caused production data loss
 
 function CPForm({ payment, onSave, onClose, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -4334,6 +4349,10 @@ function CPForm({ payment, onSave, onClose, userName }) {
       <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
         <CopyInput label="TRC Address" value={f.trcAddress || ""} onChange={e => s("trcAddress", e.target.value)} placeholder="e.g. TYUWBpmzSqCcz9r5rRVG..." />
         <CopyInput label="ERC Address" value={f.ercAddress || ""} onChange={e => s("ercAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
+      </div>
+      <div className="blitz-form-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }}>
+        <CopyInput label="USDC Address" value={f.usdcAddress || ""} onChange={e => s("usdcAddress", e.target.value)} placeholder="e.g. 0x5066d63E126Cb3F893..." />
+        <div />
       </div>
       <CopyInput label="Payment Hash" value={f.paymentHash || ""} onChange={e => s("paymentHash", e.target.value)} placeholder="Transaction hash..." />
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
@@ -4397,10 +4416,11 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
                 <button onClick={() => onDelete(p.id)} style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 5, cursor: "pointer", color: "#DC2626", display: "flex" }}>{I.trash}</button>
               </div>
             </div>
-            {(p.trcAddress || p.ercAddress || p.paymentHash) && (
+            {(p.trcAddress || p.ercAddress || p.usdcAddress || p.paymentHash) && (
               <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid #F1F5F9", fontSize: 10, fontFamily: "'JetBrains Mono',monospace", color: "#94A3B8", display: "flex", flexDirection: "column", gap: 2 }}>
                 {p.trcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>TRC: {p.trcAddress}</div>}
                 {p.ercAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>ERC: {p.ercAddress}</div>}
+                {p.usdcAddress && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>USDC: {p.usdcAddress}</div>}
                 {p.paymentHash && <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Hash: {p.paymentHash}</div>}
               </div>
             )}
@@ -4437,7 +4457,7 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
             <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
               <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
             </th>
-            {["Brand Name","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","Hash","Actions"].map(h =>
+            {["Brand Name","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","USDC Address","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
@@ -4481,6 +4501,7 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
               </td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
+              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.usdcAddress || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
@@ -4544,7 +4565,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress].some(v => (v || "").toLowerCase().includes(q));
+    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.usdcAddress].some(v => (v || "").toLowerCase().includes(q));
   };
 
   const openPayments = (payments || []).filter(p => ["Open", "Pending"].includes(p.status) && matchSearch(p));
@@ -6370,10 +6391,19 @@ function AppInner() {
     // Server returned null = fetch failed, keep local
     if (serverArr === null || serverArr === undefined) return localArr || [];
     // v9.09 FIX: Don't blindly trust empty server response if local has data
-    // This prevents data wipe when server was corrupted to 0 records
     if (serverArr.length === 0 && Array.isArray(localArr) && localArr.length > 5) {
       console.warn(`⚠️ Server returned 0 records for ${tableName} but local has ${localArr.length}. Keeping local data and pushing to server.`);
       return localArr;
+    }
+    // v9.16: If server returns empty AND local is empty, check lastKnownCounts
+    // This catches the case where deploy wiped both server data and localStorage
+    if (serverArr.length === 0 && (!localArr || localArr.length === 0)) {
+      const lastKnown = lastKnownCounts[tableName] || 0;
+      if (lastKnown > 5) {
+        console.error(`🔴 DATA LOSS [${tableName}]: server=0, local=0, but last known count was ${lastKnown}. Data may have been wiped during deploy.`);
+        toast(`⚠️ ${tableName} appears empty — may need server backup restore`);
+      }
+      return [];
     }
     if (serverArr.length === 0) return [];
     if (!localArr || localArr.length === 0) return serverArr;
