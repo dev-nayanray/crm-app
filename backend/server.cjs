@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.15";
+const VERSION = "9.16";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -445,7 +445,7 @@ function createBackup(label) {
   const backupPath = path.join(BACKUP_DIR, ts);
   if (!fs.existsSync(backupPath)) fs.mkdirSync(backupPath, { recursive: true });
 
-  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers"];
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
@@ -513,7 +513,7 @@ setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.
     if (backupDirs.length === 0) { console.log("📋 No shutdown backups found — skipping integrity check"); return; }
     const latestBackup = backupDirs[0];
     const backupPath = path.join(BACKUP_DIR, latestBackup);
-    const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners"];
+    const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners", "ftd-entries"];
     let restored = 0;
     endpoints.forEach(ep => {
       const dataFile = path.join(DATA_DIR, ep + ".json");
@@ -553,7 +553,7 @@ function createDailySnapshot() {
   if (fs.existsSync(snapPath)) { console.log(`📸 Daily snapshot ${dateKey} already exists — skipping`); return; }
   fs.mkdirSync(snapPath, { recursive: true });
 
-  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "partners"];
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "partners"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
@@ -962,7 +962,7 @@ app.get("/api/session", requireAuth, (req, res) => {
 // 8. DATA ENDPOINTS — With Atomic Writes + Audit + Versioning
 // ═══════════════════════════════════════════════════════════════
 
-const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers"];
+const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
 
 // GET — returns data + version number (REQUIRES AUTH)
 endpoints.forEach(ep => {
@@ -1086,7 +1086,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 });
 
 // Generic POST for other tables — SERVER-SIDE MERGE (never destructive replace)
-["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers"].forEach(ep => {
+["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"].forEach(ep => {
   const file = ep + ".json";
   app.post(`/api/${ep}`, requireAuth, async (req, res) => {
     const { data: newData, version: clientVersion, user: userEmail, deleted: deletedIDs } = req.body;
@@ -1121,11 +1121,13 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     // v9.09: Hard block if client sends less than 20% of server data (almost certainly a bug)
     if (existingBeforeMerge.length > 5 && records.length === 0 && deleteSet.size === 0) {
       console.log(`🛑 HARD BLOCK [${ep}]: client sending 0 records, server has ${existingBeforeMerge.length}. Rejected.`);
+      writeAuditLog(ep, "hard_block", userEmail || "unknown", `[${ep}] REJECTED: client=0 server=${existingBeforeMerge.length} — empty payload`);
       return res.status(400).json({ error: "Cannot replace existing data with empty payload", serverCount: existingBeforeMerge.length });
     }
     // v9.13: Block stale client — if client sends <50% of server records and no explicit deletes, reject and force re-fetch
     if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5 && deleteSet.size === 0) {
       console.log(`🛑 STALE BLOCK [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Client likely has stale data. Rejected.`);
+      writeAuditLog(ep, "stale_block", userEmail || "unknown", `[${ep}] REJECTED: client=${records.length} server=${existingBeforeMerge.length} — stale data`);
       return res.status(409).json({ 
         error: "stale_data", 
         message: `Server has ${existingBeforeMerge.length} records, you sent ${records.length}. Please refresh to get latest data.`,
@@ -1195,6 +1197,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (deleteSet.size > 0) {
       deleteSet.forEach(id => mergedMap.delete(id));
       console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted`);
+      writeAuditLog(ep, "delete", userEmail || "unknown", `[${ep}] ${deleteSet.size} record(s) deleted by user | IDs: ${[...deleteSet].slice(0, 5).join(', ')}${deleteSet.size > 5 ? '...' : ''}`);
     }
     
     const merged = Array.from(mergedMap.values());
@@ -1264,7 +1267,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
 
     const success = await lockedWrite(file, deduped, {
-      action: "update", user: userEmail || "unknown", details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
+      action: "update", user: userEmail || "unknown", 
+      details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length ? ' ⚠️SHRUNK' : ''}`
     });
 
     if (success) {
