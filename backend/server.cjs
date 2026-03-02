@@ -993,8 +993,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       }
       // Re-opening a previously paid payment notification
       else if (["Open", "On the way", "Approved to pay"].includes(p.status) && oldP.status === "Paid") {
-        sendOpenPaymentNotification(p);
-        // Also notify affiliate group (not brands group)
+        // Send single notification to affiliate group (removed duplicate sendOpenPaymentNotification)
         sendAffiliatePaymentNotification(p, false);
         // Send Approved to pay notification with tag if status is Approved to pay
         if (p.status === "Approved to pay") {
@@ -1651,19 +1650,22 @@ function sendOpenPaymentNotification(p) {
 // FINANCE | BRANDS GROUP NOTIFICATIONS (-1002796530029)
 // ═══════════════════════════════════════════════════════════════
 
-// formatBrandNewPaymentMessage removed — Brands group only notified on RECEIVED or PENDING status
+// formatBrandNewPaymentMessage removed — replaced by formatBrandNewOpenPaymentMessage below
 
-function formatBrandPendingPaymentMessage(p) {
+// A1: Sent to Brands group when a crypto hash is detected in the group chat
+function formatBrandNewOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `⏳ PAYMENT PENDING ⏳
+  return `💰 NEW CUSTOMER PAYMENT 💰
 
 📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
+🏷️ Brand: ${p.brand || "N/A"}
 🔗 Hash: ${p.paymentHash || "N/A"}
-⚠️ Wallet NOT matched — manual review required
-🔖 Status: Pending`;
+📅 Date: ${p.paidDate || "N/A"}
+🔖 Status: Open`;
 }
 
+// A2: Sent to Brands group when customer payment is marked as Received in CRM
 function formatBrandPaymentReceivedMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `✅ PAYMENT RECEIVED ✅
@@ -1723,7 +1725,7 @@ function formatAffiliateNewPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `🆕 NEW PAYMENT ADDED 💰
 
-📋 Invoice: #${p.invoice}
+📋 Affiliate ID: ${p.invoice}
 💵 Amount: $${amount}
 👤 Opened by: ${p.openBy || "Unknown"}
 Status: ${p.status || "Open"}`;
@@ -2305,17 +2307,19 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             // Use amounts[i] if available, otherwise fallback to blockchain amount, then to "0"
             const amount = (amounts[i] || txResult.amount || "0").toString();
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-            const status = walletVerify.matched ? "Received" : "Pending";
+            // A1: Always create as "Open" — CRM user will manually mark as Received
+            const status = "Open";
             const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
 
             const newPayment = {
               id: crypto.randomBytes(5).toString('hex'),
               invoice, amount, fee: "", status, type: "Customer Payment",
               openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
-              paymentHash: hash, 
+              paymentHash: hash,
               trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
               ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
-              brand: extractedBrand || "",  // Store extracted brand name
+              brand: extractedBrand || "",
+              walletMatched: walletVerify.matched, // stored for CRM reference
               month: new Date().getMonth(), year: new Date().getFullYear()
             };
 
@@ -2323,18 +2327,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             cp.unshift(newPayment);
             await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash (Brands group)` });
             broadcastUpdate("customer-payments", cp);
-            
+
             // Mark hash as processed to prevent duplicates
             bot._processedHashes.set(hash, Date.now());
 
-            // Notify Brands group for both outcomes:
-            //   Received → wallet matched  → ✅ PAYMENT RECEIVED
-            //   Pending  → wallet NOT matched → ⏳ PAYMENT PENDING
-            if (status === "Received") {
-              bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandPaymentReceivedMessage(newPayment));
-            } else if (status === "Pending") {
-              bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandPendingPaymentMessage(newPayment)); // second message → Brands
-            }
+            // A1: Always notify Brands group with "NEW CUSTOMER PAYMENT" when hash detected
+            bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandNewOpenPaymentMessage(newPayment));
             
             
             console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
