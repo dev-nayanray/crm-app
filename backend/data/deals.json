@@ -58,5 +58,31 @@
     "funnels": "Btc ai",
     "source": "Fb",
     "deduction": "15"
+  },
+  {
+    "id": "79e82dae",
+    "affiliate": "117",
+    "country": "CA",
+    "price": "",
+    "crg": "",
+    "dealType": "CRG",
+    "funnels": "Taboola Immutable Azopt $1,350 12% 5 leads",
+    "source": "",
+    "deduction": "",
+    "date": "2026-03-02",
+    "openBy": "telegram-bot"
+  },
+  {
+    "id": "b1c1a94e",
+    "affiliate": "199",
+    "country": "AU",
+    "price": "",
+    "crg": "",
+    "dealType": "CRG",
+    "funnels": "1400+14 cetirz app",
+    "source": "",
+    "deduction": "",
+    "date": "2026-03-02",
+    "openBy": "telegram-bot"
   }
 ]

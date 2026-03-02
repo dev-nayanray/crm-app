@@ -1099,14 +1099,19 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       records.forEach(cp => {
         const oldCp = oldMap.get(cp.id);
         if (!oldCp) {
-          // New customer payment - notify Brands group
+          // New customer payment:
+          //   Received  → notify Brands group (-1002796530029)
+          //   Open/other → notify Affiliate Finance group (-1002830517753)
           if (cp.status === "Received") {
-            sendBrandPaymentNotification(cp, true);
+            sendBrandPaymentNotification(cp);
           } else {
-            sendBrandPaymentNotification(cp, false);
+            sendAffiliatePaymentNotification(cp, false); // first message → Affiliate Finance
           }
         } else if (oldCp.status !== cp.status) {
-          if (cp.status === "Received" && oldCp.status !== "Received") sendBrandPaymentNotification(cp, true);
+          // Status changed → notify only on transition to Received
+          if (cp.status === "Received" && oldCp.status !== "Received") {
+            sendBrandPaymentNotification(cp);
+          }
         }
       });
     }
@@ -1646,16 +1651,17 @@ function sendOpenPaymentNotification(p) {
 // FINANCE | BRANDS GROUP NOTIFICATIONS (-1002796530029)
 // ═══════════════════════════════════════════════════════════════
 
-function formatBrandNewPaymentMessage(p) {
+// formatBrandNewPaymentMessage removed — Brands group only notified on RECEIVED or PENDING status
+
+function formatBrandPendingPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `💰 NEW CUSTOMER PAYMENT 💰
+  return `⏳ PAYMENT PENDING ⏳
 
 📋 Invoice: #${p.invoice}
 💵 Amount: $${amount}
-🏷️ Brand: ${p.brand || "N/A"}
-👤 Opened by: ${p.openBy || "Unknown"}
-📅 Date: ${p.paidDate || p.openDate || "N/A"}
-🔖 Status: ${p.status || "Open"}`;
+🔗 Hash: ${p.paymentHash || "N/A"}
+⚠️ Wallet NOT matched — manual review required
+🔖 Status: Pending`;
 }
 
 function formatBrandPaymentReceivedMessage(p) {
@@ -1669,14 +1675,15 @@ function formatBrandPaymentReceivedMessage(p) {
 🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
 }
 
-function sendBrandPaymentNotification(p, isReceived = false) {
+// sendBrandPaymentNotification — only fires for RECEIVED status now
+function sendBrandPaymentNotification(p) {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
     console.log("📱 Brand payment notification skipped (no token configured)");
     return;
   }
 
-  const message = isReceived ? formatBrandPaymentReceivedMessage(p) : formatBrandNewPaymentMessage(p);
-  
+  const message = formatBrandPaymentReceivedMessage(p);
+
   const postData = JSON.stringify({
     chat_id: BRANDS_GROUP_CHAT_ID,
     text: message,
@@ -1698,8 +1705,8 @@ function sendBrandPaymentNotification(p, isReceived = false) {
     let d = '';
     res.on('data', c => d += c);
     res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Brand payment notification error:", d);
-      else console.log(`✅ Brand payment notification sent for invoice: ${p.invoice} (${isReceived ? 'received' : 'new'})`);
+      if (res.statusCode !== 200) console.log("❌ Brand payment received notification error:", d);
+      else console.log(`✅ Brand payment RECEIVED notification sent for invoice: ${p.invoice}`);
     });
   });
 
@@ -2320,11 +2327,14 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             // Mark hash as processed to prevent duplicates
             bot._processedHashes.set(hash, Date.now());
 
-            // L3 FIX: Use "Received" format when wallet matched, "New" format otherwise
-            const brandNotifyMsg = status === "Received"
-              ? formatBrandPaymentReceivedMessage(newPayment)
-              : formatBrandNewPaymentMessage(newPayment);
-            bot.sendMessage(BRANDS_GROUP_CHAT_ID, brandNotifyMsg);
+            // Notify Brands group for both outcomes:
+            //   Received → wallet matched  → ✅ PAYMENT RECEIVED
+            //   Pending  → wallet NOT matched → ⏳ PAYMENT PENDING
+            if (status === "Received") {
+              bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandPaymentReceivedMessage(newPayment));
+            } else if (status === "Pending") {
+              bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandPendingPaymentMessage(newPayment)); // second message → Brands
+            }
             
             
             console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
