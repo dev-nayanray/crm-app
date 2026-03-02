@@ -21,7 +21,15 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
-const screenshotModule = require("./screenshot.cjs");
+// v9.17: Graceful screenshot module — won't crash if Puppeteer/Chromium not installed
+let screenshotModule;
+try {
+  screenshotModule = require("./screenshot.cjs");
+  console.log("📸 Screenshot module loaded");
+} catch (e) {
+  console.log("⚠️ Screenshot module not available:", e.message);
+  screenshotModule = { sendReport: async () => { throw new Error("Screenshot module not installed on this server"); } };
+}
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -1616,7 +1624,8 @@ function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_
 
   const postData = JSON.stringify({
     chat_id: chatId,
-    text: message
+    text: message,
+    parse_mode: "HTML"
   });
 
   const options = {
@@ -2049,14 +2058,34 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     });
     console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
     
-    // Test bot access to offer group on startup - silent check only (no message sent)
-    setTimeout(() => {
-      bot.getMe()
-        .then(() => console.log("✅ Bot has access to Telegram API"))
-        .catch(err => {
-          console.log("❌ Bot cannot access Telegram:", err.message);
-        });
-    }, 5000); // Wait 5 seconds after startup
+    // v9.17: Comprehensive startup diagnostics — test bot + group access
+    setTimeout(async () => {
+      try {
+        const me = await bot.getMe();
+        console.log(`✅ Bot connected: @${me.username} (${me.first_name})`);
+        
+        // Test each configured group
+        const groups = [
+          { name: 'Finance', id: AFFILIte_FINANCE_GROUP_CHAT_ID },
+          { name: 'Brands', id: BRANDS_GROUP_CHAT_ID },
+          { name: 'Offers', id: OFFER_GROUP_CHAT_ID },
+          { name: 'CRG', id: CRG_GROUP_CHAT_ID },
+          { name: 'Monitoring', id: MONITORING_GROUP_CHAT_ID },
+        ];
+        for (const g of groups) {
+          try {
+            const member = await bot.getChatMember(g.id, me.id);
+            const canPost = ['administrator', 'creator', 'member'].includes(member.status);
+            console.log(`  ${canPost ? '✅' : '⚠️'} ${g.name} group (${g.id}): ${member.status}`);
+          } catch (err) {
+            console.log(`  ❌ ${g.name} group (${g.id}): ${err.message}`);
+          }
+        }
+      } catch (err) {
+        console.log("❌ Bot cannot access Telegram:", err.message);
+        console.log("   → Check DNS resolution, firewall, and bot token");
+      }
+    }, 5000);
     
     let pollingErrorCount = 0;
     let lastPollingRestart = 0;
@@ -2322,13 +2351,8 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // Skip hash detection if in ANY waiting state
       if (st) return;
 
-      // Prevent duplicate processing: check recently processed hashes (last 30 seconds)
-      const now = Date.now();
-      if (!bot._processedHashes) bot._processedHashes = new Map();
-      // Clean old entries (older than 30 seconds)
-      for (const [hash, timestamp] of bot._processedHashes) {
-        if (now - timestamp > 30000) bot._processedHashes.delete(hash);
-      }
+      // v9.17 FIX: Use module-level processedHashes (5min TTL, cleaned by setInterval above)
+      // Was: bot._processedHashes with 30s inline cleanup — too short, caused duplicates on production
 
       // USDT hash detection (Brands group)
       const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID;
@@ -2339,9 +2363,26 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       if (isBrandsGroup) {
         const messageText = msg.text || '';
         
-        // Try to extract brand name from message (look for brand name patterns)
-        const brandMatch = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
-        const extractedBrand = brandMatch ? brandMatch[1] : null;
+        // Try to extract brand name from message
+        // Formats: "Brand: Nexus", "Nexus/ 23100  0xhash", "Helios  __https://..."
+        let extractedBrand = null;
+        // Pattern 1: Explicit "Brand: xxx"
+        const brandExplicit = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
+        if (brandExplicit) {
+          extractedBrand = brandExplicit[1];
+        } else {
+          // Pattern 2: First word on any line that starts with a name (not a hash/url/number)
+          // Matches: "Nexus/ 23100 0xhash", "EMP  __url__", "Helios  __url__"
+          const lines = messageText.split('\n');
+          for (const line of lines) {
+            const nameMatch = line.trim().match(/^([A-Za-z][A-Za-z0-9_-]{1,30})(?:\s|\/|_)/);
+            if (nameMatch) {
+              extractedBrand = nameMatch[1];
+              break;
+            }
+          }
+        }
+        console.log(`🏷️ Extracted brand: ${extractedBrand || 'N/A'}`);
         
         // Extract any payment hashes (erc/trc/btc)
         const hashes = extractAllUsdtHashes(messageText);
@@ -2359,7 +2400,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         const uniqueTxHashes = Array.from(uniqueHashesMap.values());
         
         // Filter out recently processed hashes to prevent duplicate processing
-        const newTxHashes = uniqueTxHashes.filter(h => !bot._processedHashes.has(h.hash));
+        const newTxHashes = uniqueTxHashes.filter(h => !processedHashes.has(h.hash));
         
         if (newTxHashes.length > 0) {
           // Process payment hashes from Brands group
@@ -2400,8 +2441,13 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
             // BTC doesn't have verification yet, just record it
 
-            // Use amounts[i] if available, otherwise fallback to blockchain amount, then to "0"
-            const amount = (amounts[i] || txResult.amount || "0").toString();
+            // v9.17 FIX: Blockchain amount takes PRIORITY over message text
+            // Old code: amounts[i] || txResult.amount — text overrode real blockchain data
+            // New: Use blockchain amount if available and > 0, fallback to text, then "0"
+            const blockchainAmount = txResult.success && txResult.amount && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
+            const textAmount = amounts[i] || null;
+            const amount = (blockchainAmount || textAmount || "0").toString();
+            console.log(`💰 Amount resolved: blockchain=${blockchainAmount || 'N/A'}, text=${textAmount || 'N/A'}, final=${amount}`);
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
             // A1: Always create as "Open" — CRM user will manually mark as Received
             const status = "Open";
@@ -2425,7 +2471,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             broadcastUpdate("customer-payments", cp);
 
             // Mark hash as processed to prevent duplicates
-            bot._processedHashes.set(hash, Date.now());
+            processedHashes.set(hash, Date.now());
 
             // A1: Always notify Brands group with "NEW CUSTOMER PAYMENT" when hash detected
             bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandNewOpenPaymentMessage(newPayment));
@@ -2458,7 +2504,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
         else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
 
-        const amount = (amounts[i] || txResult.amount || "0").toString();
+        // v9.17 FIX: Blockchain amount takes PRIORITY
+        const blockchainAmt = txResult.success && txResult.amount && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
+        const textAmt = amounts[i] || null;
+        const amount = (blockchainAmt || textAmt || "0").toString();
         const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
         const status = walletVerify.matched ? "Received" : "Pending";
         const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
@@ -2612,24 +2661,98 @@ async function checkTRC20Transaction(txHash) {
 
 async function checkERC20Transaction(txHash) {
   try {
-    const CHAIN_ID = "1";
-    const receiptData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txreceipt_status&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-    let txResult = null;
-    const txData = JSON.parse(await httpRequest(`${ETHERSCAN_V2_API}?action=get_txinfo&module=transaction&chainid=${CHAIN_ID}&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-    if (txData.status === "1" && txData.message === "OK" && txData.result) txResult = txData.result;
-    if (!txResult) {
-      console.log("⚠️ V2 failed, trying V1...");
-      const v1 = JSON.parse(await httpRequest(`${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`));
-      if (v1.result && typeof v1.result === "object") txResult = v1.result;
+    console.log(`🔍 checkERC20 START: ${txHash}`);
+
+    // ── Step 1: Get tx receipt status (confirms success/fail) ──
+    // FIX: V2 used wrong action names ("get_txreceipt_status" / "get_txinfo") — doesn't exist
+    // Use V1 API with correct action name "gettxreceiptstatus"
+    let confirmed = false;
+    try {
+      const receiptUrl = `${ETHERSCAN_API}?module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      const receiptData = JSON.parse(await httpRequest(receiptUrl));
+      confirmed = receiptData.status === "1" && receiptData.result && receiptData.result.status === "1";
+      console.log(`  Receipt: confirmed=${confirmed}`);
+    } catch (e) {
+      console.log(`  ⚠️ Receipt check failed: ${e.message}`);
     }
-    if (!txResult) return { success:false, error:"Could not fetch from Etherscan" };
+
+    // ── Step 2: Try token transfer events API (BEST method for USDT/USDC) ──
+    // Returns: amount, tokenSymbol, tokenDecimal — no manual decoding needed!
+    try {
+      const tokenTxUrl = `${ETHERSCAN_API}?module=account&action=tokentx&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+      const tokenData = JSON.parse(await httpRequest(tokenTxUrl));
+      
+      if (tokenData.status === "1" && Array.isArray(tokenData.result) && tokenData.result.length > 0) {
+        // Look for USDT or USDC transfer first
+        const usdTransfer = tokenData.result.find(t => 
+          t.contractAddress && (
+            t.contractAddress.toLowerCase() === ERC20_USDT_CONTRACT.toLowerCase() ||
+            t.contractAddress.toLowerCase() === "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" // USDC
+          )
+        );
+        const transfer = usdTransfer || tokenData.result[0]; // fallback to first transfer
+        
+        const decimals = parseInt(transfer.tokenDecimal || "6");
+        const rawValue = transfer.value || "0";
+        // Use BigInt for precision with large numbers
+        const amount = (Number(BigInt(rawValue)) / Math.pow(10, decimals)).toFixed(2);
+        
+        console.log(`  ✅ Token transfer: ${amount} ${transfer.tokenSymbol || 'UNKNOWN'} (${decimals} dec)`);
+        return {
+          success: true,
+          amount,
+          toAddress: transfer.to || "",
+          fromAddress: transfer.from || "",
+          confirmed,
+          hash: txHash,
+          token: transfer.tokenSymbol || "USDT"
+        };
+      }
+    } catch (e) {
+      console.log(`  ⚠️ Token transfer API failed: ${e.message}, trying raw tx...`);
+    }
+
+    // ── Step 3: Fallback — decode raw transaction input data ──
+    const txUrl = `${ETHERSCAN_API}?module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
+    const txData = JSON.parse(await httpRequest(txUrl));
+    
+    if (!txData.result || typeof txData.result !== "object") {
+      return { success: false, error: "Could not fetch transaction from Etherscan" };
+    }
+    
+    const txResult = txData.result;
     const input = txResult.input || "";
-    let amount="0", fromAddress=txResult.from||"", toAddress=txResult.to||"";
-    if (input.startsWith("0xa9059cbb") && input.length >= 74) { amount=(parseInt("0x"+input.slice(-64),16)/1e6).toString(); toAddress="0x"+input.slice(34,74); }
-    else if (txResult.value && txResult.value !== "0x0") { amount=(parseInt(txResult.value,16)/1e18).toString(); }
-    const confirmed = receiptData.status==="1" && receiptData.result && receiptData.result.status==="1";
-    return { success:true, amount, toAddress, fromAddress, confirmed, hash:txHash };
-  } catch (err) { return { success:false, error:err.message }; }
+    let amount = "0", fromAddress = txResult.from || "", toAddress = txResult.to || "";
+    
+    // Decode ERC20 transfer(address,uint256): selector(4) + address(32) + amount(32) = 68 bytes
+    // As hex string: "0x" + 8 + 64 + 64 = 138 chars minimum
+    // FIX: Old code checked >= 74 (too short!) and used slice(-64) (grabs wrong data for complex txs)
+    if (input.startsWith("0xa9059cbb") && input.length >= 138) {
+      toAddress = "0x" + input.slice(34, 74);
+      const amountHex = input.slice(74, 138); // FIX: exact position, not slice(-64)
+      const rawAmount = BigInt("0x" + amountHex);
+      
+      // Determine decimals: USDT/USDC = 6, most others = 18
+      const contractAddr = (txResult.to || "").toLowerCase();
+      const is6Dec = contractAddr === ERC20_USDT_CONTRACT.toLowerCase() ||
+                     contractAddr === "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"; // USDC
+      const decimals = is6Dec ? 6 : 18;
+      
+      amount = (Number(rawAmount) / Math.pow(10, decimals)).toFixed(2);
+      console.log(`  ✅ Input decoded: ${amount} (${decimals} dec, contract: ${contractAddr})`);
+    }
+    // Native ETH transfer
+    else if (txResult.value && txResult.value !== "0x0" && txResult.value !== "0x") {
+      const rawEth = BigInt(txResult.value);
+      amount = (Number(rawEth) / 1e18).toFixed(6);
+      console.log(`  ✅ Native ETH: ${amount}`);
+    }
+    
+    return { success: true, amount, toAddress, fromAddress, confirmed, hash: txHash };
+  } catch (err) {
+    console.error(`  ❌ checkERC20 FAILED for ${txHash}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
 }
 
 function verifyWalletAddress(address, wallets) {
