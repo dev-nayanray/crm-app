@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.16";
+const VERSION = "9.17";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -506,36 +506,70 @@ setInterval(createBackup, 60 * 60 * 1000);
 // Backup on startup — CRITICAL: creates a snapshot before any new client code can write
 setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)), 2000);
 
-// v9.13: STARTUP INTEGRITY CHECK — restore from shutdown backup if data files are smaller
+// v9.16: STARTUP INTEGRITY CHECK — restore from best available backup
+// Cascades: shutdown backups → hourly backups → daily snapshots
 (function startupIntegrityCheck() {
   try {
-    const backupDirs = fs.readdirSync(BACKUP_DIR).filter(d => d.startsWith("shutdown-")).sort().reverse();
-    if (backupDirs.length === 0) { console.log("📋 No shutdown backups found — skipping integrity check"); return; }
-    const latestBackup = backupDirs[0];
-    const backupPath = path.join(BACKUP_DIR, latestBackup);
     const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners", "ftd-entries"];
+    
+    // Collect ALL backup sources in priority order
+    const backupSources = [];
+    
+    // 1. Shutdown backups (highest priority)
+    try {
+      const shutdownDirs = fs.readdirSync(BACKUP_DIR).filter(d => d.startsWith("shutdown-")).sort().reverse();
+      shutdownDirs.forEach(d => backupSources.push({ path: path.join(BACKUP_DIR, d), label: `shutdown/${d}` }));
+    } catch {}
+    
+    // 2. Hourly/startup backups
+    try {
+      const allBackups = fs.readdirSync(BACKUP_DIR).filter(d => !d.startsWith("shutdown-") && !d.startsWith("safety-")).sort().reverse();
+      allBackups.forEach(d => backupSources.push({ path: path.join(BACKUP_DIR, d), label: `backup/${d}` }));
+    } catch {}
+    
+    // 3. Daily snapshots (last resort)
+    const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
+    try {
+      if (fs.existsSync(SNAPSHOT_DIR)) {
+        const snapDirs = fs.readdirSync(SNAPSHOT_DIR).sort().reverse();
+        snapDirs.forEach(d => backupSources.push({ path: path.join(SNAPSHOT_DIR, d), label: `snapshot/${d}` }));
+      }
+    } catch {}
+    
+    if (backupSources.length === 0) { console.log("📋 No backups found — skipping integrity check"); return; }
+    
     let restored = 0;
     endpoints.forEach(ep => {
       const dataFile = path.join(DATA_DIR, ep + ".json");
-      const backupFile = path.join(backupPath, ep + ".json");
-      if (!fs.existsSync(backupFile)) return;
-      try {
-        const backupData = JSON.parse(fs.readFileSync(backupFile, "utf8"));
-        if (!Array.isArray(backupData) || backupData.length === 0) return;
-        let currentData = [];
-        if (fs.existsSync(dataFile)) {
-          try { currentData = JSON.parse(fs.readFileSync(dataFile, "utf8")); } catch { currentData = []; }
-        }
-        if (!Array.isArray(currentData)) currentData = [];
-        if (currentData.length < backupData.length * 0.5 && backupData.length > 3) {
-          console.log(`🔧 STARTUP RESTORE [${ep}]: current=${currentData.length}, backup=${backupData.length} (from ${latestBackup}). Restoring.`);
-          fs.writeFileSync(dataFile, JSON.stringify(backupData, null, 2), "utf8");
-          restored++;
-        }
-      } catch (e) { console.error(`⚠️ Integrity check failed for ${ep}:`, e.message); }
+      let currentData = [];
+      if (fs.existsSync(dataFile)) {
+        try { currentData = JSON.parse(fs.readFileSync(dataFile, "utf8")); } catch { currentData = []; }
+      }
+      if (!Array.isArray(currentData)) currentData = [];
+      
+      // Find the best backup for this endpoint
+      for (const source of backupSources) {
+        const backupFile = path.join(source.path, ep + ".json");
+        if (!fs.existsSync(backupFile)) continue;
+        try {
+          const backupData = JSON.parse(fs.readFileSync(backupFile, "utf8"));
+          if (!Array.isArray(backupData) || backupData.length === 0) continue;
+          
+          // Restore if current data is significantly smaller (or empty)
+          if (currentData.length < backupData.length * 0.5 && backupData.length > 3) {
+            console.log(`🔧 STARTUP RESTORE [${ep}]: current=${currentData.length}, backup=${backupData.length} (from ${source.label}). Restoring.`);
+            fs.writeFileSync(dataFile, JSON.stringify(backupData, null, 2), "utf8");
+            currentData = backupData; // Update so we don't try lower-priority sources
+            restored++;
+            break; // Found good backup, stop looking
+          } else {
+            break; // Current data is fine relative to this backup, stop looking
+          }
+        } catch {}
+      }
     });
-    if (restored > 0) console.log(`🔧 STARTUP: Restored ${restored} data files from ${latestBackup}`);
-    else console.log(`✅ STARTUP: All data files pass integrity check against ${latestBackup}`);
+    if (restored > 0) console.log(`🔧 STARTUP: Restored ${restored} data files from backups`);
+    else console.log(`✅ STARTUP: All data files pass integrity check`);
   } catch (e) { console.error("⚠️ Startup integrity check error:", e.message); }
 })();
 
@@ -965,6 +999,8 @@ app.get("/api/session", requireAuth, (req, res) => {
 const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
 
 // GET — returns data + version number (REQUIRES AUTH)
+// v9.16: Track last known record counts to detect data loss on GET
+const lastKnownServerCounts = {};
 endpoints.forEach(ep => {
   const file = ep + ".json";
   app.get(`/api/${ep}`, requireAuth, (req, res) => {
@@ -973,6 +1009,19 @@ endpoints.forEach(ep => {
     if (ep === "users") {
       data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
     }
+    // v9.16: Detect and log if a table went empty unexpectedly
+    const prevCount = lastKnownServerCounts[ep] || 0;
+    if (data.length === 0 && prevCount > 5) {
+      console.error(`🔴 DATA LOSS DETECTED [${ep}]: returning 0 records, last known count was ${prevCount}. Attempting backup recovery.`);
+      writeAuditLog(ep, "data_loss_detected", req.user?.email || "unknown", `[${ep}] GET returned 0 records, last known=${prevCount}. Triggering recovery.`);
+      // Try to recover from any backup
+      const recovered = readJSON(file, []); // readJSON already tries backups
+      if (recovered.length > 0) {
+        data = recovered;
+        console.log(`🔧 RECOVERED [${ep}]: ${recovered.length} records from backup`);
+      }
+    }
+    if (data.length > 0) lastKnownServerCounts[ep] = data.length;
     res.json({ data, version: getVersion(ep), timestamp: Date.now() });
   });
 });
