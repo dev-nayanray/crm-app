@@ -421,11 +421,11 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.15";
+const VERSION = "9.16";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
-const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers', 'partners': 'blitz_partners' };
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers', 'partners': 'blitz_partners', 'ftd-entries': 'blitz_ftd' };
 const LS_VERSIONS_KEY = 'blitz_data_versions';
 
 // ── Version change detection: clear stale localStorage on upgrade ──
@@ -639,9 +639,16 @@ setInterval(flushPendingSaves, 30000);
 
 // ── Track explicit deletes per table so server-side merge can honor them ──
 const deletedIDs = {}; // { 'payments': Set(['id1','id2']), ... }
+// v9.15: Persistent deleted IDs — survives merge cycles so Telegram offers don't re-add deleted deals
+const persistDeletedIDs = {};
 function trackDelete(table, id) {
   if (!deletedIDs[table]) deletedIDs[table] = new Set();
   deletedIDs[table].add(id);
+  if (!persistDeletedIDs[table]) persistDeletedIDs[table] = new Set();
+  persistDeletedIDs[table].add(id);
+}
+function isDeleted(table, id) {
+  return persistDeletedIDs[table] && persistDeletedIDs[table].has(id);
 }
 function getAndClearDeletes(table) {
   const ids = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
@@ -2055,7 +2062,7 @@ function RestoreDatabase({ user }) {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const tables = ['users', 'payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets', 'offers'];
+      const tables = ['users', 'payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets', 'offers', 'ftd-entries'];
       const found = tables.filter(t => data[t] && Array.isArray(data[t]));
       if (found.length === 0) { alert("❌ Invalid backup file — no data tables found."); return; }
       const summary = found.map(t => `  ${t}: ${data[t].length} records`).join("\n");
@@ -3009,8 +3016,8 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
 // ═══════════════════════════════════════════════════════════════
 // FTDS INFO PAGE — Full CRUD table with inline edit (v9.09)
 // ═══════════════════════════════════════════════════════════════
-function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrgDeals, userAccess }) {
-  const crg = Array.isArray(rawCrg) ? rawCrg : [];
+function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setFtdEntries, userAccess }) {
+  const crg = Array.isArray(rawFtd) ? rawFtd : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
 
@@ -3062,19 +3069,19 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
 
   // ── CRUD handlers ──
   const updateField = (id, field, value) => {
-    setCrgDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+    setFtdEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
   };
 
   const handleDelete = (id) => {
     if (!confirm("Delete this FTD entry?")) return;
-    trackDelete('crg-deals', id);
-    setCrgDeals(prev => prev.filter(d => d.id !== id));
+    trackDelete('ftd-entries', id);
+    setFtdEntries(prev => prev.filter(d => d.id !== id));
   };
 
   const handleBulkDelete = () => {
     if (!confirm(`Delete ${selected.size} selected entries?`)) return;
-    selected.forEach(id => trackDelete('crg-deals', id));
-    setCrgDeals(prev => prev.filter(d => !selected.has(d.id)));
+    selected.forEach(id => trackDelete('ftd-entries', id));
+    setFtdEntries(prev => prev.filter(d => !selected.has(d.id)));
     setSelected(new Set());
   };
 
@@ -3085,7 +3092,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
         dupes.push({ ...d, id: crypto.randomUUID ? crypto.randomUUID() : `ftd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` });
       }
     });
-    setCrgDeals(prev => [...prev, ...dupes]);
+    setFtdEntries(prev => [...prev, ...dupes]);
     setSelected(new Set());
     toast(`✅ Duplicated ${dupes.length} entries`);
   };
@@ -3106,7 +3113,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
       ftd: newFtd.ftd || "0",
       started: newFtd.started || false,
     };
-    setCrgDeals(prev => [entry, ...prev]);
+    setFtdEntries(prev => [entry, ...prev]);
     setNewFtd({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "" });
     setAddOpen(false);
     toast("✅ FTD entry added");
@@ -3201,6 +3208,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
                       <th style={thS}>Aff ID</th>
                       <th style={thS}>Brand</th>
                       <th style={thS}>Brand ID</th>
+                      <th style={thS}>FTD</th>
                       <th style={{ ...thS, width: 50 }}>Actions</th>
                     </tr>
                   </thead>
@@ -3223,7 +3231,8 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
                           <td style={tdS}><InlineCell value={d.affiliate || ""} onSave={v => updateField(d.id, "affiliate", v)} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
                           <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#0EA5E9", fontWeight: 700 }}>{affId}</td>
                           <td style={tdS}><InlineCell value={brandName} onSave={v => { const newBroker = brandId ? `${brandId} ${v}` : v; updateField(d.id, "brokerCap", newBroker); }} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
-                          <td style={tdS}><InlineCell value={d.brokerCap || ""} onSave={v => updateField(d.id, "brokerCap", v)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700, padding: "0 8px" }} /></td>
+                          <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700 }}>{brandId || "—"}</td>
+                          <td style={tdS}><InlineCell value={String(d.ftd || "0")} onSave={v => updateField(d.id, "ftd", v)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: parseInt(d.ftd) > 0 ? "#10B981" : "#CBD5E1", padding: "0 8px", textAlign: "center" }} /></td>
                           <td style={tdS}>
                             <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
                           </td>
@@ -3251,6 +3260,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, setCrg
             <Field label="Affiliate (e.g. 211 UK)"><input style={inp} value={newFtd.affiliate} onChange={e => setNewFtd(p => ({ ...p, affiliate: e.target.value }))} placeholder="211 UK" /></Field>
             <Field label="Broker / Brand"><input style={inp} value={newFtd.brokerCap} onChange={e => setNewFtd(p => ({ ...p, brokerCap: e.target.value }))} placeholder="3102 Helios" /></Field>
             <Field label="Country"><input style={inp} value={newFtd.country} onChange={e => setNewFtd(p => ({ ...p, country: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4) }))} placeholder="e.g. UK, DE, ES" maxLength={4} /></Field>
+            <Field label="FTD Count"><input style={inp} type="number" value={newFtd.ftd} onChange={e => setNewFtd(p => ({ ...p, ftd: e.target.value }))} placeholder="0" /></Field>
             <Field label="Date"><input style={inp} type="date" value={newFtd.date} onChange={e => setNewFtd(p => ({ ...p, date: e.target.value }))} /></Field>
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
@@ -6328,6 +6338,7 @@ function AppInner() {
   const [dealsData, setDealsData] = useState(() => lsGet('deals', null) || []);
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
   const [partnersData, setPartnersData] = useState(() => lsGet('partners', null) || []);
+  const [ftdEntries, setFtdEntries] = useState(() => lsGet('ftd-entries', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
 
@@ -6368,11 +6379,13 @@ function AppInner() {
     if (!localArr || localArr.length === 0) return serverArr;
 
     // FIX: Respect locally deleted records — don't resurrect them from server data
+    // v9.15: Also check persistDeletedIDs which survives clear cycles
     const localDeletedSet = deletedIDs[tableName] || new Set();
+    const persistDeleted = persistDeletedIDs[tableName] || new Set();
 
     const merged = new Map();
     serverArr.forEach(r => {
-      if (r && r.id && !localDeletedSet.has(r.id)) merged.set(r.id, r);
+      if (r && r.id && !localDeletedSet.has(r.id) && !persistDeleted.has(r.id)) merged.set(r.id, r);
     });
     let added = 0, updated = 0;
     localArr.forEach(r => {
@@ -6412,6 +6425,7 @@ function AppInner() {
   registerConflictSetter('deals', setDealsData);
   registerConflictSetter('wallets', setWalletsData);
   registerConflictSetter('partners', setPartnersData);
+  registerConflictSetter('ftd-entries', setFtdEntries);
 
   useEffect(() => {
     (async () => {
@@ -6441,14 +6455,14 @@ function AppInner() {
 
       // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
-        const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
+        const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
-          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
+          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'),
         ]);
         if (sessionExpiredFlag) {
           sessionExpiredFlag = false; setUser(null); skipSave.current = false; serverFetchDone.current = false; setLoaded(true); return;
         }
-        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof, spt].some(d => d !== null);
+        const anySuccess = [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd].some(d => d !== null);
         if (!anySuccess && justLoggedIn) {
           console.log("\u26A0\uFE0F All fetches failed during login grace \u2014 using local data");
           setLoaded(true); serverFetchDone.current = true; setTimeout(() => { skipSave.current = false; }, 8000); return; // v9.05
@@ -6482,6 +6496,7 @@ function AppInner() {
             { key: 'deals', srv: sdl, setter: setDealsData, ref: 'deals' },
             { key: 'wallets', srv: swl, setter: setWalletsData, ref: 'wallets' },
             { key: 'partners', srv: spt, setter: setPartnersData, ref: 'partners' },
+            { key: 'ftd-entries', srv: sftd, setter: setFtdEntries, ref: 'ftd-entries' },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -6505,7 +6520,7 @@ function AppInner() {
             setDealsData(prev => {
               const existing = new Map((prev || []).map(d => [d.id, d]));
               let added = 0;
-              sof.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+              sof.forEach(o => { if (o && o.id && !existing.has(o.id) && !isDeleted('deals', o.id)) { existing.set(o.id, o); added++; } });
               if (added > 0) {
                 const merged = Array.from(existing.values());
                 console.log(`📋 Merged ${added} Telegram offers into deals (${prev.length} → ${merged.length})`);
@@ -6536,14 +6551,14 @@ function AppInner() {
       if (msg.type !== 'update' || !msg.table || !Array.isArray(msg.data)) return;
       const setters = {
         users: setUsers, payments: setPayments, 'customer-payments': setCpPayments,
-        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData
+        'crg-deals': setCrgDeals, 'daily-cap': setDcEntries, deals: setDealsData, wallets: setWalletsData, 'ftd-entries': setFtdEntries
       };
       // If WS pushes offers update, merge into deals instead
       if (msg.table === 'offers') {
         const lsDeals = lsGet('deals', null) || [];
         const existing = new Map(lsDeals.map(d => [d.id, d]));
         let added = 0;
-        msg.data.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+        msg.data.forEach(o => { if (o && o.id && !existing.has(o.id) && !isDeleted('deals', o.id)) { existing.set(o.id, o); added++; } });
         if (added > 0) {
           skipSave.current = true;
           const merged = Array.from(existing.values());
@@ -6573,8 +6588,8 @@ function AppInner() {
       // v9.09: If server is online but WS isn't connected, keep trying
       if (serverOnline && (!wsConnection || wsConnection.readyState !== WebSocket.OPEN)) { connectWebSocket(); }
       if (!serverOnline) return;
-      const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'),
+      const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'),
       ]);
       skipSave.current = true;
       const all = [
@@ -6582,6 +6597,7 @@ function AppInner() {
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
         { d: swl, s: setWalletsData, k: 'wallets' }, { d: spt, s: setPartnersData, k: 'partners' },
+        { d: sftd, s: setFtdEntries, k: 'ftd-entries' },
       ];
       let anyChanged = false;
       for (const t of all) {
@@ -6603,7 +6619,7 @@ function AppInner() {
         const lsDeals = lsGet('deals', null) || [];
         const existing = new Map(lsDeals.map(d => [d.id, d]));
         let added = 0;
-        sof.forEach(o => { if (o && o.id && !existing.has(o.id)) { existing.set(o.id, o); added++; } });
+        sof.forEach(o => { if (o && o.id && !existing.has(o.id) && !isDeleted('deals', o.id)) { existing.set(o.id, o); added++; } });
         if (added > 0) {
           const merged = Array.from(existing.values());
           lsSave('deals', merged);
@@ -6647,6 +6663,7 @@ function AppInner() {
   useEffect(() => { debouncedSave('deals', dealsData); }, [dealsData]);
   useEffect(() => { debouncedSave('wallets', walletsData); }, [walletsData]);
   useEffect(() => { debouncedSave('partners', partnersData); }, [partnersData]);
+  useEffect(() => { debouncedSave('ftd-entries', ftdEntries); }, [ftdEntries]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
@@ -6685,7 +6702,7 @@ function AppInner() {
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
-  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} setCrgDeals={setCrgDeals} userAccess={userAccess} /></>);
+  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} ftdEntries={ftdEntries} setFtdEntries={setFtdEntries} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
