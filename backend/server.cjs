@@ -1909,12 +1909,26 @@ function sendAffiliatePaymentNotification(p, isPaid = false) {
 // ═══════════════════════════════════════════════════════════════
 
 function formatNewOfferMessage(affiliateId, country, brand) {
-  let msg = `📋 Added a new offer:
-Affiliate ${affiliateId}
-Country ${country}`;
-  if (brand) {
-    msg += `\nBrand: ${brand}`;
-  }
+  let msg = `📋 Added a new offer:\nAffiliate ${affiliateId}\nCountry ${country}`;
+  if (brand) msg += `\nBrand: ${brand}`;
+  return msg;
+}
+
+// v9.19: Consolidated batch offer confirmation message
+function formatBatchOfferConfirmation(affiliateId, offers) {
+  const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+  let msg = `✅ Added ${offers.length} offer(s) for Affiliate #${affiliateId}:\n`;
+  offers.forEach((o, i) => {
+    const num = i < numEmojis.length ? numEmojis[i] : `${i+1}.`;
+    const parts = [o.country || '?'];
+    if (o.funnel) parts.push(o.funnel);
+    if (o.price) parts.push(o.price);
+    if (o.source) parts.push(o.source);
+    if (o.deduction) parts.push(`deduct ${o.deduction}`);
+    if (o.crRate) parts.push(`CR ${o.crRate}`);
+    if (o.notes) parts.push(o.notes);
+    msg += `${num} ${parts.join(' | ')}\n`;
+  });
   return msg;
 }
 
@@ -1956,6 +1970,49 @@ function sendNewOfferNotification(affiliateId, country, brand) {
   });
 
   req.on('error', err => console.error("❌ New offer notification error:", err.message));
+  req.write(postData);
+  req.end();
+}
+
+// v9.19: Send batch offer confirmation to Telegram
+function sendBatchOfferNotification(affiliateId, offers) {
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
+    console.log("📱 Batch offer notification skipped (no token configured)");
+    return;
+  }
+
+  const message = formatBatchOfferConfirmation(affiliateId, offers);
+  
+  const postData = JSON.stringify({
+    chat_id: OFFER_GROUP_CHAT_ID,
+    text: message,
+    parse_mode: "HTML"
+  });
+
+  const options = {
+    hostname: 'api.telegram.org',
+    port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData)
+    }
+  };
+
+  const req = https.request(options, (res) => {
+    let d = '';
+    res.on('data', c => d += c);
+    res.on('end', () => {
+      if (res.statusCode !== 200) {
+        console.log("❌ Batch offer notification error:", d);
+      } else {
+        console.log(`✅ Batch offer notification sent: ${offers.length} offers for affiliate ${affiliateId}`);
+      }
+    });
+  });
+
+  req.on('error', err => console.error("❌ Batch offer notification error:", err.message));
   req.write(postData);
   req.end();
 }
@@ -2747,9 +2804,11 @@ app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
 // OFFER MESSAGE PARSER — Handles "Offer:" messages from Telegram
 // ═══════════════════════════════════════════════════════════════
 
+// v9.19: COMPLETELY REWRITTEN — robust multi-format offer parser
+// Supports: Labeled (Geo:/Funnel:/Price:/Source:), Compact, Mixed formats
 async function handleOfferMessage(bot, msg, messageText) {
   try {
-    // Check for duplicate message using message ID
+    // Dedup by message ID
     if (msg.message_id) {
       if (isMessageProcessed(msg.message_id)) {
         console.log("⏭️ Skipping duplicate offer message:", msg.message_id);
@@ -2757,386 +2816,239 @@ async function handleOfferMessage(bot, msg, messageText) {
       }
       markMessageProcessed(msg.message_id);
     }
-    
-    console.log("📝 Received offer message:", messageText);
-    
-    // Parse the BLITZ offer format:
-    // Offer:
-    // 51
-    // FR Polynesia 
-    // Crg 900$+8%
-    // Finzeratix, Plantorixio
-    // Gg/Fb
-    
-    const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
-    
-    // Declare existingOffers at the top to avoid initialization errors
-    let existingOffers = [];
 
-    // Check for simple single-line format: "Offer: 196 BEnl BitcoinApex 1500+12"
-    const simpleMatch = messageText.match(/^Offer:\s*(\d+)\s+(\w+)\s+(\S+)\s+(\d+[\+\%]\d+)/i);
-    if (simpleMatch) {
-      const affiliateId = simpleMatch[1];
-      const country = simpleMatch[2];
-      const brand = simpleMatch[3];
-      const crg = simpleMatch[4];
-      
-      // Get existing offers
-      const offersFile = path.join(DATA_DIR, "offers.json");
-      try {
-        if (fs.existsSync(offersFile)) {
-          existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
-        }
-      } catch (e) {}
-      
-      // Remove existing offers for this affiliate
-      existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-      
-      // Add new offer
-      const timestamp = new Date().toISOString().split("T")[0];
-      existingOffers.push({
-        id: crypto.randomBytes(4).toString('hex'),
-        affiliateId: affiliateId,
-        country: country,
-        crg: crg,
-        crgAmount: crg.split('+')[0],
-        crgPercentage: crg.split('+')[1] || '',
-        brands: brand,
-        traffic: '',
-        status: "Open",
-        createdDate: timestamp,
-        rawMessage: messageText
-      });
-      
-      // Save to file
-      await lockedWrite("offers.json", existingOffers, {
-        action: "create",
-        user: "telegram-bot",
-        details: `Added offer for affiliate ${affiliateId}`
-      });
-      
-      // Broadcast to connected clients
-      broadcastUpdate("offers", existingOffers);
-      
-      // Send notification to offer group
-      sendNewOfferNotification(affiliateId, country, brand);
-      
-      return;
-    }
-    
-// Check for multi-line format:
-    // Offer:
-    // 196 BEnl
-    // BitcoinApex
-    // 1500+12
-    if (lines.length >= 4 && lines[0].toLowerCase() === 'offer:') {
-      // Second line should be "196 BEnl" (affiliate + country)
-      // Fix: Make regex case-insensitive for country code part
-      const line2Match = lines[1].match(/^(\d+)\s+([A-Za-z0-9]+)$/);
-      if (line2Match) {
-        const affiliateId = line2Match[1];
-        const country = line2Match[2]; // Keep original case (e.g., "BEnl")
-        const brand = lines[2] || '';
-        const crg = lines[3] || '';
-        
-        // Validate we have at least affiliate and country
-        if (affiliateId && country) {
-          // Get existing offers
-          const offersFile = path.join(DATA_DIR, "offers.json");
-          existingOffers = [];
-          try {
-            if (fs.existsSync(offersFile)) {
-              existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
-            }
-          } catch (e) {}
-          
-          // Remove existing offers for this affiliate
-          existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-          
-          // Add new offer
-          const timestamp = new Date().toISOString().split("T")[0];
-          existingOffers.push({
-            id: crypto.randomBytes(4).toString('hex'),
-            affiliateId: affiliateId,
-            country: country,
-            crg: crg,
-            crgAmount: crg.split('+')[0] || '',
-            crgPercentage: crg.split('+')[1] || '',
-            brands: brand,
-            traffic: '',
-            status: "Open",
-            createdDate: timestamp,
-            rawMessage: messageText
-          });
-          
-          // Save to file
-          await lockedWrite("offers.json", existingOffers, {
-            action: "create",
-            user: "telegram-bot",
-            details: `Added offer for affiliate ${affiliateId}`
-          });
-          
-          // Broadcast to connected clients
-          broadcastUpdate("offers", existingOffers);
-          
-          // Send notification to offer group
-          sendNewOfferNotification(affiliateId, country, brand);
-          
-          return;
-        }
-      }
-      
-      // NEW FORMAT: Check for format like:
-      // Offer:
-      // 80
-      // HR native Quantumcroatia 1250+11%
-      // deduction 10%
-      
-      // Line 2 is affiliate ID only (just a number)
-      const line2NumberOnly = lines[1].match(/^(\d+)$/);
-      if (line2NumberOnly) {
-        const affiliateId = line2NumberOnly[1];
-        
-        // Line 3 contains: country brand crg (e.g., "HR native Quantumcroatia 1250+11%")
-        const line3 = lines[2] || '';
-        
-        // Parse line3: first 2 chars is country code, rest is brand and CRG
-        // Format: "HR native Quantumcroatia 1250+11%"
-        let country = '';
-        let brand = '';
-        let crg = '';
-        
-        // Try to extract country code (first 2 letters)
-        const countryMatch = line3.match(/^([A-Za-z]{2})\s+(.+)$/);
-        if (countryMatch) {
-          country = countryMatch[1].toUpperCase();
-          const rest = countryMatch[2];
-          // Try to extract CRG from rest (e.g., "1250+11%" or "1250+11")
-          const crgMatch = rest.match(/(\d+[\+\%]\d+%)/);
-          if (crgMatch) {
-            crg = crgMatch[1];
-            brand = rest.replace(crgMatch[0], '').trim();
-          } else {
-            brand = rest;
-          }
-        }
-        
-        // Parse deduction from line 4 (e.g., "deduction 10%")
-        let deduction = '';
-        if (lines[3]) {
-          const deductionMatch = lines[3].match(/deduction\s+(\d+%)/i);
-          if (deductionMatch) {
-            deduction = deductionMatch[1];
-          }
-        }
-        
-        if (affiliateId && country) {
-          // FIX: Save to deals.json (not offers.json) - this is what the CRM Offers tab reads
-          const dealsFile = path.join(DATA_DIR, "deals.json");
-          let existingDeals = [];
-          try {
-            if (fs.existsSync(dealsFile)) {
-              existingDeals = JSON.parse(fs.readFileSync(dealsFile, "utf8"));
-            }
-          } catch (e) {}
-          
-          // Remove existing deals for this affiliate and country
-          existingDeals = existingDeals.filter(d => 
-            String(d.affiliate) !== String(affiliateId) || 
-            (d.country && d.country.toUpperCase()) !== country
-          );
-          
-          // Add new deal in deals.json format
-          existingDeals.push({
-            id: crypto.randomBytes(4).toString('hex'),
-            affiliate: affiliateId,
-            country: country,
-            price: '',
-            crg: crg,
-            dealType: "CRG",
-            funnels: brand,
-            source: '',
-            deduction: deduction || '',
-            date: new Date().toISOString().split("T")[0],
-            openBy: 'telegram-bot'
-          });
-          
-          // Save to deals.json
-          await lockedWrite("deals.json", existingDeals, {
-            action: "create",
-            user: "telegram-bot",
-            details: `Added offer for affiliate ${affiliateId}`
-          });
-          
-          // Broadcast to connected clients
-          broadcastUpdate("deals", existingDeals);
+    console.log("📝 [v9.19] Received offer message:", messageText);
 
-          // Send confirmation to offer group using standard format
-          sendNewOfferNotification(affiliateId, country, brand);
-          
-          return;
-        }
+    // ── STEP 1: Split into raw lines (preserve blanks for block splitting) ──
+    const rawLines = messageText.split('\n').map(l => l.trim());
+
+    // ── STEP 2: Remove header line ("Offer:" / "Offers:") ──
+    let headerIdx = 0;
+    if (rawLines[0] && /^offers?:/i.test(rawLines[0])) {
+      // Check if affiliate ID is on the same line: "Offers: 17"
+      const headerMatch = rawLines[0].match(/^offers?:\s*(\d+)\s*$/i);
+      if (headerMatch) {
+        // Affiliate ID is on the header line itself
+        rawLines[0] = headerMatch[1]; // Replace header with just the number
+      } else {
+        headerIdx = 1; // Skip header line
       }
     }
-    
-    // Find affiliate ID
+    const bodyLines = rawLines.slice(headerIdx);
+
+    // ── STEP 3: Find affiliate ID (first standalone number) ──
     let affiliateId = null;
-    let startIndex = 0;
-    
-    // Skip "Offer:" header
-    if (lines[0] && lines[0].toLowerCase().startsWith('offer:')) {
-      startIndex = 1;
-    }
-    
-    // Find affiliate ID (standalone number)
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      if (/^\d+$/.test(line)) {
-        affiliateId = line;
-        startIndex = i + 1;
+    let offerStartIdx = 0;
+    for (let i = 0; i < bodyLines.length; i++) {
+      if (/^\d+$/.test(bodyLines[i])) {
+        affiliateId = bodyLines[i];
+        offerStartIdx = i + 1;
         break;
       }
     }
-    
     if (!affiliateId) {
-      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID. Format: Offer:\\n51\\nFR\\nCrg 900$+8%");
+      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in the message.");
       return;
     }
-    
-    // Parse country blocks
-    const offers = [];
-    let currentCountry = '';
-    let currentCRG = '';
-    let currentBrands = '';
-    let currentTraffic = '';
-    
-    for (let i = startIndex; i < lines.length; i++) {
-      const line = lines[i];
-      const lowerLine = line.toLowerCase();
-      
-      // Empty line separates country blocks
-      if (!line) {
-        if (currentCountry && currentCRG) {
-          offers.push({
-            country: currentCountry,
-            crg: currentCRG,
-            brands: currentBrands,
-            traffic: currentTraffic
-          });
+
+    // ── STEP 4: Split remaining lines into blocks (separated by blank lines) ──
+    const blocks = [];
+    let currentBlock = [];
+    for (let i = offerStartIdx; i < bodyLines.length; i++) {
+      if (bodyLines[i] === '') {
+        if (currentBlock.length > 0) {
+          blocks.push(currentBlock);
+          currentBlock = [];
         }
-        currentCountry = '';
-        currentCRG = '';
-        currentBrands = '';
-        currentTraffic = '';
-        continue;
+      } else {
+        currentBlock.push(bodyLines[i]);
       }
-      
-      // Check if CRG line
-      if (lowerLine.startsWith('crg ') || /^\$?\d+[\+\$]/.test(line)) {
-        currentCRG = line;
-        continue;
-      }
-      
-      // Check if traffic line (contains /, fb, gg)
-      if (line.includes('/') || lowerLine.includes('fb') || lowerLine.includes('gg')) {
-        currentTraffic = line;
-        continue;
-      }
-      
-      // Check if country line
-      if (/^[A-Z]{2}[\s]/.test(line) || /^[A-Z]{2}$/.test(line) || 
-          lowerLine.includes('polynesia') || lowerLine.includes('native') || 
-          lowerLine.includes('mix')) {
-        if (currentCountry && currentCRG) {
-          offers.push({
-            country: currentCountry,
-            crg: currentCRG,
-            brands: currentBrands,
-            traffic: currentTraffic
-          });
+    }
+    if (currentBlock.length > 0) blocks.push(currentBlock);
+
+    console.log(`📦 Affiliate: ${affiliateId}, Blocks found: ${blocks.length}`);
+
+    // ── STEP 5: Parse each block into an offer ──
+    const parsedOffers = [];
+
+    for (const block of blocks) {
+      const offer = { country: '', funnel: '', price: '', source: '', deduction: '', crRate: '', notes: '' };
+      const extraNotes = [];
+
+      // Detect if block uses labeled format (has "Geo:" or "Funnel:" or "Price:" or "Source:")
+      const hasLabels = block.some(l => /^(geo|funnel|price|source|cr)\s*:/i.test(l));
+
+      if (hasLabels) {
+        // ── LABELED FORMAT ──
+        // Geo: BEfr / Funnel: AI Invest Maximum / Price: 1300+10% / Source: FB
+        for (const line of block) {
+          const geoMatch = line.match(/^geo\s*:\s*(.+)$/i);
+          if (geoMatch) { offer.country = geoMatch[1].trim(); continue; }
+
+          const funnelMatch = line.match(/^funnel\s*:\s*(.+)$/i);
+          if (funnelMatch) { offer.funnel = funnelMatch[1].trim(); continue; }
+
+          const priceMatch = line.match(/^price\s*:\s*(.+)$/i);
+          if (priceMatch) { offer.price = priceMatch[1].trim(); continue; }
+
+          const sourceMatch = line.match(/^source\s*:\s*(.+)$/i);
+          if (sourceMatch) { offer.source = sourceMatch[1].trim(); continue; }
+
+          const crMatch = line.match(/^cr\s*:?\s*(\d+%?)$/i);
+          if (crMatch) { offer.crRate = crMatch[1].trim(); continue; }
+
+          // Deduction patterns
+          const deductMatch = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i);
+          if (deductMatch) { offer.deduction = deductMatch[1].trim(); continue; }
+
+          // Anything else is a note
+          extraNotes.push(line);
         }
-        currentCountry = line;
-        currentCRG = '';
-        currentBrands = '';
-        currentTraffic = '';
-        continue;
+      } else {
+        // ── COMPACT / MIXED FORMAT ──
+        // Examples:
+        //   "ES"  or  "CA eng"  or  "AT 1600+10"
+        //   "1600*14"  or  "1300+10%"
+        //   "Dynamic crypto mix"
+        //   "Google"  or  "FB"  or  "FB+SEO"
+        //   "10% deduct"  or  "no autologin"
+        //   "CR 12%"
+
+        // Line 0 is always the country (possibly with price attached)
+        const line0 = block[0] || '';
+
+        // Check if line0 has country + price: "AT 1600+10" or "IT 1550 +10"
+        const countryPriceMatch = line0.match(/^([A-Za-z]{2,}(?:\s+[a-z]{2,})?)\s+(\d+[\$€]?\s*[\+\*]\s*\d+%?)$/i);
+        if (countryPriceMatch) {
+          offer.country = countryPriceMatch[1].trim();
+          offer.price = countryPriceMatch[2].trim().replace(/\s+/g, '');
+        } else {
+          // Line 0 is just country: "ES" or "CA eng"
+          offer.country = line0;
+        }
+
+        // Parse remaining lines
+        for (let li = 1; li < block.length; li++) {
+          const line = block[li];
+          const lineLower = line.toLowerCase();
+
+          // CR rate: "CR 12%"
+          const crMatch = line.match(/^cr\s+(\d+%?)$/i);
+          if (crMatch) { offer.crRate = crMatch[1]; continue; }
+
+          // Deduction: "10% deduct" or "deduction 10%"
+          const deductMatch = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i);
+          if (deductMatch) { offer.deduction = deductMatch[1]; continue; }
+
+          // Price line: "1600*14" or "1300+10%" or "1100$+10%"
+          if (!offer.price && /^\d+[\$€]?\s*[\+\*]\s*\d+/.test(line)) {
+            offer.price = line.replace(/\s+/g, '');
+            continue;
+          }
+
+          // Source line: known traffic sources or contains / or +
+          // Must check AFTER price to avoid "FB+SEO" being confused with price
+          if (!offer.source && (
+            /^(fb|google|gg|seo|taboola|msn|sms|nativ|native|push)/i.test(lineLower) ||
+            (line.includes('+') && /[a-zA-Z]/.test(line) && !/^\d/.test(line)) ||
+            (line.includes('/') && /[a-zA-Z]/.test(line))
+          )) {
+            offer.source = line;
+            continue;
+          }
+
+          // "source nativ" or "source: FB"
+          const srcMatch = line.match(/^source\s*:?\s*(.+)$/i);
+          if (srcMatch) { offer.source = srcMatch[1].trim(); continue; }
+
+          // Notes: "no autologin", etc.
+          if (lineLower.startsWith('no ') || lineLower.startsWith('note')) {
+            extraNotes.push(line);
+            continue;
+          }
+
+          // If we don't have a funnel yet, this line is the funnel/brand name
+          if (!offer.funnel) {
+            // But skip if it looks like a source (single word matching known sources)
+            if (/^(fb|google|gg|seo|taboola|msn|sms)$/i.test(lineLower)) {
+              offer.source = line;
+            } else {
+              offer.funnel = line;
+            }
+            continue;
+          }
+
+          // If we already have funnel, check if this is a source
+          if (!offer.source) {
+            offer.source = line;
+            continue;
+          }
+
+          // Everything else is notes
+          extraNotes.push(line);
+        }
       }
-      
-      // Otherwise, it's brands
-      currentBrands = line;
+
+      // Combine extra notes
+      if (extraNotes.length > 0) {
+        offer.notes = extraNotes.join('; ');
+      }
+
+      // Only add if we have at least a country
+      if (offer.country) {
+        parsedOffers.push(offer);
+        console.log(`  ✅ Parsed offer: ${JSON.stringify(offer)}`);
+      } else {
+        console.log(`  ⚠️ Skipped block (no country): ${JSON.stringify(block)}`);
+      }
     }
-    
-    // Don't forget last offer
-    if (currentCountry && currentCRG) {
-      offers.push({
-        country: currentCountry,
-        crg: currentCRG,
-        brands: currentBrands,
-        traffic: currentTraffic
-      });
-    }
-    
-    if (offers.length === 0) {
-      bot.sendMessage(msg.chat.id, "❌ Could not parse any offers.");
+
+    if (parsedOffers.length === 0) {
+      bot.sendMessage(msg.chat.id, `❌ Could not parse any offers from the message. Affiliate ID: ${affiliateId}`);
       return;
     }
-    
-    // Get existing offers
-    const offersFile = path.join(DATA_DIR, "offers.json");
-    existingOffers = [];
+
+    // ── STEP 6: Save ALL offers to offers.json ──
+    let existingOffers = [];
     try {
-      if (fs.existsSync(offersFile)) {
-        existingOffers = JSON.parse(fs.readFileSync(offersFile, "utf8"));
-      }
+      existingOffers = readJSON("offers.json", []);
     } catch (e) {}
-    
-    // Remove existing offers for this affiliate
-    existingOffers = existingOffers.filter(o => o.affiliateId !== affiliateId);
-    
-    // Add new offers
+
+    // Keep offers from OTHER affiliates, remove old ones for THIS affiliate
+    existingOffers = existingOffers.filter(o => String(o.affiliateId) !== String(affiliateId));
+
     const timestamp = new Date().toISOString().split("T")[0];
-    offers.forEach(o => {
-      // Parse CRG amount and percentage
-      let crgAmount = '';
-      let crgPercentage = '';
-      const crgMatch = o.crg.match(/(\d+)\$?\+(\d+)/);
-      if (crgMatch) {
-        crgAmount = crgMatch[1];
-        crgPercentage = crgMatch[2] + '%';
-      }
-      
-      existingOffers.push({
-        id: crypto.randomBytes(4).toString('hex'),
-        affiliateId: affiliateId,
-        country: o.country,
-        crg: o.crg,
-        crgAmount: crgAmount,
-        crgPercentage: crgPercentage,
-        brands: o.brands,
-        traffic: o.traffic,
-        status: "Open",
-        createdDate: timestamp,
-        rawMessage: messageText
-      });
-    });
-    
-    // Save to file
+    const newOfferRecords = parsedOffers.map(o => ({
+      id: crypto.randomBytes(4).toString('hex'),
+      affiliateId: affiliateId,
+      country: o.country,
+      funnel: o.funnel,
+      price: o.price,
+      source: o.source,
+      deduction: o.deduction,
+      crRate: o.crRate,
+      notes: o.notes,
+      status: "Open",
+      createdDate: timestamp,
+      rawMessage: messageText
+    }));
+
+    existingOffers.push(...newOfferRecords);
+
     await lockedWrite("offers.json", existingOffers, {
       action: "create",
       user: "telegram-bot",
-      details: `Added ${offers.length} offers for affiliate ${affiliateId}`
+      details: `Added ${parsedOffers.length} offers for affiliate ${affiliateId}`
     });
-    
-    // Broadcast to connected clients
     broadcastUpdate("offers", existingOffers);
-    
-    // Send confirmation for each parsed offer using standard format
-    offers.forEach(o => {
-      sendNewOfferNotification(affiliateId, o.country, o.brands);
-    });
-    
+
+    console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
+
+    // ── STEP 7: Send ONE consolidated confirmation ──
+    sendBatchOfferNotification(affiliateId, parsedOffers);
+
   } catch (err) {
-    console.error("❌ Error handling offer message:", err.message);
+    console.error("❌ Error handling offer message:", err.message, err.stack);
     bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
   }
 }
