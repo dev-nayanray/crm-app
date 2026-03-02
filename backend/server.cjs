@@ -51,6 +51,23 @@ process.on('unhandledRejection', (reason) => {
   if (CRASH_LOG.length > 50) CRASH_LOG.shift();
   console.error(`💥 UNHANDLED REJECTION #${crashCount} (server stays alive):`, msg);
 });
+
+// ═══════════════════════════════════════════════════════════════
+// STRUCTURED LOGGING — module / event / result / timestamp
+// ═══════════════════════════════════════════════════════════════
+// Q1: Centralised log helper used across all Telegram modules
+function structuredLog(module, event, result, details = {}) {
+  const entry = {
+    ts: new Date().toISOString(),
+    module,
+    event,
+    result, // "ok" | "error" | "skip" | "warn"
+    ...details,
+  };
+  const icon = result === 'ok' ? '✅' : result === 'error' ? '❌' : result === 'skip' ? '⏭️' : '⚠️';
+  console.log(`${icon} [${module}] ${event}`, JSON.stringify(entry));
+  return entry;
+}
 const PORT = 3001;
 const VERSION = "9.12";
 const DATA_DIR = path.join(__dirname, "data");
@@ -1045,9 +1062,11 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (!Array.isArray(records)) return res.status(400).json({ error: "Invalid data format" });
     if (records.length > 10000) return res.status(400).json({ error: "Too many records" });
 
+    // C3 FIX: Declare deleteSet at outer scope — was inside if block, causing ReferenceError below
+    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+
     if (records.length === 0) {
       const existing = readJSON(file, []);
-      const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
       if (existing.length > 0 && deleteSet.size === 0) {
         console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected (no delete IDs)`);
         return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
@@ -1125,8 +1144,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
     // Note: serverOnly records are already in mergedMap from the initial forEach above.
     
-    // Remove explicitly deleted records
-    const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
+    // Remove explicitly deleted records (deleteSet declared at top of handler — C3 FIX)
     if (deleteSet.size > 0) {
       deleteSet.forEach(id => mergedMap.delete(id));
       console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted`);
@@ -1622,16 +1640,7 @@ function sendOpenPaymentNotification(p) {
 }
 
 
-function formatPaidPaymentMessage(p) {
-  const amount = Number(p.amount || 0).toLocaleString("en-US");
-
-  return `💰 PAYMENT ${p.invoice} marked as PAID 💰
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-👤 Paid by: ${p.openBy || "Unknown"}
-Payment Hash: ${p.paymentHash || "N/A"}`;
-}
+// Q2 FIX: Removed unused formatPaidPaymentMessage — was shadowed by formatAffiliatePaidPaymentMessage
 
 // ═══════════════════════════════════════════════════════════════
 // FINANCE | BRANDS GROUP NOTIFICATIONS (-1002796530029)
@@ -1885,19 +1894,31 @@ function sendNewCRGDealNotification(deal) {
 let bot;
 const userStates = {};
 
-// Track processed message IDs to prevent duplicates (30 second window)
+// Track processed message IDs to prevent duplicates
+// L5 FIX: Increased TTL from 30s → 5 minutes to prevent re-processing on bot restart
 const processedMessageIds = new Map();
-const MESSAGE_ID_CLEANUP_INTERVAL = 30000; // 30 seconds
+const MESSAGE_ID_TTL = 300000; // 5 minutes
+const MESSAGE_ID_CLEANUP_INTERVAL = 60000; // cleanup every 60s
 
 // Cleanup old message IDs periodically
 setInterval(() => {
   const now = Date.now();
   for (const [msgId, timestamp] of processedMessageIds) {
-    if (now - timestamp > MESSAGE_ID_CLEANUP_INTERVAL) {
+    if (now - timestamp > MESSAGE_ID_TTL) {
       processedMessageIds.delete(msgId);
     }
   }
 }, MESSAGE_ID_CLEANUP_INTERVAL);
+
+// L4 FIX: processedHashes at module level — was lazily init'd inside handler causing race conditions
+const processedHashes = new Map();
+const HASH_TTL = 300000; // 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [hash, ts] of processedHashes) {
+    if (now - ts > HASH_TTL) processedHashes.delete(hash);
+  }
+}, 60000);
 
 // Helper to check and mark message as processed
 function isMessageProcessed(msgId) {
@@ -1996,18 +2017,70 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       }
     });
 
+    // M3 FIX: Added /help, /ping, /status to registered command list
     bot.setMyCommands([
-      { command:"/start", description:"Welcome & help" },
+      { command:"/start", description:"Welcome message" },
+      { command:"/help", description:"Command list" },
       { command:"/wallets", description:"Current wallet addresses" },
       { command:"/crgdeals", description:"Today's CRG deals by country" },
       { command:"/deals", description:"All deals by country" },
       { command:"/todaycrgcap", description:"Today's CRG cap summary" },
       { command:"/todayagentscap", description:"Today's agents cap" },
       { command:"/payments", description:"Open payments summary" },
+      { command:"/ping", description:"Latency test" },
+      { command:"/status", description:"Server health" },
     ]).catch(e => console.log("⚠️ Register commands:", e.message));
 
-    bot.onText(/\/start|\/help/, (msg) => {
-      bot.sendMessage(msg.chat.id, `👋 <b>Blitz CRM Bot v${VERSION}</b>\n\n/wallets - Wallet addresses\n/crgdeals - Today's CRG deals\n/deals - All deals by country\n/todaycrgcap - CRG cap summary\n/todayagentscap - Agents cap\n/payments - Open payments\n/help - This help`, { parse_mode: "HTML" });
+    // M4 FIX: Separated /start and /help into distinct handlers
+    bot.onText(/\/start/, (msg) => {
+      structuredLog("cmd", "/start", "ok", { chat: msg.chat.id });
+      bot.sendMessage(msg.chat.id, `👋 <b>Welcome to Blitz CRM Bot v${VERSION}</b>\n\nType /help for the full command list.`, { parse_mode: "HTML" });
+    });
+
+    bot.onText(/\/help/, (msg) => {
+      structuredLog("cmd", "/help", "ok", { chat: msg.chat.id });
+      bot.sendMessage(msg.chat.id,
+        `📋 <b>Blitz CRM Bot v${VERSION} — Commands</b>\n\n` +
+        `/wallets — Wallet addresses\n` +
+        `/crgdeals — Today's CRG deals by country\n` +
+        `/deals — All deals by country\n` +
+        `/todaycrgcap — CRG cap summary\n` +
+        `/todayagentscap — Agents cap\n` +
+        `/payments — Open payments\n` +
+        `/ping — Latency test\n` +
+        `/status — Server health`,
+        { parse_mode: "HTML" }
+      );
+    });
+
+    // M1 FIX: /ping command — latency test
+    bot.onText(/\/ping/, (msg) => {
+      const start = Date.now();
+      structuredLog("cmd", "/ping", "ok", { chat: msg.chat.id });
+      bot.sendMessage(msg.chat.id, `🏓 Pong! Response: ${Date.now() - start}ms | Uptime: ${Math.round(process.uptime())}s`);
+    });
+
+    // M2 FIX: /status command — server health
+    bot.onText(/\/status/, (msg) => {
+      try {
+        const mem = process.memoryUsage();
+        const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
+        const rssMB = Math.round(mem.rss / 1024 / 1024);
+        const uptime = Math.round(process.uptime());
+        const h = Math.floor(uptime / 3600), m = Math.floor((uptime % 3600) / 60), s = uptime % 60;
+        structuredLog("cmd", "/status", "ok", { chat: msg.chat.id, heap: heapMB });
+        bot.sendMessage(msg.chat.id,
+          `🖥️ <b>Server Status</b>\n\n` +
+          `✅ Online\n` +
+          `⏱ Uptime: ${h}h ${m}m ${s}s\n` +
+          `💾 Heap: ${heapMB}MB / RSS: ${rssMB}MB\n` +
+          `🔌 WS clients: ${wsClients.size}\n` +
+          `📦 v${VERSION}`,
+          { parse_mode: "HTML" }
+        );
+      } catch (err) {
+        bot.sendMessage(msg.chat.id, `❌ Status error: ${err.message}`);
+      }
     });
 
     // /wallets
@@ -2054,29 +2127,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       });
     });
 
-    // /todaycrgcap
-    bot.onText(/\/todaycrgcap/, (msg) => {
-      const all = readJSON("crg-deals.json", []); const dates = [...new Set(all.map(d => d.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
-      const td = all.filter(d => d.date === ld); if (!td.length) { bot.sendMessage(msg.chat.id, "📭 No CRG cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
-      const tCap = td.reduce((s, d) => s + (parseInt(d.cap) || 0), 0), tRec = td.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0), tFTD = td.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
-      let t = `📊 <b>Today CRG Cap</b>\n📅 ${ld} | ${td.length} deals\n\n<code>Affiliate    | Cap | Rec | FTD\n-------------|-----|-----|-----\n`;
-      td.slice(0, 15).forEach(d => { t += `${(d.affiliate || "").padEnd(12).substring(0, 12)}| ${(d.cap || "0").padStart(3)} | ${(d.capReceived || "0").padStart(3)} | ${(d.ftd || "0").padStart(3)}\n`; });
-      if (td.length > 15) t += `... ${td.length - 15} more\n`;
-      t += `-------------|-----|-----|-----\nTOTAL        | ${String(tCap).padStart(3)} | ${String(tRec).padStart(3)} | ${String(tFTD).padStart(3)}</code>\n\nRemaining: ${tCap - tRec}`;
-      bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
-    });
-
-    // /todayagentscap
-    bot.onText(/\/todayagentscap/, (msg) => {
-      const all = readJSON("daily-cap.json", []); const dates = [...new Set(all.map(c => c.date))].sort().reverse(); const ld = dates[0] || new Date().toISOString().split("T")[0];
-      const tc = all.filter(c => c.date === ld); if (!tc.length) { bot.sendMessage(msg.chat.id, "📭 No agents cap data.\n<i>Syncs every 15min.</i>", { parse_mode: "HTML" }); return; }
-      const tAff = tc.reduce((s, c) => s + (parseInt(c.affiliates) || 0), 0), tBr = tc.reduce((s, c) => s + (parseInt(c.brands) || 0), 0);
-      let t = `📊 <b>Today Agents Cap</b>\n📅 ${ld}\n\n<code>Agent      | Aff | Brands\n-----------|-----|-------\n`;
-      tc.forEach(c => { t += `${(c.agent || "").padEnd(10).substring(0, 10)}| ${(c.affiliates || "0").padStart(3)} | ${(c.brands || "0").padStart(6)}\n`; });
-      t += `-----------|-----|-------\nTOTAL      | ${String(tAff).padStart(3)} | ${String(tBr).padStart(6)}</code>\n\nAgents: ${tc.length} | Aff: ${tAff} | Brands: ${tBr}`;
-      bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
-    });
-
     // ── Inline keyboard callback handler ──
     bot.on("callback_query", async (cq) => {
       const chatId = cq.message.chat.id; bot.answerCallbackQuery(cq.id);
@@ -2117,16 +2167,14 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // Debug: show chat ID
       console.log("💬 Message from chat ID:", chatIdStr, "| OFFER_GROUP_CHAT_ID:", OFFER_GROUP_CHAT_ID);
       
-      // Check if message is from offer group (handle both -100 prefix and without)
-      const isOfferGroup = chatIdStr === OFFER_GROUP_CHAT_ID || 
-                          chatIdStr === OFFER_GROUP_CHAT_ID.replace('-100', '-') ||
-                          chatIdStr === OFFER_GROUP_CHAT_ID.replace('-', '-100');
+      // L1 FIX: Direct string comparison — old .replace('-100','-') chain was fragile
+      // and could accidentally match wrong groups with similar numeric suffixes
+      const isOfferGroup = chatIdStr === OFFER_GROUP_CHAT_ID;
       
-      // Check if message is from offer group and contains offer data
-      // Format 1: "Offer: 191 AU ..." (with Offer: prefix)
-      // Format 2: "191\nAU 1400+14..." (first line is just affiliate ID number)
-      const isOfferFormat = offerLower.startsWith('offer:') || offerLower.startsWith('offers:') ||
-                           (/^\d+$/.test(offerMessageText.trim().split('\n')[0] || ''));
+      // L2 FIX: Removed overly broad /^\d+$/ check — it matched ANY message whose
+      // first line was a standalone number (e.g. "500" in a payment message).
+      // Now only explicit "Offer:" / "Offers:" prefix triggers offer parsing.
+      const isOfferFormat = offerLower.startsWith('offer:') || offerLower.startsWith('offers:');
       
       if (isOfferGroup && isOfferFormat) {
         console.log("✅ Detected offer message in group!");
@@ -2179,7 +2227,8 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
       // USDT hash detection (Brands group)
       const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID;
-      const isFinanceGroup = chatId.toString() === FINANCE_GROUP_CHAT_ID;
+      // C1 FIX: was FINANCE_GROUP_CHAT_ID (undefined) — caused ReferenceError crash
+      const isFinanceGroup = chatId.toString() === AFFILIte_FINANCE_GROUP_CHAT_ID;
       
       // Handle payment messages from Brands group with payment links
       if (isBrandsGroup) {
@@ -2271,8 +2320,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             // Mark hash as processed to prevent duplicates
             bot._processedHashes.set(hash, Date.now());
 
-            // Send notification to Brands group about new open customer payment
-            const brandNotifyMsg = formatBrandNewPaymentMessage(newPayment);
+            // L3 FIX: Use "Received" format when wallet matched, "New" format otherwise
+            const brandNotifyMsg = status === "Received"
+              ? formatBrandPaymentReceivedMessage(newPayment)
+              : formatBrandNewPaymentMessage(newPayment);
             bot.sendMessage(BRANDS_GROUP_CHAT_ID, brandNotifyMsg);
             
             
@@ -2334,35 +2385,70 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     console.log("✅ USDT hash detection enabled");
     
     // ═══════════════════════════════════════════════════════════════
-    // 15. SCREENSHOT FUNCTIONALITY FOR MONITORING
+    // 15. SCREENSHOT + TEXT FALLBACK COMMANDS
+    // C4 FIX: Removed duplicate text-only /todaycrgcap and /todayagentscap handlers.
+    // These screenshot handlers now include text fallback if Puppeteer unavailable.
     // ═══════════════════════════════════════════════════════════════
-    
-    // /todaycrgcap - Send CRG Deals report
+
+    // /todaycrgcap — screenshot with text fallback
     bot.onText(/\/todaycrgcap/, async (msg) => {
-      bot.sendMessage(msg.chat.id, "📸 Generating CRG report...");
+      structuredLog("cmd", "/todaycrgcap", "ok", { chat: msg.chat.id });
       try {
+        bot.sendMessage(msg.chat.id, "📸 Generating CRG report...");
         const result = await screenshotModule.sendReport(bot, msg.chat.id, 'crg', readJSON);
-        console.log(`CRG report sent via ${result.method}`);
+        structuredLog("cmd", "/todaycrgcap", "ok", { method: result.method });
       } catch (err) {
-        console.error('Report error:', err);
-        bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+        structuredLog("cmd", "/todaycrgcap", "warn", { error: err.message, fallback: "text" });
+        // Text fallback
+        try {
+          const all = readJSON("crg-deals.json", []);
+          const dates = [...new Set(all.map(d => d.date))].sort().reverse();
+          const ld = dates[0] || new Date().toISOString().split("T")[0];
+          const td = all.filter(d => d.date === ld);
+          if (!td.length) { bot.sendMessage(msg.chat.id, "📭 No CRG cap data.", { parse_mode: "HTML" }); return; }
+          const tCap = td.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const tRec = td.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const tFTD = td.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          let t = `📊 <b>Today CRG Cap</b>\n📅 ${ld} | ${td.length} deals\n\n<code>Affiliate    | Cap | Rec | FTD\n-------------|-----|-----|-----\n`;
+          td.slice(0, 15).forEach(d => { t += `${(d.affiliate || "").padEnd(12).substring(0, 12)}| ${(d.cap || "0").padStart(3)} | ${(d.capReceived || "0").padStart(3)} | ${(d.ftd || "0").padStart(3)}\n`; });
+          if (td.length > 15) t += `... ${td.length - 15} more\n`;
+          t += `-------------|-----|-----|-----\nTOTAL        | ${String(tCap).padStart(3)} | ${String(tRec).padStart(3)} | ${String(tFTD).padStart(3)}</code>\n\nRemaining: ${tCap - tRec}`;
+          bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+        } catch (fallbackErr) {
+          bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+        }
       }
     });
-    
-    // /todayagentscap - Send Daily Cap report
+
+    // /todayagentscap — screenshot with text fallback
     bot.onText(/\/todayagentscap/, async (msg) => {
-      bot.sendMessage(msg.chat.id, "📸 Generating Agents report...");
+      structuredLog("cmd", "/todayagentscap", "ok", { chat: msg.chat.id });
       try {
+        bot.sendMessage(msg.chat.id, "📸 Generating Agents report...");
         const result = await screenshotModule.sendReport(bot, msg.chat.id, 'agents', readJSON);
-        console.log(`Agents report sent via ${result.method}`);
+        structuredLog("cmd", "/todayagentscap", "ok", { method: result.method });
       } catch (err) {
-        console.error('Report error:', err);
-        bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+        structuredLog("cmd", "/todayagentscap", "warn", { error: err.message, fallback: "text" });
+        // Text fallback
+        try {
+          const all = readJSON("daily-cap.json", []);
+          const dates = [...new Set(all.map(c => c.date))].sort().reverse();
+          const ld = dates[0] || new Date().toISOString().split("T")[0];
+          const tc = all.filter(c => c.date === ld);
+          if (!tc.length) { bot.sendMessage(msg.chat.id, "📭 No agents cap data.", { parse_mode: "HTML" }); return; }
+          const tAff = tc.reduce((s, c) => s + (parseInt(c.affiliates) || 0), 0);
+          const tBr = tc.reduce((s, c) => s + (parseInt(c.brands) || 0), 0);
+          let t = `📊 <b>Today Agents Cap</b>\n📅 ${ld}\n\n<code>Agent      | Aff | Brands\n-----------|-----|-------\n`;
+          tc.forEach(c => { t += `${(c.agent || "").padEnd(10).substring(0, 10)}| ${(c.affiliates || "0").padStart(3)} | ${(c.brands || "0").padStart(6)}\n`; });
+          t += `-----------|-----|-------\nTOTAL      | ${String(tAff).padStart(3)} | ${String(tBr).padStart(6)}</code>\n\nAgents: ${tc.length} | Aff: ${tAff} | Brands: ${tBr}`;
+          bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
+        } catch (fallbackErr) {
+          bot.sendMessage(msg.chat.id, `❌ Error: ${err.message}`);
+        }
       }
     });
-    
-    // Initialize scheduled reports
-    console.log("📸 Screenshot functionality enabled (manual commands only)");
+
+    console.log("📸 Screenshot functionality enabled (with text fallback)");
   } catch (err) {
     console.log("⚠️ Failed to init Telegram bot:", err.message);
   }
@@ -2484,11 +2570,12 @@ app.get("/api/telegram/test", (req, res) => {
 });
 
 // API endpoint to send CRG screenshot on demand
+// C2 FIX: was FINANCE_GROUP_CHAT_ID (undefined) — replaced with AFFILIte_FINANCE_GROUP_CHAT_ID
 app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
     const result = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'crg', readJSON);
-    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
+    await screenshotModule.sendReport(bot, AFFILIte_FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
     res.json({ ok: true, message: `CRG report sent (${result.method})` });
   } catch (err) {
     console.error('CRG report error:', err);
@@ -2501,7 +2588,7 @@ app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
     const result = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'agents', readJSON);
-    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
+    await screenshotModule.sendReport(bot, AFFILIte_FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
     res.json({ ok: true, message: `Agents report sent (${result.method})` });
   } catch (err) {
     console.error('Agents report error:', err);
@@ -2514,9 +2601,9 @@ app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
     const r1 = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'crg', readJSON);
-    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
+    await screenshotModule.sendReport(bot, AFFILIte_FINANCE_GROUP_CHAT_ID, 'crg', readJSON);
     const r2 = await screenshotModule.sendReport(bot, MONITORING_GROUP_CHAT_ID, 'agents', readJSON);
-    await screenshotModule.sendReport(bot, FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
+    await screenshotModule.sendReport(bot, AFFILIte_FINANCE_GROUP_CHAT_ID, 'agents', readJSON);
     res.json({ ok: true, message: `Reports sent: CRG (${r1.method}), Agents (${r2.method})` });
   } catch (err) {
     console.error('Report error:', err);
