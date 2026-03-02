@@ -1,4 +1,4 @@
-// Load environment variables
+﻿// Load environment variables
 // require("dotenv").config();
 
 const express = require("express");
@@ -1080,7 +1080,12 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       records.forEach(cp => {
         const oldCp = oldMap.get(cp.id);
         if (!oldCp) {
-          if (cp.status === "Received") sendBrandPaymentNotification(cp, true);
+          // New customer payment - notify Brands group
+          if (cp.status === "Received") {
+            sendBrandPaymentNotification(cp, true);
+          } else {
+            sendBrandPaymentNotification(cp, false);
+          }
         } else if (oldCp.status !== cp.status) {
           if (cp.status === "Received" && oldCp.status !== "Received") sendBrandPaymentNotification(cp, true);
         }
@@ -1640,7 +1645,7 @@ function formatBrandNewPaymentMessage(p) {
 💵 Amount: $${amount}
 🏷️ Brand: ${p.brand || "N/A"}
 👤 Opened by: ${p.openBy || "Unknown"}
-📅 Date: ${p.openDate || "N/A"}
+📅 Date: ${p.paidDate || p.openDate || "N/A"}
 🔖 Status: ${p.status || "Open"}`;
 }
 
@@ -2266,14 +2271,9 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             // Mark hash as processed to prevent duplicates
             bot._processedHashes.set(hash, Date.now());
 
-            // Send notification to both groups
-            let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
-            if (extractedBrand) confirmMsg += `🏷️ Brand: <b>${extractedBrand}</b>\n`;
-            confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
-            confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
-            confirmMsg += `\n📊 Status: <b>${status}</b>`;
-            
-            bot.sendMessage(BRANDS_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+            // Send notification to Brands group about new open customer payment
+            const brandNotifyMsg = formatBrandNewPaymentMessage(newPayment);
+            bot.sendMessage(BRANDS_GROUP_CHAT_ID, brandNotifyMsg);
             
             
             console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
@@ -2326,7 +2326,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
         confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
         confirmMsg += `\n📊 Status: <b>${status}</b>`;
-        bot.sendMessage(FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+        bot.sendMessage(AFFILIte_FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
       }
       } // close if (isFinanceGroup)
     }); // <-- FIX: Added missing closing brace and parenthesis for bot.on('message') handler
@@ -2752,15 +2752,8 @@ async function handleOfferMessage(bot, msg, messageText) {
           // Broadcast to connected clients
           broadcastUpdate("deals", existingDeals);
 
-          // Send confirmation to offer group
-          let confirmMsg = `✅ <b>Added offer for affiliate ${affiliateId}</b>\n\n`;
-          confirmMsg += `🌍 Country: <b>${country}</b>\n`;
-          confirmMsg += `🏷️ Brand: <b>${brand}</b>\n`;
-          if (crg) confirmMsg += `💰 CRG: <b>${crg}</b>\n`;
-          if (deduction) confirmMsg += `📉 Deduction: <b>${deduction}</b>\n`;
-          confirmMsg += `\n💾 Saved to deals`;
-
-          bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+          // Send confirmation to offer group using standard format
+          sendNewOfferNotification(affiliateId, country, brand);
           
           return;
         }
@@ -2918,19 +2911,10 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Broadcast to connected clients
     broadcastUpdate("offers", existingOffers);
     
-    // Send confirmation
-    let confirmMsg = `✅ <b>Updated offer for affiliate ${affiliateId}</b>\n\n`;
-    confirmMsg += `📝 Parsed ${offers.length} offer(s):\n\n`;
-    offers.forEach((o, i) => {
-      confirmMsg += `${i + 1}. <b>${o.country}</b>\n`;
-      confirmMsg += `   💰 CRG: ${o.crg}\n`;
-      if (o.brands) confirmMsg += `   🏷️ Brands: ${o.brands}\n`;
-      if (o.traffic) confirmMsg += `   📊 Traffic: ${o.traffic}\n`;
-      confirmMsg += '\n';
+    // Send confirmation for each parsed offer using standard format
+    offers.forEach(o => {
+      sendNewOfferNotification(affiliateId, o.country, o.brands);
     });
-    confirmMsg += `💾 Saved to offers.json`;
-    
-    bot.sendMessage(OFFER_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
     
   } catch (err) {
     console.error("❌ Error handling offer message:", err.message);
