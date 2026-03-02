@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.12";
+const VERSION = "9.15";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -616,9 +616,17 @@ async function flushPendingSaves() {
         pendingSaves.delete(endpoint);
         console.log(`✅ Flushed pending save: ${endpoint}`);
       } else if (res.status === 409) {
-        // Conflict — our pending data is stale, discard it
+        // v9.15: Conflict — our data is stale, discard and re-fetch from server
         pendingSaves.delete(endpoint);
-        console.log(`⚠️ Discarded stale pending save for ${endpoint}`);
+        console.log(`⚠️ Stale data for ${endpoint} — discarding and will re-fetch`);
+        try {
+          const body = await res.json();
+          if (body.error === "stale_data") {
+            toast(`⚠️ Refreshing ${endpoint} — server has newer data`);
+            // Force page reload to get fresh data
+            setTimeout(() => window.location.reload(), 1500);
+          }
+        } catch {}
       } else if (res.status === 400) {
         pendingSaves.delete(endpoint);
         console.log(`⚠️ Removed blocked pending save for ${endpoint}`);
