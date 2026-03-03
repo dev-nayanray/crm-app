@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.21";
+const VERSION = "9.50";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -220,37 +220,175 @@ const VALID_COUNTRIES = Object.keys(COUNTRY_NAMES);
 // ═══════════════════════════════════════════════════════════════
 function extractCustomerName(messageText) {
   if (!messageText) return "";
-  
-  // Pattern 1: Explicit label — "customer: Name", "name: Name", "client: Name"
   const custMatch = messageText.match(/(?:customer|name|client)[:\s]+([A-Za-z][A-Za-z0-9 ]{0,98})(?:\n|$|https?:)/i);
   if (custMatch) return custMatch[1].trim();
-  
-  // Pattern 2: Fallback — find first line that looks like a human name
   const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
   for (const line of lines) {
     let cleaned = line
-      .replace(/https?:\/\/\S+/g, '')                         // Remove URLs
-      .replace(/\b0x[a-fA-F0-9]{40,66}\b/g, '')               // Remove ERC20 hashes/addresses (0x...)
-      .replace(/\b[a-fA-F0-9]{64}\b/g, '')                    // Remove TRC20 hashes (64 hex)
-      .replace(/\bT[a-zA-Z0-9]{33}\b/g, '')                   // Remove TRC20 addresses (T...)
-      .replace(/\b(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}\b/g, '') // Remove BTC addresses
-      .replace(/\$[\d,.]+|[\d,.]+\$/g, '')                     // Remove dollar amounts
-      .replace(/\b\d{3,}\b/g, '')                              // Remove standalone large numbers
-      .replace(/[_*`~]/g, '')                                  // Remove Telegram markdown
+      .replace(/https?:\/\/\S+/g, '')
+      .replace(/\b0x[a-fA-F0-9]{40,66}\b/g, '')
+      .replace(/\b[a-fA-F0-9]{64}\b/g, '')
+      .replace(/\bT[a-zA-Z0-9]{33}\b/g, '')
+      .replace(/\b(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,39}\b/g, '')
+      .replace(/\$[\d,.]+|[\d,.]+\$/g, '')
+      .replace(/\b\d{3,}\b/g, '')
+      .replace(/[_*`~]/g, '')
       .trim();
-    
-    // Must have at least one letter, be 2+ chars, and not look like hex data
     if (cleaned && cleaned.length >= 2 && cleaned.length < 100 && /[a-zA-Z]/.test(cleaned)) {
-      // Reject if >50% hex characters (likely a partial hash)
       const hexChars = (cleaned.match(/[0-9a-fA-F]/g) || []).length;
       if (hexChars / cleaned.length > 0.5 && cleaned.length > 10) continue;
-      // Skip lines that are metadata labels (brand:, status:, etc.)
       if (/^(brand|status|type|hash|invoice|date|amount)[:\s]/i.test(cleaned)) continue;
       return cleaned;
     }
   }
   return "";
 }
+
+// ═══════════════════════════════════════════════════════════════
+// v9.22: OFFER MESSAGE PARSER — handles all Telegram offer formats
+// Supports: compact ("NL nl Funnel 1500+15 gg"), multi-geo single-line
+// ("IN 700+4% GR 1250+10% ..."), labeled ("Geo: BEfr / Funnel: X")
+// ═══════════════════════════════════════════════════════════════
+const OFFER_GEO_CODES = new Set([
+  'NL','BE','DE','FR','UK','AU','MY','SI','HR','ES','IT','GR','RO','IN','CA','AE',
+  'AT','CH','CZ','PL','PT','SE','NO','DK','FI','IE','IL','ZA','NZ','SG','HK','JP',
+  'KR','TW','BR','MX','AR','CL','CO','PE','TH','VN','ID','PH','TR','EG','SA','QA',
+  'KW','BH','OM','US','UAE','GCC',
+]);
+const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi']);
+const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic)/i;
+
+function parseOfferMessageV2(messageText) {
+  if (!messageText) return { affiliateId: null, offers: [] };
+  const fullText = messageText.trim();
+  const headerMatch = fullText.match(/^offers?\s*:\s*(\d+)/i);
+  if (!headerMatch) return { affiliateId: null, offers: [] };
+  const affiliateId = headerMatch[1];
+  let remaining = fullText.slice(headerMatch[0].length).trim();
+  if (/(?:^|\n)\s*Geo\s*:/im.test(remaining)) return { affiliateId, offers: parseOfferLabeledFormat(remaining) };
+  let sharedFunnels = '', sharedSource = '';
+  const sourceMatch = remaining.match(/\bSource\s*:\s*([^\n]+?)(?=\s{2,}Funnels?\s*:|$)/i) || remaining.match(/\bSource\s*:\s*(.+?)$/im);
+  if (sourceMatch) { sharedSource = sourceMatch[1].trim(); remaining = remaining.replace(sourceMatch[0], ' ').trim(); }
+  const funnelMatch = remaining.match(/\bFunnels?\s*:\s*(.+?)(?=\s{2,}Source\s*:|$)/i) || remaining.match(/\bFunnels?\s*:\s*(.+?)$/im);
+  if (funnelMatch) { sharedFunnels = funnelMatch[1].trim().replace(/__/g, '').replace(/\s*\/\s*/g, ' / '); remaining = remaining.replace(funnelMatch[0], ' ').trim(); }
+  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source)\s*:/i.test(l));
+  const offers = [];
+  for (const line of lines) offers.push(...offerSplitLine(line));
+  for (const o of offers) {
+    if (!o.funnel && sharedFunnels) o.funnel = sharedFunnels;
+    if (!o.source && sharedSource) o.source = sharedSource;
+  }
+  return { affiliateId, offers };
+}
+
+function parseOfferLabeledFormat(text) {
+  const offers = [];
+  const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(b => b);
+  for (const block of blocks) {
+    const o = { country:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
+    const extra = [];
+    for (const line of block.split('\n').map(l => l.trim()).filter(l => l)) {
+      const gM = line.match(/^geo\s*:\s*(.+)$/i); if (gM) { o.country = offerExpandGeo(gM[1].trim()); continue; }
+      const fM = line.match(/^funnel\s*:\s*(.+)$/i); if (fM) { o.funnel = fM[1].trim().replace(/__/g,''); continue; }
+      const pM = line.match(/^price\s*:\s*(.+)$/i); if (pM) { o.price = pM[1].trim(); continue; }
+      const sM = line.match(/^source\s*:\s*(.+)$/i); if (sM) { o.source = sM[1].trim(); continue; }
+      const cM = line.match(/^cr\s*:?\s*(\d+%?)$/i); if (cM) { o.crRate = cM[1]; continue; }
+      const dM = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i); if (dM) { o.deduction = dM[1]; continue; }
+      extra.push(line);
+    }
+    if (extra.length) o.notes = extra.join('; ');
+    if (o.country) offers.push(o);
+  }
+  return offers;
+}
+
+function offerExpandGeo(t) {
+  if (t.length >= 4 && t.length <= 6) {
+    const p2 = t.slice(0,2).toUpperCase(), s2 = t.slice(2).toLowerCase();
+    if (OFFER_GEO_CODES.has(p2) && OFFER_LANG_CODES.has(s2)) return p2+' '+s2;
+    const p3 = t.slice(0,3).toUpperCase(), s3 = t.slice(3).toLowerCase();
+    if (OFFER_GEO_CODES.has(p3) && OFFER_LANG_CODES.has(s3)) return p3+' '+s3;
+  }
+  return t;
+}
+
+function offerIsGeoBoundary(word) {
+  if (!word || !/^[A-Z]/.test(word)) return false;
+  const upper = word.toUpperCase();
+  if (OFFER_GEO_CODES.has(upper) && word === upper) return true;
+  if (word.length >= 4 && word.length <= 6) {
+    const p2 = word.slice(0,2).toUpperCase(), s2 = word.slice(2).toLowerCase();
+    if (OFFER_GEO_CODES.has(p2) && OFFER_LANG_CODES.has(s2) && word.slice(0,2) === p2) return true;
+    const p3 = word.slice(0,3).toUpperCase(), s3 = word.slice(3).toLowerCase();
+    if (OFFER_GEO_CODES.has(p3) && OFFER_LANG_CODES.has(s3) && word.slice(0,3) === p3) return true;
+  }
+  return false;
+}
+
+function offerExtractGeo(word) {
+  if (!word) return null;
+  const upper = word.toUpperCase();
+  if (OFFER_GEO_CODES.has(upper)) return { geo: upper, lang: '' };
+  if (word.length >= 4 && word.length <= 6) {
+    const p2 = word.slice(0,2).toUpperCase(), s2 = word.slice(2).toLowerCase();
+    if (OFFER_GEO_CODES.has(p2) && OFFER_LANG_CODES.has(s2)) return { geo: p2, lang: s2 };
+    const p3 = word.slice(0,3).toUpperCase(), s3 = word.slice(3).toLowerCase();
+    if (OFFER_GEO_CODES.has(p3) && OFFER_LANG_CODES.has(s3)) return { geo: p3, lang: s3 };
+  }
+  return null;
+}
+
+function offerSplitLine(line) {
+  if (!line.trim()) return [];
+  const words = line.split(/\s+/).filter(w => w);
+  if (words.length === 0) return [];
+  const offers = []; let currentTokens = [];
+  for (const word of words) {
+    if (offerIsGeoBoundary(word) && currentTokens.length > 0) {
+      offers.push(offerParseTokens(currentTokens)); currentTokens = [word];
+    } else { currentTokens.push(word); }
+  }
+  if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens));
+  return offers.filter(o => o.country);
+}
+
+function offerParseTokens(tokens) {
+  const o = { country:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
+  if (!tokens || tokens.length === 0) return o;
+  let idx = 0;
+  const geoInfo = offerExtractGeo(tokens[0]);
+  if (geoInfo) {
+    o.country = geoInfo.lang ? geoInfo.geo+' '+geoInfo.lang : geoInfo.geo; idx = 1;
+    if (idx < tokens.length) {
+      const nxt = tokens[idx].toLowerCase();
+      if (OFFER_LANG_CODES.has(nxt) && !/^\d/.test(tokens[idx]) && !/^[A-Z]{2,3}$/.test(tokens[idx])) { o.country += ' '+nxt; idx++; }
+    }
+  } else { o.country = tokens[0]; idx = 1; }
+  const funnelParts = [];
+  for (let i = idx; i < tokens.length; i++) {
+    const t = tokens[i], tl = t.toLowerCase();
+    if (!o.price && /^\d+/.test(t)) {
+      let ps = t;
+      while (i+1 < tokens.length) {
+        const nx = tokens[i+1];
+        if (/^[\+\*]$/.test(nx)) { ps += nx; i++; }
+        else if (/^[\+\*]\d+/.test(nx)) { ps += nx; i++; }
+        else if (/^\d+%?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
+        else break;
+      }
+      o.price = ps.replace(/\s+/g, ''); continue;
+    }
+    if (/^\+\d+%?$/.test(t)) { if (o.price) o.price += t; else o.price = t; continue; }
+    if (/deduct/i.test(t)) { const nx = tokens[i+1]; if (nx && /^\d+%?$/.test(nx)) { o.deduction = nx; i++; } continue; }
+    if (/^\d+%$/.test(t) && i+1 < tokens.length && /deduct/i.test(tokens[i+1])) { o.deduction = t; i++; continue; }
+    if (/^cr$/i.test(t) && i+1 < tokens.length) { o.crRate = tokens[i+1]; i++; continue; }
+    if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
+    funnelParts.push(t);
+  }
+  if (funnelParts.length > 0) o.funnel = funnelParts.join(' ').replace(/__/g, '').trim();
+  return o;
+}
+
 
 function httpRequest(url, isHttps = true, timeoutMs = 15000) {
   return new Promise((resolve, reject) => {
@@ -849,10 +987,100 @@ function requireAdmin(req, res, next) {
   });
 }
 
-// Rate limiting: 200 req/min per IP (increased for WebSocket fallback polling)
+// ═══════════════════════════════════════════════════════════════
+// v9.21: ADVANCED SECURITY SYSTEM — Scanner/Probe Defense
+// Triggered by March 2 2026 probe from 193.111.248.141 (70+ paths)
+// ═══════════════════════════════════════════════════════════════
+
+// ── IP Ban System — auto-bans scanners, persists across restarts ──
+const BANNED_IPS_FILE = path.join(DATA_DIR, "banned_ips.json");
+const IP_BAN_DURATION = 24 * 60 * 60 * 1000; // 24 hours auto-ban
+const SCANNER_THRESHOLD = 5; // 5 blocked hits = auto-ban
+const SCANNER_WINDOW = 60 * 1000; // within 1 minute = scanner
+
+// Load persisted bans
+let bannedIPs = new Map();
+try {
+  const saved = JSON.parse(fs.readFileSync(BANNED_IPS_FILE, "utf8"));
+  Object.entries(saved).forEach(([ip, data]) => {
+    if (Date.now() < data.until) bannedIPs.set(ip, data);
+  });
+} catch {}
+
+function saveBannedIPs() {
+  try {
+    const obj = {};
+    for (const [ip, data] of bannedIPs) obj[ip] = data;
+    fs.writeFileSync(BANNED_IPS_FILE, JSON.stringify(obj, null, 2));
+  } catch {}
+}
+
+function banIP(ip, reason, duration = IP_BAN_DURATION) {
+  const until = Date.now() + duration;
+  bannedIPs.set(ip, { until, reason, bannedAt: new Date().toISOString(), hits: (bannedIPs.get(ip)?.hits || 0) + 1 });
+  saveBannedIPs();
+  writeAuditLog("security", "ip_banned", "system", `IP ${ip} banned for ${Math.round(duration / 60000)}min — ${reason}`);
+  console.log(`🚫 BANNED IP: ${ip} — ${reason} (until ${new Date(until).toISOString()})`);
+}
+
+// Cleanup expired bans every hour
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [ip, data] of bannedIPs) {
+    if (now >= data.until) { bannedIPs.delete(ip); cleaned++; }
+  }
+  if (cleaned > 0) saveBannedIPs();
+}, 60 * 60 * 1000);
+
+// ── Scanner Detection — tracks rapid blocked-path hits per IP ──
+const scannerTracker = new Map();
+
+function trackScannerHit(ip, hitPath) {
+  const now = Date.now();
+  if (!scannerTracker.has(ip)) scannerTracker.set(ip, { hits: [], paths: [] });
+  const entry = scannerTracker.get(ip);
+  entry.hits.push(now);
+  entry.paths.push(hitPath);
+  // Keep only hits within the window
+  entry.hits = entry.hits.filter(t => now - t < SCANNER_WINDOW);
+  entry.paths = entry.paths.slice(-20); // keep last 20 paths for logging
+  if (entry.hits.length >= SCANNER_THRESHOLD) {
+    banIP(ip, `Scanner detected: ${entry.hits.length} blocked paths in ${SCANNER_WINDOW / 1000}s — paths: ${entry.paths.slice(-5).join(", ")}`, IP_BAN_DURATION);
+    scannerTracker.delete(ip);
+    return true;
+  }
+  return false;
+}
+
+// Cleanup scanner tracker every 5 min
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of scannerTracker) {
+    e.hits = e.hits.filter(t => now - t < SCANNER_WINDOW);
+    if (e.hits.length === 0) scannerTracker.delete(ip);
+  }
+}, 5 * 60 * 1000);
+
+// ── Security Event Log — dedicated security log file ──
+const SECURITY_LOG_FILE = path.join(AUDIT_DIR, "security_events.jsonl");
+
+function logSecurityEvent(type, ip, details) {
+  try {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      type, // "blocked_path", "banned", "scanner", "suspicious_ua", "path_traversal"
+      ip,
+      details
+    };
+    fs.appendFileSync(SECURITY_LOG_FILE, JSON.stringify(entry) + "\n", "utf8");
+  } catch {}
+}
+
+// ── Rate Limiting (enhanced) ──
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
-const RATE_LIMIT_MAX = 300; // v9.05: was 200
+const RATE_LIMIT_MAX = 300;
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -861,12 +1089,19 @@ function rateLimit(req, res, next) {
   const entry = rateLimitMap.get(ip);
   if (now - entry.windowStart > RATE_LIMIT_WINDOW) { entry.count = 1; entry.windowStart = now; return next(); }
   entry.count++;
-  if (entry.count > RATE_LIMIT_MAX) return res.status(429).json({ error: "Too many requests" });
+  if (entry.count > RATE_LIMIT_MAX) {
+    logSecurityEvent("rate_limited", ip, `${entry.count} requests in ${RATE_LIMIT_WINDOW / 1000}s`);
+    // Auto-ban IPs that hit rate limit 3+ times
+    if (entry.count > RATE_LIMIT_MAX * 3) {
+      banIP(ip, `Extreme rate limit: ${entry.count} req/${RATE_LIMIT_WINDOW / 1000}s`);
+    }
+    return res.status(429).json({ error: "Too many requests" });
+  }
   next();
 }
 setInterval(() => { const now = Date.now(); for (const [ip, e] of rateLimitMap) { if (now - e.windowStart > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(ip); } }, 5 * 60 * 1000);
 
-// Security headers
+// ── Security Headers (enhanced v9.21) ──
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -874,18 +1109,164 @@ app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  if (req.path.startsWith('/api/')) { res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate'); res.setHeader('Pragma', 'no-cache'); }
+  // v9.21: Content Security Policy — prevent script injection
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' wss: ws: https:;");
+  // v9.21: Prevent MIME sniffing attacks
+  res.removeHeader('X-Powered-By');
+  if (req.path.startsWith('/api/')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    // v9.21: Prevent API responses from being cached or embedded
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
   next();
 });
+
+// ── FIRST GATE: IP Ban Check — before anything else ──
+app.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const ban = bannedIPs.get(ip);
+  if (ban && Date.now() < ban.until) {
+    // Silently drop — don't even tell them why (reduces fingerprinting)
+    return res.status(403).end();
+  }
+  next();
+});
+
 app.use('/api/', rateLimit);
 
-// Block attack paths
+// ── v9.21: Expanded Attack Path Blocking + Auto-Ban Scanners ──
+const BLOCKED_PATHS = [
+  // WordPress
+  '/wp-admin', '/wp-login', '/wp-content', '/wp-includes', '/wp-json', '/wp-cron',
+  // Config/secrets files
+  '/.env', '/.env.local', '/.env.production', '/.env.backup',
+  '/.git', '/.gitignore', '/.gitconfig',
+  '/.svn', '/.hg', '/.bzr',
+  '/.htaccess', '/.htpasswd',
+  '/web.config', '/config.php', '/config.yml', '/config.json', '/config.js',
+  '/database.yml', '/settings.py', '/application.properties',
+  // PHP/admin probes
+  '/phpinfo', '/phpmyadmin', '/pma', '/myadmin', '/mysql', '/adminer',
+  '/admin.php', '/info.php', '/test.php', '/shell.php', '/cmd.php',
+  '/xmlrpc', '/xmlrpc.php',
+  // Backup files
+  '.bak', '.backup', '.old', '.orig', '.save', '.swp', '.swo',
+  '.sql', '.sql.gz', '.dump', '.tar.gz', '.zip',
+  // AWS / cloud metadata
+  '/latest/meta-data', '/latest/user-data', '/.aws',
+  '/metadata/v1', '/computeMetadata',
+  // Docker/CI
+  '/docker-compose', '/Dockerfile', '/.docker',
+  '/.travis.yml', '/.circleci', '/.github',
+  '/Jenkinsfile', '/Vagrantfile',
+  // Package managers
+  '/package-lock.json', '/yarn.lock', '/composer.json', '/composer.lock',
+  '/Gemfile', '/Gemfile.lock', '/requirements.txt', '/Pipfile',
+  // Common exploit paths
+  '/cgi-bin', '/cgi-sys', '/scripts', '/bin/sh', '/etc/passwd', '/etc/shadow',
+  '/proc/self', '/server-status', '/server-info',
+  '/.DS_Store', '/Thumbs.db',
+  // Log files
+  '/debug.log', '/error.log', '/access.log', '/app.log',
+  // Node/framework internals
+  '/node_modules', '/.npmrc', '/.yarnrc',
+  // Common CMS paths
+  '/joomla', '/drupal', '/magento', '/typo3',
+  '/administrator', '/webadmin', '/cpanel', '/plesk',
+];
+
+// v9.21: Suspicious file extensions in URL
+const BLOCKED_EXTENSIONS = ['.php', '.asp', '.aspx', '.jsp', '.cgi', '.pl', '.py'];
+
+// v9.21: Path traversal detection
+const PATH_TRAVERSAL_PATTERNS = ['../', '..\\', '%2e%2e', '%252e', '....', '/./'];
+
 app.use((req, res, next) => {
-  const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc'];
-  if (blocked.some(b => req.path.toLowerCase().includes(b))) {
-    writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${req.ip}`);
-    return res.status(403).json({ error: "Forbidden" });
+  const lowerPath = req.path.toLowerCase();
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+
+  // 1. Path traversal attack detection
+  if (PATH_TRAVERSAL_PATTERNS.some(p => lowerPath.includes(p) || (req.originalUrl || '').toLowerCase().includes(p))) {
+    logSecurityEvent("path_traversal", ip, `Path: ${req.path}`);
+    writeAuditLog("security", "path_traversal", "unknown", `Path: ${req.path} IP: ${ip}`);
+    banIP(ip, `Path traversal attempt: ${req.path}`);
+    return res.status(403).end();
   }
+
+  // 2. Blocked path check (expanded list)
+  if (BLOCKED_PATHS.some(b => lowerPath.includes(b))) {
+    logSecurityEvent("blocked_path", ip, `Path: ${req.path}`);
+    writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${ip}`);
+    const wasBanned = trackScannerHit(ip, req.path);
+    if (wasBanned) logSecurityEvent("scanner_banned", ip, `Auto-banned after ${SCANNER_THRESHOLD}+ blocked paths`);
+    return res.status(404).end(); // v9.21: Return 404 not 403 — don't reveal we're blocking
+  }
+
+  // 3. Suspicious file extension probes (not our API)
+  if (!lowerPath.startsWith('/api/') && BLOCKED_EXTENSIONS.some(ext => lowerPath.endsWith(ext))) {
+    logSecurityEvent("suspicious_extension", ip, `Path: ${req.path}`);
+    trackScannerHit(ip, req.path);
+    return res.status(404).end();
+  }
+
+  // 4. Null byte injection
+  if (req.path.includes('\0') || req.path.includes('%00')) {
+    logSecurityEvent("null_byte", ip, `Path: ${req.path}`);
+    banIP(ip, `Null byte injection: ${req.path}`);
+    return res.status(400).end();
+  }
+
+  next();
+});
+
+// ── v9.21: Suspicious User-Agent Detection ──
+const SUSPICIOUS_UA_PATTERNS = [
+  /sqlmap/i, /nikto/i, /nessus/i, /openvas/i, /nmap/i,
+  /masscan/i, /zgrab/i, /gobuster/i, /dirbuster/i, /dirb/i,
+  /wfuzz/i, /ffuf/i, /nuclei/i, /burpsuite/i, /hydra/i,
+  /metasploit/i, /cobalt/i, /havij/i, /acunetix/i, /w3af/i,
+  /whatweb/i, /wpscan/i, /joomscan/i,
+];
+
+app.use((req, res, next) => {
+  const ua = req.headers['user-agent'] || '';
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+
+  // Flag known scanner user agents
+  if (SUSPICIOUS_UA_PATTERNS.some(p => p.test(ua))) {
+    logSecurityEvent("suspicious_ua", ip, `UA: ${ua}`);
+    writeAuditLog("security", "suspicious_ua", "unknown", `UA: ${ua} IP: ${ip}`);
+    banIP(ip, `Scanning tool detected: ${ua.slice(0, 50)}`);
+    return res.status(403).end();
+  }
+
+  // Flag empty user agents on API calls (bots/scripts)
+  if (!ua && req.path.startsWith('/api/') && req.path !== '/api/health') {
+    logSecurityEvent("empty_ua", ip, `Path: ${req.path}`);
+    // Don't ban — could be legitimate server-to-server, but log it
+  }
+
+  next();
+});
+
+// ── v9.21: Request Size & Payload Anomaly Detection ──
+app.use((req, res, next) => {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+
+  // Block oversized URLs (common in overflow attacks)
+  if (req.originalUrl && req.originalUrl.length > 2048) {
+    logSecurityEvent("oversized_url", ip, `URL length: ${req.originalUrl.length}`);
+    return res.status(414).json({ error: "URI too long" });
+  }
+
+  // Block excessive headers
+  const headerCount = Object.keys(req.headers).length;
+  if (headerCount > 50) {
+    logSecurityEvent("excessive_headers", ip, `Header count: ${headerCount}`);
+    return res.status(431).json({ error: "Too many headers" });
+  }
+
   next();
 });
 
@@ -899,6 +1280,69 @@ app.use('/api/', (req, res, next) => {
     }
   }
   next();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// v9.21: SECURITY ADMIN DASHBOARD — /api/security-status
+// ═══════════════════════════════════════════════════════════════
+app.get("/api/security-status", requireAuth, (req, res) => {
+  // Admin only
+  if (!req.userSession || !ADMIN_EMAILS.includes(req.userSession.email)) {
+    return res.status(403).json({ error: "Admin only" });
+  }
+
+  // Read recent security events
+  let recentEvents = [];
+  try {
+    if (fs.existsSync(SECURITY_LOG_FILE)) {
+      const lines = fs.readFileSync(SECURITY_LOG_FILE, "utf8").trim().split("\n").slice(-100);
+      recentEvents = lines.map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+    }
+  } catch {}
+
+  // Summarize banned IPs
+  const activeBans = [];
+  for (const [ip, data] of bannedIPs) {
+    if (Date.now() < data.until) {
+      activeBans.push({ ip, ...data, remainingMin: Math.round((data.until - Date.now()) / 60000) });
+    }
+  }
+
+  // Top attacker IPs (from recent events)
+  const ipCounts = {};
+  recentEvents.forEach(e => { ipCounts[e.ip] = (ipCounts[e.ip] || 0) + 1; });
+  const topAttackers = Object.entries(ipCounts).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([ip, count]) => ({ ip, count }));
+
+  res.json({
+    version: VERSION,
+    activeBans: activeBans.length,
+    bans: activeBans,
+    topAttackers,
+    recentEvents: recentEvents.slice(-20),
+    scannerTrackerSize: scannerTracker.size,
+    rateLimitTrackerSize: rateLimitMap.size,
+    blockedPathCount: BLOCKED_PATHS.length,
+  });
+});
+
+// v9.21: Manual IP ban/unban endpoints
+app.post("/api/security-ban", requireAuth, (req, res) => {
+  if (!req.userSession || !ADMIN_EMAILS.includes(req.userSession.email)) return res.status(403).json({ error: "Admin only" });
+  const { ip, duration, reason } = req.body;
+  if (!ip) return res.status(400).json({ error: "IP required" });
+  const dur = (duration || 24) * 60 * 60 * 1000; // hours to ms
+  banIP(ip, reason || `Manual ban by ${req.userSession.email}`, dur);
+  res.json({ ok: true, ip, bannedUntil: new Date(Date.now() + dur).toISOString() });
+});
+
+app.post("/api/security-unban", requireAuth, (req, res) => {
+  if (!req.userSession || !ADMIN_EMAILS.includes(req.userSession.email)) return res.status(403).json({ error: "Admin only" });
+  const { ip } = req.body;
+  if (!ip) return res.status(400).json({ error: "IP required" });
+  bannedIPs.delete(ip);
+  saveBannedIPs();
+  writeAuditLog("security", "ip_unbanned", req.userSession.email, `Unbanned IP: ${ip}`);
+  res.json({ ok: true, ip, unbanned: true });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2467,7 +2911,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         const brandMatch = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
         const extractedBrand = brandMatch ? brandMatch[1] : null;
         
-        // v9.21: Extract customer name using robust helper
+        // v9.22: Extract customer name using robust helper
         const extractedCustomer = extractCustomerName(messageText);
         
         // Extract any payment hashes (erc/trc/btc)
@@ -2534,23 +2978,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             const amount = (blockchainAmount || messageAmount || "0").toString();
             console.log(`💰 [Brands] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-
-            // v9.21: Generate verification status note
-            let statusNote = "";
-            if (txResult.success && walletVerify.matched) {
-              const txAmount = parseFloat(txResult.amount);
-              const declaredAmount = parseFloat(amount);
-              if (!isNaN(txAmount) && !isNaN(declaredAmount) && declaredAmount > 0 && Math.abs(txAmount - declaredAmount) / declaredAmount >= 0.10) {
-                statusNote = `⚠️ Amount mismatch: blockchain $${txAmount} vs declared $${declaredAmount}`;
-              } else {
-                statusNote = "✅ Verified on blockchain - wallet matches!";
-              }
-            } else if (txResult.success && !walletVerify.matched) {
-              statusNote = `❌ Address mismatch! Sent to: ${(txResult.toAddress || '').substring(0, 8)}... Not in our wallets!`;
-            } else {
-              statusNote = `⚠️ Could not verify: ${txResult.error || "Unknown error"}`;
-            }
-
             // A1: Always create as "Open" — CRM user will manually mark as Received
             const status = "Open";
             const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
@@ -2584,7 +3011,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandNewOpenPaymentMessage(newPayment));
             
             
-            console.log(`✅ Payment from Brands group: Invoice ${invoice}, Customer: ${extractedCustomer || 'N/A'}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
+            console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
           }
           return;
         }
@@ -2593,10 +3020,8 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // USDT hash detection (finance group only)
       if (isFinanceGroup) {
       const messageText = msg.text || '';
-      
-      // v9.21: Extract customer name using robust helper
+      // v9.22: Extract customer name
       const extractedCustomerFinance = extractCustomerName(messageText);
-      
       const hashes = extractAllUsdtHashes(messageText);
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
       if (txHashes.length === 0) return;
@@ -3007,225 +3432,66 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Dedup by message ID
     if (msg.message_id) {
       if (isMessageProcessed(msg.message_id)) {
-        console.log("⏭️ Skipping duplicate offer message:", msg.message_id);
+        console.log("\u23ed\ufe0f Skipping duplicate offer message:", msg.message_id);
         return;
       }
       markMessageProcessed(msg.message_id);
     }
 
-    console.log("📝 [v9.19] Received offer message:", messageText);
+    console.log("\ud83d\udcdd [v9.22] Received offer message:", messageText);
 
-    // ── STEP 1: Split into raw lines (preserve blanks for block splitting) ──
-    const rawLines = messageText.split('\n').map(l => l.trim());
+    // \u2500\u2500 STEP 1: Parse using the v9.22 multi-format parser \u2500\u2500
+    const { affiliateId, offers: parsedOffers } = parseOfferMessageV2(messageText);
 
-    // ── STEP 2: Remove header line ("Offer:" / "Offers:") ──
-    let headerIdx = 0;
-    if (rawLines[0] && /^offers?:/i.test(rawLines[0])) {
-      // Check if affiliate ID is on the same line: "Offers: 17"
-      const headerMatch = rawLines[0].match(/^offers?:\s*(\d+)\s*$/i);
-      if (headerMatch) {
-        // Affiliate ID is on the header line itself
-        rawLines[0] = headerMatch[1]; // Replace header with just the number
-      } else {
-        headerIdx = 1; // Skip header line
-      }
-    }
-    const bodyLines = rawLines.slice(headerIdx);
-
-    // ── STEP 3: Find affiliate ID (first standalone number) ──
-    let affiliateId = null;
-    let offerStartIdx = 0;
-    for (let i = 0; i < bodyLines.length; i++) {
-      if (/^\d+$/.test(bodyLines[i])) {
-        affiliateId = bodyLines[i];
-        offerStartIdx = i + 1;
-        break;
-      }
-    }
     if (!affiliateId) {
-      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in the message.");
+      bot.sendMessage(msg.chat.id, "\u274c Could not find affiliate ID in the message.\nExpected format: Offers: <ID> <geo> <funnel> <price> <source>");
       return;
     }
 
-    // ── STEP 4: Split remaining lines into blocks (separated by blank lines) ──
-    const blocks = [];
-    let currentBlock = [];
-    for (let i = offerStartIdx; i < bodyLines.length; i++) {
-      if (bodyLines[i] === '') {
-        if (currentBlock.length > 0) {
-          blocks.push(currentBlock);
-          currentBlock = [];
-        }
-      } else {
-        currentBlock.push(bodyLines[i]);
-      }
-    }
-    if (currentBlock.length > 0) blocks.push(currentBlock);
-
-    console.log(`📦 Affiliate: ${affiliateId}, Blocks found: ${blocks.length}`);
-
-    // ── STEP 5: Parse each block into an offer ──
-    const parsedOffers = [];
-
-    for (const block of blocks) {
-      const offer = { country: '', funnel: '', price: '', source: '', deduction: '', crRate: '', notes: '' };
-      const extraNotes = [];
-
-      // Detect if block uses labeled format (has "Geo:" or "Funnel:" or "Price:" or "Source:")
-      const hasLabels = block.some(l => /^(geo|funnel|price|source|cr)\s*:/i.test(l));
-
-      if (hasLabels) {
-        // ── LABELED FORMAT ──
-        // Geo: BEfr / Funnel: AI Invest Maximum / Price: 1300+10% / Source: FB
-        for (const line of block) {
-          const geoMatch = line.match(/^geo\s*:\s*(.+)$/i);
-          if (geoMatch) { offer.country = geoMatch[1].trim(); continue; }
-
-          const funnelMatch = line.match(/^funnel\s*:\s*(.+)$/i);
-          if (funnelMatch) { offer.funnel = funnelMatch[1].trim(); continue; }
-
-          const priceMatch = line.match(/^price\s*:\s*(.+)$/i);
-          if (priceMatch) { offer.price = priceMatch[1].trim(); continue; }
-
-          const sourceMatch = line.match(/^source\s*:\s*(.+)$/i);
-          if (sourceMatch) { offer.source = sourceMatch[1].trim(); continue; }
-
-          const crMatch = line.match(/^cr\s*:?\s*(\d+%?)$/i);
-          if (crMatch) { offer.crRate = crMatch[1].trim(); continue; }
-
-          // Deduction patterns
-          const deductMatch = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i);
-          if (deductMatch) { offer.deduction = deductMatch[1].trim(); continue; }
-
-          // Anything else is a note
-          extraNotes.push(line);
-        }
-      } else {
-        // ── COMPACT / MIXED FORMAT ──
-        // Examples:
-        //   "ES"  or  "CA eng"  or  "AT 1600+10"
-        //   "1600*14"  or  "1300+10%"
-        //   "Dynamic crypto mix"
-        //   "Google"  or  "FB"  or  "FB+SEO"
-        //   "10% deduct"  or  "no autologin"
-        //   "CR 12%"
-
-        // Line 0 is always the country (possibly with price attached)
-        const line0 = block[0] || '';
-
-        // Check if line0 has country + price: "AT 1600+10" or "IT 1550 +10"
-        const countryPriceMatch = line0.match(/^([A-Za-z]{2,}(?:\s+[a-z]{2,})?)\s+(\d+[\$€]?\s*[\+\*]\s*\d+%?)$/i);
-        if (countryPriceMatch) {
-          offer.country = countryPriceMatch[1].trim();
-          offer.price = countryPriceMatch[2].trim().replace(/\s+/g, '');
-        } else {
-          // Line 0 is just country: "ES" or "CA eng"
-          offer.country = line0;
-        }
-
-        // Parse remaining lines
-        for (let li = 1; li < block.length; li++) {
-          const line = block[li];
-          const lineLower = line.toLowerCase();
-
-          // CR rate: "CR 12%"
-          const crMatch = line.match(/^cr\s+(\d+%?)$/i);
-          if (crMatch) { offer.crRate = crMatch[1]; continue; }
-
-          // Deduction: "10% deduct" or "deduction 10%"
-          const deductMatch = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i);
-          if (deductMatch) { offer.deduction = deductMatch[1]; continue; }
-
-          // Price line: "1600*14" or "1300+10%" or "1100$+10%"
-          if (!offer.price && /^\d+[\$€]?\s*[\+\*]\s*\d+/.test(line)) {
-            offer.price = line.replace(/\s+/g, '');
-            continue;
-          }
-
-          // Source line: known traffic sources or contains / or +
-          // Must check AFTER price to avoid "FB+SEO" being confused with price
-          if (!offer.source && (
-            /^(fb|google|gg|seo|taboola|msn|sms|nativ|native|push)/i.test(lineLower) ||
-            (line.includes('+') && /[a-zA-Z]/.test(line) && !/^\d/.test(line)) ||
-            (line.includes('/') && /[a-zA-Z]/.test(line))
-          )) {
-            offer.source = line;
-            continue;
-          }
-
-          // "source nativ" or "source: FB"
-          const srcMatch = line.match(/^source\s*:?\s*(.+)$/i);
-          if (srcMatch) { offer.source = srcMatch[1].trim(); continue; }
-
-          // Notes: "no autologin", etc.
-          if (lineLower.startsWith('no ') || lineLower.startsWith('note')) {
-            extraNotes.push(line);
-            continue;
-          }
-
-          // If we don't have a funnel yet, this line is the funnel/brand name
-          if (!offer.funnel) {
-            // But skip if it looks like a source (single word matching known sources)
-            if (/^(fb|google|gg|seo|taboola|msn|sms)$/i.test(lineLower)) {
-              offer.source = line;
-            } else {
-              offer.funnel = line;
-            }
-            continue;
-          }
-
-          // If we already have funnel, check if this is a source
-          if (!offer.source) {
-            offer.source = line;
-            continue;
-          }
-
-          // Everything else is notes
-          extraNotes.push(line);
-        }
-      }
-
-      // Combine extra notes
-      if (extraNotes.length > 0) {
-        offer.notes = extraNotes.join('; ');
-      }
-
-      // Only add if we have at least a country
-      if (offer.country) {
-        parsedOffers.push(offer);
-        console.log(`  ✅ Parsed offer: ${JSON.stringify(offer)}`);
-      } else {
-        console.log(`  ⚠️ Skipped block (no country): ${JSON.stringify(block)}`);
-      }
-    }
+    console.log(`\ud83d\udce6 Affiliate: ${affiliateId}, Offers parsed: ${parsedOffers.length}`);
+    parsedOffers.forEach((o, i) => console.log(`  ${i+1}. ${o.country} | ${o.funnel} | ${o.price} | ${o.source}`));
 
     if (parsedOffers.length === 0) {
-      bot.sendMessage(msg.chat.id, `❌ Could not parse any offers from the message. Affiliate ID: ${affiliateId}`);
+      bot.sendMessage(msg.chat.id, `\u274c Could not parse any offers from the message.\nAffiliate ID: ${affiliateId}`);
       return;
     }
 
-    // ── STEP 6: Save ALL offers to offers.json ──
-    let existingOffers = [];
-    try {
-      existingOffers = readJSON("offers.json", []);
-    } catch (e) {}
+    // \u2500\u2500 STEP 2: Save ALL offers to offers.json \u2500\u2500
+    // Fields mapped to CRM table columns:
+    //   affiliateId \u2192 "Affiliate ID"
+    //   country     \u2192 "Country"
+    //   price       \u2192 "Price"
+    //   crg         \u2192 "CRG"
+    //   dealType    \u2192 "Deal Type"
+    //   deduction   \u2192 "Deductions"
+    //   funnel/funnels \u2192 "Funnels"
+    //   source      \u2192 "Source"
+    //   createdDate \u2192 "Date"
+    //   openBy      \u2192 "Open By"
+    let existingOffers = readJSON("offers.json", []);
 
     // Keep offers from OTHER affiliates, remove old ones for THIS affiliate
     existingOffers = existingOffers.filter(o => String(o.affiliateId) !== String(affiliateId));
 
     const timestamp = new Date().toISOString().split("T")[0];
+    const senderName = msg.from ? (msg.from.first_name || msg.from.username || "Telegram") : "Telegram";
+
     const newOfferRecords = parsedOffers.map(o => ({
       id: crypto.randomBytes(4).toString('hex'),
       affiliateId: affiliateId,
       country: o.country,
-      funnel: o.funnel,
+      funnel: o.funnel,       // Maps to "Funnels" column
+      funnels: o.funnel,      // Alias \u2014 CRM table may use either field name
       price: o.price,
+      crg: o.crRate,          // Maps to "CRG" column
+      crRate: o.crRate,       // Keep backward compat alias
+      dealType: "",           // Maps to "Deal Type" \u2014 user fills in CRM
+      deduction: o.deduction, // Maps to "Deductions" column
       source: o.source,
-      deduction: o.deduction,
-      crRate: o.crRate,
       notes: o.notes,
       status: "Open",
-      createdDate: timestamp,
+      createdDate: timestamp, // Maps to "Date" column
+      openBy: senderName,     // Maps to "Open By" column \u2014 Telegram sender name
       rawMessage: messageText
     }));
 
@@ -3234,18 +3500,18 @@ async function handleOfferMessage(bot, msg, messageText) {
     await lockedWrite("offers.json", existingOffers, {
       action: "create",
       user: "telegram-bot",
-      details: `Added ${parsedOffers.length} offers for affiliate ${affiliateId}`
+      details: `Added ${parsedOffers.length} offers for affiliate ${affiliateId} (by ${senderName})`
     });
     broadcastUpdate("offers", existingOffers);
 
-    console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
+    console.log(`\u2705 Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
 
-    // ── STEP 7: Send ONE consolidated confirmation ──
+    // \u2500\u2500 STEP 3: Send consolidated confirmation \u2500\u2500
     sendBatchOfferNotification(affiliateId, parsedOffers);
 
   } catch (err) {
-    console.error("❌ Error handling offer message:", err.message, err.stack);
-    bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
+    console.error("\u274c Error handling offer message:", err.message, err.stack);
+    bot.sendMessage(msg.chat.id, `\u274c Error processing offer: ${err.message}`);
   }
 }
 
