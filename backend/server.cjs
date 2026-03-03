@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.18";
+const VERSION = "9.20";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -244,13 +244,16 @@ function readJSON(filename, fallback) {
     if (fs.existsSync(filepath)) {
       const raw = fs.readFileSync(filepath, "utf8");
       const parsed = JSON.parse(raw);
+      // FIX 9.20: An empty array [] IS a valid state — don't fall through to backup restore
       if (Array.isArray(parsed)) return parsed;
       console.error(`⚠️ ${filename} is not an array — treating as corrupted`);
     }
   } catch (err) {
     console.error(`❌ Error reading ${filename}:`, err.message);
   }
-  // FIX C4: Try to recover from most recent backup before returning empty fallback
+  // Only reach here if file is MISSING or CORRUPTED (not parseable / not an array)
+  // FIX 9.20: Never restore from backup for files that exist but are empty []
+  // — that is handled above and returns [] correctly
   try {
     const backupDirs = fs.readdirSync(BACKUP_DIR).sort().reverse();
     for (const dir of backupDirs) {
@@ -259,7 +262,7 @@ function readJSON(filename, fallback) {
         const backupRaw = fs.readFileSync(backupFile, "utf8");
         const backupData = JSON.parse(backupRaw);
         if (Array.isArray(backupData) && backupData.length > 0) {
-          console.log(`🔧 AUTO-RECOVERED ${filename} from backup ${dir} (${backupData.length} records)`);
+          console.log(`🔧 AUTO-RECOVERED ${filename} from backup ${dir} (${backupData.length} records) — file was missing/corrupted`);
           // Restore the file from backup
           fs.writeFileSync(filepath, backupRaw, "utf8");
           return backupData;
@@ -607,43 +610,80 @@ function createDailySnapshot() {
 }
 
 // v9.05: Nightly auto-dedup at 03:00 AM — keeps database clean
+// FIX 9.18-F1: Fixed daily-cap dedup key (was using affiliate instead of agent)
+// FIX 9.18-F2: Added customer-payments dedup by paymentHash to catch bot duplicates
 async function nightlyDedup() {
   console.log("🧹 Nightly auto-dedup starting...");
   let totalRemoved = 0;
 
-  // Dedup daily-cap
+  // Dedup daily-cap — key must match inline dedup: date + agent
   try {
     const dc = readJSON("daily-cap.json", []);
     const seen = new Map();
     dc.forEach(r => {
-      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+      const key = `${(r.date || '').trim()}__${(r.agent || '').trim().toLowerCase()}`;
       const existing = seen.get(key);
-      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      if (!existing) { seen.set(key, r); }
+      else {
+        // Keep the one with more data
+        const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
+        const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
+        if (newTotal > existTotal || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      }
     });
     const deduped = Array.from(seen.values());
     if (deduped.length < dc.length) {
       const removed = dc.length - deduped.length;
-      await lockedWrite("daily-cap.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      await lockedWrite("daily-cap.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates from daily-cap` });
       totalRemoved += removed;
     }
   } catch (err) { console.error("⚠️ Dedup daily-cap error:", err.message); }
 
-  // Dedup crg-deals
+  // Dedup crg-deals — key: date + affiliate (matches inline dedup)
   try {
     const crg = readJSON("crg-deals.json", []);
     const seen = new Map();
     crg.forEach(r => {
-      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+      const key = `${(r.date || '').trim()}__${(r.affiliate || '').trim().toLowerCase()}`;
       const existing = seen.get(key);
-      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      if (!existing) { seen.set(key, r); }
+      else {
+        const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
+        const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
+        if (newScore > existScore || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      }
     });
     const deduped = Array.from(seen.values());
     if (deduped.length < crg.length) {
       const removed = crg.length - deduped.length;
-      await lockedWrite("crg-deals.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      await lockedWrite("crg-deals.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates from crg-deals` });
       totalRemoved += removed;
     }
   } catch (err) { console.error("⚠️ Dedup crg-deals error:", err.message); }
+
+  // FIX 9.18-F2: Dedup customer-payments by paymentHash — prevents duplicate bot-created entries
+  try {
+    const cp = readJSON("customer-payments.json", []);
+    const seen = new Map();
+    const deduped = [];
+    cp.forEach(r => {
+      if (r.paymentHash && r.paymentHash.length > 10) {
+        const key = r.paymentHash.toLowerCase();
+        if (!seen.has(key)) {
+          seen.set(key, true);
+          deduped.push(r);
+        }
+        // Skip duplicate hash entries (keep first = most recent since unshift)
+      } else {
+        deduped.push(r); // No hash = manual entry, always keep
+      }
+    });
+    if (deduped.length < cp.length) {
+      const removed = cp.length - deduped.length;
+      await lockedWrite("customer-payments.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicate payment hashes from customer-payments` });
+      totalRemoved += removed;
+    }
+  } catch (err) { console.error("⚠️ Dedup customer-payments error:", err.message); }
 
   if (totalRemoved > 0) console.log(`🧹 Nightly dedup complete: removed ${totalRemoved} duplicates`);
   else console.log("🧹 Nightly dedup: database is clean");
@@ -843,10 +883,22 @@ app.use((req, res, next) => {
 app.use('/api/', rateLimit);
 
 // Block attack paths
+// FIX 9.18-F4: Rate-limit audit logging for repeated probes (max 1 log per IP+path per 5 min)
+const _blockedLogCache = new Map();
 app.use((req, res, next) => {
   const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc'];
   if (blocked.some(b => req.path.toLowerCase().includes(b))) {
-    writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${req.ip}`);
+    const cacheKey = `${req.ip}|${req.path}`;
+    const now = Date.now();
+    const lastLogged = _blockedLogCache.get(cacheKey) || 0;
+    if (now - lastLogged > 300000) { // 5 minutes
+      writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${req.ip}`);
+      _blockedLogCache.set(cacheKey, now);
+    }
+    // Clean old cache entries every 100 requests
+    if (_blockedLogCache.size > 100) {
+      for (const [k, t] of _blockedLogCache) { if (now - t > 600000) _blockedLogCache.delete(k); }
+    }
     return res.status(403).json({ error: "Forbidden" });
   }
   next();
@@ -998,8 +1050,33 @@ app.get("/api/session", requireAuth, (req, res) => {
 
 const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
 
+// GET — returns data + version number (REQUIRES AUTH)
+// v9.16: Track last known record counts to detect data loss on GET
+const lastKnownServerCounts = {};
+endpoints.forEach(ep => {
+  const file = ep + ".json";
+  app.get(`/api/${ep}`, requireAuth, (req, res) => {
+    let data = readJSON(file, []);
+    // FIX C2: Strip password hashes from user data — NEVER expose to client
+    if (ep === "users") {
+      data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
+    }
+    // v9.16: Detect and log if a table went empty unexpectedly
+    const prevCount = lastKnownServerCounts[ep] || 0;
+    if (data.length === 0 && prevCount > 5) {
+      // FIX 9.20: Only log a warning — do NOT trigger backup restore.
+      // An empty array is a valid state (user may have intentionally deleted all records).
+      // The readJSON function already handles truly corrupted/missing files.
+      console.warn(`⚠️ DATA EMPTY [${ep}]: returning 0 records, last known count was ${prevCount}. File may have been intentionally cleared.`);
+      writeAuditLog(ep, "data_empty_warning", req.user?.email || "unknown", `[${ep}] GET returned 0 records, last known=${prevCount}. No auto-restore — empty is valid state.`);
+    }
+    if (data.length > 0) lastKnownServerCounts[ep] = data.length;
+    res.json({ data, version: getVersion(ep), timestamp: Date.now() });
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════
-// v9.18: NOTIFICATION DEDUP — prevent looping Telegram messages
+// v9.20: NOTIFICATION DEDUP — prevent looping Telegram messages
 // ═══════════════════════════════════════════════════════════════
 // When client saves ALL payments, server compares vs file on disk.
 // If server file was reset/restored, every old payment looks "new" → notification flood.
@@ -1016,34 +1093,6 @@ try {
 } catch (e) {}
 // Cleanup every 10 min
 setInterval(() => { if (notifiedPaymentIds.size > 10000) notifiedPaymentIds.clear(); }, 10 * 60 * 1000);
-
-// GET — returns data + version number (REQUIRES AUTH)
-// v9.16: Track last known record counts to detect data loss on GET
-const lastKnownServerCounts = {};
-endpoints.forEach(ep => {
-  const file = ep + ".json";
-  app.get(`/api/${ep}`, requireAuth, (req, res) => {
-    let data = readJSON(file, []);
-    // FIX C2: Strip password hashes from user data — NEVER expose to client
-    if (ep === "users") {
-      data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
-    }
-    // v9.16: Detect and log if a table went empty unexpectedly
-    const prevCount = lastKnownServerCounts[ep] || 0;
-    if (data.length === 0 && prevCount > 5) {
-      console.error(`🔴 DATA LOSS DETECTED [${ep}]: returning 0 records, last known count was ${prevCount}. Attempting backup recovery.`);
-      writeAuditLog(ep, "data_loss_detected", req.user?.email || "unknown", `[${ep}] GET returned 0 records, last known=${prevCount}. Triggering recovery.`);
-      // Try to recover from any backup
-      const recovered = readJSON(file, []); // readJSON already tries backups
-      if (recovered.length > 0) {
-        data = recovered;
-        console.log(`🔧 RECOVERED [${ep}]: ${recovered.length} records from backup`);
-      }
-    }
-    if (data.length > 0) lastKnownServerCounts[ep] = data.length;
-    res.json({ data, version: getVersion(ep), timestamp: Date.now() });
-  });
-});
 
 // POST — atomic save with conflict detection, audit log, broadcast
 app.post("/api/payments", requireAuth, async (req, res) => {
@@ -1068,13 +1117,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // NOTIFICATION LOGIC — v9.18: Prevent looping + duplicate messages
+  // NOTIFICATION LOGIC — v9.20: Prevent looping + duplicate messages
   // ═══════════════════════════════════════════════════════════
-  // ROOT CAUSE of loops: Client sends ALL payments on every save.
-  // If server file was reset/restored, every old payment looks "new" → flood.
-  // FIX: Track notified payment IDs in memory. Only notify truly new ones.
-  // FIX2: For "Approved to pay" — send ONLY the approved message, not "NEW PAYMENT ADDED" too.
-  
   const oldPayments = readJSON("payments.json", []);
   const oldMap = new Map(oldPayments.map(p => [p.id, p]));
   
@@ -1158,7 +1202,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
   if (success) {
     broadcastUpdate("payments", merged);
-    res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true });
+    res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true, data: merged });
   } else {
     res.status(500).json({ error: "Write failed — data not saved" });
   }
@@ -1214,6 +1258,15 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         clientCount: records.length
       });
     }
+    // FIX 9.18-F3: Version-based stale detection — if client's version is behind AND it's sending fewer
+    // records (without explicit deletes), this is likely a stale save that would cause SHRUNK.
+    // The merge system will still preserve server-only records, but log a warning.
+    const clientVer = clientVersion || 0;
+    const serverVer = getVersion(ep);
+    if (clientVer > 0 && serverVer > 0 && clientVer < serverVer && records.length < existingBeforeMerge.length && deleteSet.size === 0) {
+      console.log(`⚠️ STALE VERSION [${ep}]: client version ${clientVer} < server ${serverVer}, client has ${records.length} vs server ${existingBeforeMerge.length}. Merge will preserve server records.`);
+      writeAuditLog(ep, "stale_version_warning", userEmail || "unknown", `[${ep}] Stale client: ver=${clientVer} < ${serverVer}, client=${records.length} < server=${existingBeforeMerge.length} — server records preserved by merge`);
+    }
 
     // SPECIAL HANDLING: customer-payments status change notifications
     if (ep === "customer-payments") {
@@ -1223,7 +1276,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         if (!cp || !cp.id) return;
         const oldCp = oldMap.get(cp.id);
         if (!oldCp) {
-          // v9.18: Skip if already notified (prevents loop)
+          // v9.20: Skip if already notified (prevents loop)
           if (notifiedPaymentIds.has(cp.id)) return;
           notifiedPaymentIds.add(cp.id);
           
@@ -1353,7 +1406,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
     if (success) {
       broadcastUpdate(ep, deduped);
-      res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true });
+      // FIX 9.20: Return merged data so client can sync immediately (prevents disappearing rows)
+      res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true, data: deduped });
     } else {
       res.status(500).json({ error: "Write failed" });
     }
@@ -1914,7 +1968,7 @@ function formatNewOfferMessage(affiliateId, country, brand) {
   return msg;
 }
 
-// v9.19: Consolidated batch offer confirmation message
+// v9.20: Consolidated batch offer confirmation message
 function formatBatchOfferConfirmation(affiliateId, offers) {
   const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
   let msg = `✅ Added ${offers.length} offer(s) for Affiliate #${affiliateId}:\n`;
@@ -1974,7 +2028,7 @@ function sendNewOfferNotification(affiliateId, country, brand) {
   req.end();
 }
 
-// v9.19: Send batch offer confirmation to Telegram
+// v9.20: Send batch offer confirmation to Telegram
 function sendBatchOfferNotification(affiliateId, offers) {
   if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
     console.log("📱 Batch offer notification skipped (no token configured)");
@@ -2446,7 +2500,15 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         // Filter out recently processed hashes to prevent duplicate processing
         const newTxHashes = uniqueTxHashes.filter(h => !bot._processedHashes.has(h.hash));
         
-        if (newTxHashes.length > 0) {
+        // FIX 9.18-F5: Also check existing customer-payments for duplicate hashes (prevents dupes across restarts)
+        const existingCpForDedup = readJSON("customer-payments.json", []);
+        const existingHashes = new Set(existingCpForDedup.filter(p => p.paymentHash).map(p => p.paymentHash.toLowerCase()));
+        const trulyNewHashes = newTxHashes.filter(h => !existingHashes.has(h.hash.toLowerCase()));
+        if (trulyNewHashes.length < newTxHashes.length) {
+          console.log(`🛡️ Skipped ${newTxHashes.length - trulyNewHashes.length} already-recorded hash(es)`);
+        }
+        
+        if (trulyNewHashes.length > 0) {
           // Process payment hashes from Brands group
           const messageText = msg.text || '';
           
@@ -2478,20 +2540,36 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
           
           const wallets = readJSON("wallets.json", []);
 
-          for (let i = 0; i < newTxHashes.length; i++) {
-            const { hash, type } = newTxHashes[i];
+          for (let i = 0; i < trulyNewHashes.length; i++) {
+            const { hash, type } = trulyNewHashes[i];
             let txResult = { success: false };
             if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
             // BTC doesn't have verification yet, just record it
 
-            // v9.19 FIX: Prefer blockchain amount when available and non-zero
-            // Previously: (amounts[i] || txResult.amount || "0") — blockchain "0" was ignored
+            // v9.20: Prefer blockchain amount when available and non-zero
             const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
             const messageAmount = amounts[i] || null;
             const amount = (blockchainAmount || messageAmount || "0").toString();
             console.log(`💰 [Brands] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
+
+            // FIX 9.18: Amount mismatch detection with 10% tolerance
+            let statusNote = "";
+            if (txResult.success && walletVerify.matched) {
+              const txAmount = parseFloat(txResult.amount);
+              const declaredAmount = parseFloat(amount);
+              if (!isNaN(txAmount) && !isNaN(declaredAmount) && declaredAmount > 0 && Math.abs(txAmount - declaredAmount) / declaredAmount >= 0.10) {
+                statusNote = `⚠️ Amount mismatch: blockchain $${txAmount} vs declared $${declaredAmount}`;
+              } else {
+                statusNote = "✅ Verified on blockchain - wallet matches!";
+              }
+            } else if (txResult.success && !walletVerify.matched) {
+              statusNote = `❌ Address mismatch! Sent to: ${(txResult.toAddress || '').substring(0, 8)}... Not in our wallets!`;
+            } else {
+              statusNote = `⚠️ Could not verify: ${txResult.error || "Unknown error"}`;
+            }
+
             // A1: Always create as "Open" — CRM user will manually mark as Received
             const status = "Open";
             const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
@@ -2504,7 +2582,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
               trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
               ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
               brand: extractedBrand || "",
-              walletMatched: walletVerify.matched, // stored for CRM reference
+              walletMatched: walletVerify.matched,
+              // FIX 9.18: Added blockchain metadata fields from employee update
+              blockchainType: type,
+              blockchainVerified: txResult.success,
+              toAddress: txResult.toAddress || "",
+              instructions: statusNote,
               month: new Date().getMonth(), year: new Date().getFullYear()
             };
 
@@ -2533,6 +2616,13 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
       if (txHashes.length === 0) return;
 
+      // FIX 9.18-F5b: Check DB for existing hashes to prevent duplicates across restarts
+      const existingCpFinance = readJSON("customer-payments.json", []);
+      const existingHashesFinance = new Set(existingCpFinance.filter(p => p.paymentHash).map(p => p.paymentHash.toLowerCase()));
+      const newTxHashesFinance = txHashes.filter(h => !existingHashesFinance.has(h.hash.toLowerCase()));
+      if (newTxHashesFinance.length === 0) { console.log("🛡️ All finance group hashes already recorded, skipping"); return; }
+      if (newTxHashesFinance.length < txHashes.length) { console.log(`🛡️ Skipped ${txHashes.length - newTxHashesFinance.length} already-recorded finance hash(es)`); }
+
       const amounts = [];
       const p1 = /\$(\d+(?:,\d{3})*(?:\.\d{2})?)/g;
       let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
@@ -2541,19 +2631,37 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
 
       const wallets = readJSON("wallets.json", []);
 
-      for (let i = 0; i < txHashes.length; i++) {
-        const { hash, type } = txHashes[i];
+      for (let i = 0; i < newTxHashesFinance.length; i++) {
+        const { hash, type } = newTxHashesFinance[i];
         let txResult = { success: false };
         if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
         else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
 
-        // v9.19 FIX: Prefer blockchain amount when available and non-zero
+        // v9.20: Prefer blockchain amount when available and non-zero
         const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
         const messageAmount = amounts[i] || null;
         const amount = (blockchainAmount || messageAmount || "0").toString();
         console.log(`💰 [Finance] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
         const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-        const status = walletVerify.matched ? "Received" : "Pending";
+
+        // FIX 9.18: Smarter status with amount mismatch detection (10% tolerance)
+        let status = walletVerify.matched ? "Received" : "Pending";
+        let statusNote = "";
+        if (txResult.success && walletVerify.matched) {
+          const txAmount = parseFloat(txResult.amount);
+          const declaredAmount = parseFloat(amount);
+          if (!isNaN(txAmount) && !isNaN(declaredAmount) && declaredAmount > 0 && Math.abs(txAmount - declaredAmount) / declaredAmount >= 0.10) {
+            status = "Open";
+            statusNote = `\u26a0\ufe0f Amount mismatch: blockchain $${txAmount} vs declared $${declaredAmount}`;
+          } else {
+            statusNote = "\u2705 Verified on blockchain - wallet matches!";
+          }
+        } else if (txResult.success && !walletVerify.matched) {
+          statusNote = `\u274c Address mismatch! Sent to: ${(txResult.toAddress || '').substring(0, 8)}... Not in our wallets!`;
+        } else {
+          statusNote = `\u26a0\ufe0f Could not verify: ${txResult.error || "Unknown error"}`;
+        }
+
         const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
 
         const newPayment = {
@@ -2562,6 +2670,11 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
           openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
           paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
           ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+          // FIX 9.18: Added blockchain metadata + instructions
+          blockchainType: type,
+          blockchainVerified: txResult.success,
+          toAddress: txResult.toAddress || "",
+          instructions: statusNote,
           month: new Date().getMonth(), year: new Date().getFullYear()
         };
 
@@ -2570,8 +2683,15 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
         broadcastUpdate("customer-payments", cp);
 
+        // FIX 9.18: Richer confirmation message with toAddress and tx amount
         let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
-        confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
+        if (txResult.success) {
+          confirmMsg += `✅ Blockchain: <b>Verified</b>\n`;
+          confirmMsg += `📍 To: <code>${(txResult.toAddress || '').substring(0, 12)}...</code>\n`;
+          confirmMsg += `💰 Tx Amount: $${txResult.amount || 'N/A'}\n`;
+        } else {
+          confirmMsg += `⚠️ Blockchain: <b>Could not verify</b>\n`;
+        }
         confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
         confirmMsg += `\n📊 Status: <b>${status}</b>`;
         bot.sendMessage(AFFILIte_FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
@@ -2833,6 +2953,7 @@ async function checkERC20Transaction(txHash) {
   }
 }
 
+
 function verifyWalletAddress(address, wallets) {
   if (!wallets || wallets.length === 0) return { matched: false, error: "No wallets configured" };
   if (!address) return { matched: false, error: "No address" };
@@ -2920,8 +3041,6 @@ app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
 // OFFER MESSAGE PARSER — Handles "Offer:" messages from Telegram
 // ═══════════════════════════════════════════════════════════════
 
-// v9.19: COMPLETELY REWRITTEN — robust multi-format offer parser
-// Supports: Labeled (Geo:/Funnel:/Price:/Source:), Compact, Mixed formats
 async function handleOfferMessage(bot, msg, messageText) {
   try {
     // Dedup by message ID
