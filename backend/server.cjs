@@ -69,17 +69,108 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "9.51";
+const VERSION = "10";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
+const TOMBSTONE_DIR = path.join(__dirname, "tombstones");
 
 // ═══════════════════════════════════════════════════════════════
 // 1. CORE INFRASTRUCTURE
 // ═══════════════════════════════════════════════════════════════
 
 // Ensure directories
-[DATA_DIR, BACKUP_DIR, AUDIT_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+[DATA_DIR, BACKUP_DIR, AUDIT_DIR, TOMBSTONE_DIR].forEach(d => { if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true }); });
+
+// ═══════════════════════════════════════════════════════════════
+// v10.0: TOMBSTONE SYSTEM — prevents deleted records from resurrecting
+// ═══════════════════════════════════════════════════════════════
+// When a user deletes a record, we store its ID in a per-table tombstone file.
+// Any client that later tries to re-add that ID will have it silently filtered out.
+// Tombstones expire after 7 days to prevent unbounded growth.
+const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function getTombstoneFile(table) {
+  return path.join(TOMBSTONE_DIR, `${table}.json`);
+}
+
+function readTombstones(table) {
+  const file = getTombstoneFile(table);
+  try {
+    if (fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (typeof data === "object" && !Array.isArray(data)) return data;
+    }
+  } catch (err) {
+    console.error(`⚠️ Error reading tombstones for ${table}:`, err.message);
+  }
+  return {}; // { recordId: timestamp }
+}
+
+function writeTombstones(table, tombstones) {
+  const file = getTombstoneFile(table);
+  try {
+    fs.writeFileSync(file, JSON.stringify(tombstones, null, 2), "utf8");
+  } catch (err) {
+    console.error(`❌ Error writing tombstones for ${table}:`, err.message);
+  }
+}
+
+function addTombstones(table, ids) {
+  if (!ids || ids.length === 0) return;
+  const tombstones = readTombstones(table);
+  const now = Date.now();
+  ids.forEach(id => { tombstones[id] = now; });
+  // Prune expired tombstones while we're at it
+  const cutoff = now - TOMBSTONE_TTL_MS;
+  for (const [id, ts] of Object.entries(tombstones)) {
+    if (ts < cutoff) delete tombstones[id];
+  }
+  writeTombstones(table, tombstones);
+}
+
+function isTombstoned(table, id) {
+  const tombstones = readTombstones(table);
+  const ts = tombstones[id];
+  if (!ts) return false;
+  if (Date.now() - ts > TOMBSTONE_TTL_MS) return false; // expired
+  return true;
+}
+
+function getTombstonedIds(table) {
+  const tombstones = readTombstones(table);
+  const now = Date.now();
+  const active = new Set();
+  for (const [id, ts] of Object.entries(tombstones)) {
+    if (now - ts <= TOMBSTONE_TTL_MS) active.add(id);
+  }
+  return active;
+}
+
+// Nightly tombstone cleanup (called from scheduleNightlyTasks)
+function cleanupTombstones() {
+  try {
+    const files = fs.readdirSync(TOMBSTONE_DIR);
+    let totalCleaned = 0;
+    const cutoff = Date.now() - TOMBSTONE_TTL_MS;
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue;
+      const table = file.replace('.json', '');
+      const tombstones = readTombstones(table);
+      let cleaned = 0;
+      for (const [id, ts] of Object.entries(tombstones)) {
+        if (ts < cutoff) { delete tombstones[id]; cleaned++; }
+      }
+      if (cleaned > 0) {
+        writeTombstones(table, tombstones);
+        totalCleaned += cleaned;
+      }
+    }
+    if (totalCleaned > 0) console.log(`🪦 Tombstone cleanup: removed ${totalCleaned} expired entries`);
+  } catch (err) {
+    console.error("⚠️ Tombstone cleanup error:", err.message);
+  }
+}
 
 // ── Server-side user seed data (source of truth for passwords) ──
 const INITIAL_USERS = [
@@ -874,7 +965,8 @@ async function nightlyDedup() {
     const dc = readJSON("daily-cap.json", []);
     const seen = new Map();
     dc.forEach(r => {
-      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+      // v10.0: Include agent in key — matches save-time dedup
+      const key = `${(r.date || '').trim()}|${(r.agent || '').trim().toLowerCase()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
       const existing = seen.get(key);
       if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
     });
@@ -927,10 +1019,12 @@ function scheduleNightlyTasks() {
 
   setTimeout(() => {
     nightlyDedup();
+    cleanupTombstones(); // v10.0: prune expired tombstones
     setInterval(nightlyDedup, 24 * 60 * 60 * 1000);
+    setInterval(cleanupTombstones, 24 * 60 * 60 * 1000);
   }, delay3);
 
-  console.log(`⏰ Nightly tasks scheduled: snapshot at 02:00 (in ${Math.round(delay2/60000)}min), dedup at 03:00`);
+  console.log(`⏰ Nightly tasks scheduled: snapshot at 02:00 (in ${Math.round(delay2/60000)}min), dedup+tombstone cleanup at 03:00`);
 }
 
 // Also create snapshot on startup if none exists for today
@@ -1299,7 +1393,9 @@ endpoints.forEach(ep => {
       }
     }
     if (data.length > 0) lastKnownServerCounts[ep] = data.length;
-    res.json({ data, version: getVersion(ep), timestamp: Date.now() });
+    // v10.0: Include tombstoned IDs in response so clients can purge them locally
+    const tombstoned = [...getTombstonedIds(ep)];
+    res.json({ data, version: getVersion(ep), timestamp: Date.now(), tombstoned });
   });
 });
 
@@ -1378,35 +1474,63 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   });
 
   // ═══════════════════════════════════════════════════════════
-  // SERVER-SIDE MERGE — NEVER blindly replace the file
+  // SERVER-SIDE MERGE — v10.0: Tombstone-aware, updatedAt-aware
   // ═══════════════════════════════════════════════════════════
   const serverData = readJSON("payments.json", []);
   const mergedMap = new Map();
   serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
   
-  let clientNew = 0, clientUpdated = 0;
+  // v10.0: Load tombstones — IDs that were explicitly deleted by users
+  const tombstonedIds = getTombstonedIds("payments");
+  
+  let clientNew = 0, clientUpdated = 0, clientResurrectionBlocked = 0;
   const clientIDs = new Set();
   payments.forEach(r => {
     if (!r || !r.id) return;
     clientIDs.add(r.id);
+    
+    // v10.0: Block resurrection — if this ID was deleted, don't let stale clients re-add it
+    if (tombstonedIds.has(r.id) && !mergedMap.has(r.id)) {
+      clientResurrectionBlocked++;
+      return; // Skip — this record was intentionally deleted
+    }
+    
     const srv = mergedMap.get(r.id);
-    if (!srv) { mergedMap.set(r.id, r); clientNew++; }
-    else { mergedMap.set(r.id, r); clientUpdated++; }
+    if (!srv) {
+      r.updatedAt = r.updatedAt || Date.now(); // v10.0: stamp new records
+      mergedMap.set(r.id, r);
+      clientNew++;
+    } else {
+      // v10.0: True last-write-wins using updatedAt
+      const clientTime = r.updatedAt || 0;
+      const serverTime = srv.updatedAt || 0;
+      if (clientTime >= serverTime) {
+        r.updatedAt = r.updatedAt || Date.now();
+        mergedMap.set(r.id, r);
+      }
+      // else: server version is newer, keep it
+      clientUpdated++;
+    }
   });
+  
+  if (clientResurrectionBlocked > 0) {
+    console.log(`🪦 [payments]: Blocked ${clientResurrectionBlocked} tombstoned records from resurrecting`);
+  }
   
   const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
   
-  // Remove explicitly deleted records
+  // Remove explicitly deleted records + add tombstones
   const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
   if (deleteSet.size > 0) {
     deleteSet.forEach(id => mergedMap.delete(id));
-    console.log(`🗑️ [payments]: ${deleteSet.size} record(s) explicitly deleted`);
+    addTombstones("payments", [...deleteSet]); // v10.0: tombstone them
+    console.log(`🗑️ [payments]: ${deleteSet.size} record(s) explicitly deleted + tombstoned`);
   }
   
   const merged = Array.from(mergedMap.values());
   
   if (clientNew > 0 || serverOnly.length > 0) {
-    console.log(`🔀 MERGE [payments]: client_sent=${payments.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, preserved=${serverOnly.length})`);
+    console.log(`🔀 MERGE [payments]: client_sent=${payments.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, preserved=${serverOnly.length}${clientResurrectionBlocked > 0 ? `, resurrection_blocked=${clientResurrectionBlocked}` : ''})`);
   }
 
   // Atomic write
@@ -1415,7 +1539,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   });
 
   if (success) {
-    broadcastUpdate("payments", merged);
+    broadcastUpdate("payments", merged, [...deleteSet]);
     res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true });
   } else {
     res.status(500).json({ error: "Write failed — data not saved" });
@@ -1499,31 +1623,52 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // SERVER-SIDE MERGE — NEVER blindly replace the file
+    // SERVER-SIDE MERGE — v10.0: Tombstone-aware, updatedAt-aware
     // ═══════════════════════════════════════════════════════════
     // Read current server data
     const serverData = readJSON(file, []);
+    
+    // v10.0: Load tombstones — IDs that were explicitly deleted by users
+    const tombstonedIds = getTombstonedIds(ep);
     
     // Build merged result: start with all server records, layer client on top
     const mergedMap = new Map();
     serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
     
-    let clientNew = 0, clientUpdated = 0, clientDeleted = 0;
+    let clientNew = 0, clientUpdated = 0, clientDeleted = 0, clientResurrectionBlocked = 0;
     const clientIDs = new Set();
     records.forEach(r => {
       if (!r || !r.id) return;
       clientIDs.add(r.id);
+      
+      // v10.0: Block resurrection — if this ID was tombstoned and not currently on server, skip
+      if (tombstonedIds.has(r.id) && !mergedMap.has(r.id)) {
+        clientResurrectionBlocked++;
+        return; // This record was intentionally deleted — don't let stale client resurrect it
+      }
+      
       const srv = mergedMap.get(r.id);
       if (!srv) {
-        // New record from client — KEEP
+        // New record from client — KEEP (stamp updatedAt if not present)
+        r.updatedAt = r.updatedAt || Date.now();
         mergedMap.set(r.id, r);
         clientNew++;
       } else {
-        // Both have it — client version wins (last-write-wins)
-        mergedMap.set(r.id, r);
+        // Both have it — v10.0: Use updatedAt for true last-write-wins
+        const clientTime = r.updatedAt || 0;
+        const serverTime = srv.updatedAt || 0;
+        if (clientTime >= serverTime) {
+          r.updatedAt = r.updatedAt || Date.now();
+          mergedMap.set(r.id, r);
+        }
+        // else: server version is newer, keep it
         clientUpdated++;
       }
     });
+    
+    if (clientResurrectionBlocked > 0) {
+      console.log(`🪦 [${ep}]: Blocked ${clientResurrectionBlocked} tombstoned records from resurrecting`);
+    }
     
     // Records on server but NOT in client payload:
     // These could be records added by OTHER users that this client hasn't seen yet.
@@ -1531,24 +1676,31 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
     // Note: serverOnly records are already in mergedMap from the initial forEach above.
     
-    // Remove explicitly deleted records (deleteSet declared at top of handler — C3 FIX)
+    // Remove explicitly deleted records + add tombstones (deleteSet declared at top of handler — C3 FIX)
     if (deleteSet.size > 0) {
       deleteSet.forEach(id => mergedMap.delete(id));
-      console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted`);
+      addTombstones(ep, [...deleteSet]); // v10.0: tombstone them so stale clients can't resurrect
+      console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted + tombstoned`);
       writeAuditLog(ep, "delete", userEmail || "unknown", `[${ep}] ${deleteSet.size} record(s) deleted by user | IDs: ${[...deleteSet].slice(0, 5).join(', ')}${deleteSet.size > 5 ? '...' : ''}`);
     }
     
     const merged = Array.from(mergedMap.values());
     
-    // DEDUPLICATION: For daily-cap and crg-deals, remove duplicate entries per agent/affiliate per date
+    // ═══════════════════════════════════════════════════════════
+    // DEDUPLICATION — v10.0 FIX: Use record ID (unique) not date+affiliate
+    // ═══════════════════════════════════════════════════════════
+    // Previous bug: dedup key was `date__affiliate` which silently deleted
+    // different deals for the same affiliate on the same date.
+    // Now: dedup only uses the composite key that matches nightly dedup,
+    // including brokerCap, so different broker deals are preserved.
     let deduped = merged;
     if (ep === "daily-cap") {
       const seen = new Map();
-      deduped = [];
       for (const r of merged) {
-        const key = `${r.date}__${(r.agent || "").trim().toLowerCase()}`;
+        // v10.0: Include broker in key to avoid merging different broker entries
+        const key = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
         if (seen.has(key)) {
-          // Merge: keep the one with more data (higher cap values)
+          // Keep the one with more data (higher cap values)
           const existing = seen.get(key);
           const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
           const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
@@ -1561,10 +1713,11 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       if (deduped.length < merged.length) console.log(`🧹 DEDUP [daily-cap]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} duplicates)`);
     }
     if (ep === "crg-deals") {
+      // v10.0 FIX: Include brokerCap in key — matches nightly dedup
+      // OLD BUG: key was `date__affiliate` which collapsed different broker deals into one
       const seen = new Map();
-      deduped = [];
       for (const r of merged) {
-        const key = `${r.date}__${(r.affiliate || "").trim().toLowerCase()}`;
+        const key = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
         if (seen.has(key)) {
           // Keep the one with more data (has capReceived, started, etc.)
           const existing = seen.get(key);
@@ -1595,8 +1748,8 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       });
     }
     
-    if (clientNew > 0 || serverOnly.length > 0) {
-      console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${deduped.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length})`);
+    if (clientNew > 0 || serverOnly.length > 0 || clientResurrectionBlocked > 0) {
+      console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${deduped.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length}${clientResurrectionBlocked > 0 ? `, resurrection_blocked=${clientResurrectionBlocked}` : ''})`);
     }
 
     // v8: Skip write entirely if merged result is identical to what's on disk
@@ -1606,11 +1759,11 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
     const success = await lockedWrite(file, deduped, {
       action: "update", user: userEmail || "unknown", 
-      details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length ? ' ⚠️SHRUNK' : ''}`
+      details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted${clientResurrectionBlocked > 0 ? `, ${clientResurrectionBlocked} resurrection_blocked` : ''}) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length ? ' ⚠️SHRUNK' : ''}`
     });
 
     if (success) {
-      broadcastUpdate(ep, deduped);
+      broadcastUpdate(ep, deduped, [...deleteSet]);
       res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true });
     } else {
       res.status(500).json({ error: "Write failed" });
@@ -1753,13 +1906,15 @@ if (WS_AVAILABLE) {
 }
 
 // Broadcast data update to all connected WebSocket clients
-function broadcastUpdate(table, data) {
+function broadcastUpdate(table, data, deletedIds) {
   if (!WS_AVAILABLE || wsClients.size === 0) return;
   const message = JSON.stringify({
     type: "update",
     table,
     version: getVersion(table),
     data,
+    // v10.0: Include recently deleted IDs so clients remove them immediately
+    tombstoned: deletedIds && deletedIds.length > 0 ? deletedIds : undefined,
     timestamp: Date.now(),
   });
 
@@ -3213,11 +3368,12 @@ app.post("/api/admin/backup", requireAdmin, async (req, res) => {
 app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   const results = {};
   
-  // Deduplicate daily-cap: one record per agent per date
+  // Deduplicate daily-cap: one record per agent per affiliate per date per broker
   const dc = readJSON("daily-cap.json", []);
   const dcSeen = new Map();
   for (const r of dc) {
-    const key = `${r.date}__${(r.agent || "").trim().toLowerCase()}`;
+    // v10.0 FIX: Include affiliate and brokerCap — matches save-time and nightly dedup
+    const key = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
     if (dcSeen.has(key)) {
       const existing = dcSeen.get(key);
       const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
@@ -3232,11 +3388,12 @@ app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   }
   results["daily-cap"] = { before: dc.length, after: dcDeduped.length, removed: dc.length - dcDeduped.length };
 
-  // Deduplicate crg-deals: one record per affiliate per date
+  // Deduplicate crg-deals: one record per affiliate per date per broker
   const crg = readJSON("crg-deals.json", []);
   const crgSeen = new Map();
   for (const r of crg) {
-    const key = `${r.date}__${(r.affiliate || "").trim().toLowerCase()}`;
+    // v10.0 FIX: Include brokerCap — same key as save-time and nightly dedup
+    const key = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
     if (crgSeen.has(key)) {
       const existing = crgSeen.get(key);
       const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
@@ -3416,6 +3573,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🔒 WAL atomic writes + concurrency queue     ║`);
   console.log(`║  🛡️  Input sanitization + XSS protection      ║`);
   console.log(`║  🧹 Nightly auto-dedup at 03:00              ║`);
+  console.log(`║  🪦 Tombstone system (7-day anti-resurrect)   ║`);
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
 
