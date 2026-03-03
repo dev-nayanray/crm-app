@@ -4002,10 +4002,9 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // Notification sent by server - removed duplicate from frontend
-      } else {
-        telegramNotify(`🔄 Payment (Aff ${p.invoice}) status → ${newStatus} by ${user.name}`);
+        // All notifications handled by server on save — no frontend telegramNotify needed
       }
+      // Removed: frontend telegramNotify for status changes — server sends notifications on save
       return updated;
     }));
   };
@@ -4030,25 +4029,18 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   const handleSave = form => { 
     if (editPay) { 
       const updated = { ...editPay, ...form }; 
-      // Send telegram notification when status changes to Paid
       if (form.status === "Paid" && editPay.status !== "Paid") { 
         updated.month = month; 
-        
         updated.year = year; 
         if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
-        // Send detailed payment notification
-        telegramNotify(`💰 PAYMENT Aff ${form.invoice} marked as PAID 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Paid by: ${user.name}\nPayment Hash: ${form.paymentHash || 'N/A'}`);
-      } else if (form.status !== "Paid") {
-        // Notify for other status changes
-        telegramNotify(`🔄 Payment (Aff ${form.invoice}) updated to ${form.status} by ${user.name}`);
       }
+      // All Telegram notifications handled server-side on save — no frontend duplicates
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
     } else { 
       // New payment added
       const newPayment = { ...form, id: genId(), month, year };
       setPayments(prev => [...prev, newPayment]);
-      // Send notification for new payment
-      telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
+      // Server sends "NEW PAYMENT ADDED" notification on save — no frontend duplicate
     } 
     setModalOpen(false); 
     setEditPay(null); 
