@@ -246,16 +246,16 @@ const mobileCSS = `
   .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
   .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
   .blitz-form-grid { grid-template-columns: 1fr !important; }
-  /* v9.05: Better touch targets on mobile */
   button { min-height: 44px !important; }
-  table td, table th { padding: 8px 6px !important; }
-  /* v9.05: Hide overflow columns on mobile tables */
-  .blitz-table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .blitz-table-responsive table { min-width: 600px; }
+  /* FIX 9.20: Enhanced mobile card layout styling */
+  .blitz-table-responsive table { display: none !important; }
+  .blitz-table-responsive .mobile-cards { display: flex !important; }
+}
+@media (min-width: 769px) {
+  .blitz-table-responsive .mobile-cards { display: none !important; }
 }
 @media (max-width: 480px) {
   .blitz-summary { grid-template-columns: 1fr !important; }
-  /* v9.05: Stack action buttons on very small screens */
   .blitz-main > div[style*="display: flex"][style*="gap"] { flex-direction: column !important; }
 }
 `;
@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.18";
+const VERSION = "9.20";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -756,6 +756,17 @@ async function apiSave(endpoint, data, userEmail) {
     if (json.version) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
+    }
+    // FIX 9.20: If server returned merged data (with records from other users),
+    // sync it back into React state to prevent "disappearing rows"
+    if (json.data && Array.isArray(json.data) && json.data.length > data.length) {
+      const setter = conflictSetters[endpoint];
+      if (setter) {
+        console.log(`🔄 Post-save sync [${endpoint}]: server has ${json.data.length} records (we sent ${data.length}) — syncing`);
+        setter(json.data);
+        lsSave(endpoint, json.data);
+        lastKnownCounts[endpoint] = json.data.length;
+      }
     }
     serverOnline = true;
     pendingSaves.delete(endpoint);
@@ -2680,6 +2691,61 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
           </div>
         </div>
 
+        {/* ═══════════ FIX 9.20: PERFORMANCE OVERVIEW ═══════════ */}
+        {(() => {
+          const FTD_TARGET = 200;
+          const monthCrg = crgDeals.filter(d => {
+            if (!d.date) return false;
+            return d.date.startsWith(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+          });
+          const monthFtd = monthCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          const ftdPct = Math.min(100, FTD_TARGET > 0 ? (monthFtd / FTD_TARGET) * 100 : 0);
+
+          const todayCrg = crgDeals.filter(d => d.date === today);
+          const todayCap = todayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const todayCapReceived = todayCrg.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const dailyLimit = todayCap || 1;
+          const capPct = Math.min(100, dailyLimit > 0 ? (todayCapReceived / dailyLimit) * 100 : 0);
+
+          const getColor = pct => pct < 30 ? "#EF4444" : pct < 75 ? "#F59E0B" : "#10B981";
+          const getColorBg = pct => pct < 30 ? "rgba(239,68,68,0.1)" : pct < 75 ? "rgba(245,158,11,0.1)" : "rgba(16,185,129,0.1)";
+
+          const RadialProgress = ({ pct, color, bg, label, value, total, size = 120 }) => {
+            const r = (size - 12) / 2;
+            const circ = 2 * Math.PI * r;
+            const offset = circ - (circ * Math.min(pct, 100)) / 100;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={bg} strokeWidth={10} />
+                  <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={10}
+                    strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+                    style={{ transition: "stroke-dashoffset 0.8s ease" }} />
+                </svg>
+                <div style={{ position: "relative", marginTop: -size + 10, height: size - 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color }}>{Math.round(pct)}%</div>
+                  <div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>{value} / {total}</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", textAlign: "center", marginTop: 4 }}>{label}</div>
+              </div>
+            );
+          };
+
+          return (
+            <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 16, padding: "20px 24px", marginBottom: 28, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                <span style={{ fontSize: 18 }}>🎯</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Performance Overview</span>
+                <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500, marginLeft: "auto" }}>March {now.getFullYear()}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 60, flexWrap: "wrap" }}>
+                <RadialProgress pct={ftdPct} color={getColor(ftdPct)} bg={getColorBg(ftdPct)} label="FTD Target (March)" value={monthFtd} total={FTD_TARGET} size={140} />
+                <RadialProgress pct={capPct} color={getColor(capPct)} bg={getColorBg(capPct)} label="Daily CAP Usage" value={todayCapReceived} total={todayCap || 0} size={140} />
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ═══════════ FINANCE ═══════════ */}
         {sectionTitle("💰", "Finance")}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 28 }}>
@@ -3289,7 +3355,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BLITZ REPORT PAGE — Fully editable monthly report (v9.07)
+// BLITZ REPORT PAGE — v9.20 rewrite: matches screenshot, auto-save, working-day EST
 // ═══════════════════════════════════════════════════════════════
 function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dcEntries: rawDc, cpPayments: rawCp, payments: rawPay, dealsData: rawDeals, partnersData: rawPartners, userAccess }) {
   const now = new Date();
@@ -3305,7 +3371,6 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
   const [allReports, setAllReports] = useState(loadAllReports);
   const [activeMonth, setActiveMonth] = useState(curMonth);
 
-  // Default empty report structure matching the screenshot exactly
   const emptyReport = () => ({
     date: today,
     yFtds: "", monthlyFtds: "", monthlyEst: "",
@@ -3315,27 +3380,34 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
     yCrgCap: "", highestDailyCap: "", highestDailyCapDate: "",
     refundAffiliates: "", refundBrands: "",
     dailyFtdsRecord: "", dailyFtdsDate: "",
+    dailyFtdsRecord2: "", dailyFtdsDate2: "",
     weekendFtdsRecord: "", weekendFtdsDate: "",
     weeklyFtdsRecord: "", weeklyFtdsDate: "",
     monthlyFtdsRecord: "", monthlyFtdsDate: "",
   });
 
-  // Get or create current month's report
   const getReport = (month) => allReports[month] || emptyReport();
   const [report, setReport] = useState(getReport(activeMonth));
 
-  // When switching months, load that report
   useEffect(() => { setReport(getReport(activeMonth)); }, [activeMonth]);
 
-  // Save handler
-  const saveReport = () => {
-    const updated = { ...allReports, [activeMonth]: { ...report, lastSaved: new Date().toISOString() } };
+  // ── v9.20: Auto-save with debounce (1.5s after last edit) ──
+  const autoSaveTimer = useRef(null);
+  const persistReport = (rpt) => {
+    const updated = { ...allReports, [activeMonth]: { ...rpt, lastSaved: new Date().toISOString() } };
     setAllReports(updated);
     localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
-    toast("✅ Report saved!");
   };
+  // Auto-save on every report change (debounced)
+  useEffect(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => { persistReport(report); }, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [report]);
 
-  // Delete a report
+  // Manual save
+  const saveReport = () => { persistReport(report); toast("✅ Report saved!"); };
+
   const deleteReport = (month) => {
     if (!confirm(`Delete report for ${month}?`)) return;
     const updated = { ...allReports };
@@ -3345,24 +3417,80 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
     if (activeMonth === month) { setActiveMonth(curMonth); setReport(getReport(curMonth)); }
   };
 
-  // Field update helper
   const set = (field, val) => setReport(p => ({ ...p, [field]: val }));
 
-  // Sorted months for "Old" section (exclude current month)
+  // ── v9.20: Monthly EST calculation based on working days remaining ──
+  const calcMonthlyEst = (monthlyVal) => {
+    const mFtds = parseInt(monthlyVal) || 0;
+    if (mFtds === 0) return "";
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const todayDate = new Date();
+    // Count working days (Mon-Fri) elapsed and total in the month
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    let workedDays = 0, totalWorkDays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { // Mon-Fri
+        totalWorkDays++;
+        if (dt <= todayDate) workedDays++;
+      }
+    }
+    if (workedDays === 0) return mFtds.toString();
+    const dailyAvg = mFtds / workedDays;
+    return Math.round(dailyAvg * totalWorkDays).toString();
+  };
+
+  const calcBrandEst = (monthlyVal) => {
+    const mFtds = parseInt(monthlyVal) || 0;
+    if (mFtds === 0) return "";
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const todayDate = new Date();
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    let workedDays = 0, totalWorkDays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { totalWorkDays++; if (dt <= todayDate) workedDays++; }
+    }
+    if (workedDays === 0) return mFtds.toString();
+    return Math.round((mFtds / workedDays) * totalWorkDays).toString();
+  };
+
+  // Auto-compute EST when monthly FTDs change
+  useEffect(() => {
+    if (report.monthlyFtds) {
+      const est = calcMonthlyEst(report.monthlyFtds);
+      if (est !== report.monthlyEst) setReport(p => ({ ...p, monthlyEst: est }));
+    }
+  }, [report.monthlyFtds]);
+
+  useEffect(() => {
+    if (report.monthlyBrandFtds) {
+      const est = calcBrandEst(report.monthlyBrandFtds);
+      if (est !== report.monthlyBrandEst) setReport(p => ({ ...p, monthlyBrandEst: est }));
+    }
+  }, [report.monthlyBrandFtds]);
+
   const oldMonths = Object.keys(allReports).filter(m => m !== curMonth).sort().reverse();
 
-  // ── Styles ──
-  const inp = (w) => ({ width: w || 70, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF" });
-  const inp2 = (w) => ({ ...inp(w), fontSize: 10, fontWeight: 500, color: "#64748B" });
-  const cellS = { padding: "8px 12px", fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", borderBottom: "1px solid #E2E8F0", verticalAlign: "middle" };
-  const hdrS = { ...cellS, fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, background: "#F8FAFC", padding: "6px 12px" };
-  const lblS = { ...cellS, textAlign: "left", fontWeight: 700, color: "#334155", fontSize: 13, background: "#F8FAFC", minWidth: 110 };
-  const valS = (bg) => ({ ...cellS, background: bg || "#FFF" });
-  const g = "rgba(16,185,129,0.08)";
-  const b = "rgba(56,189,248,0.08)";
-  const a = "rgba(245,158,11,0.08)";
-  const p = "rgba(236,72,153,0.08)";
-  const iB = "rgba(99,102,241,0.08)";
+  // ── Styles — matching screenshot exactly ──
+  const inputBase = { padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 15, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF", outline: "none" };
+  const inp = (w) => ({ ...inputBase, width: w || 80 });
+  const inp2 = (w) => ({ ...inputBase, width: w || 90, fontSize: 10, fontWeight: 500, color: "#64748B", marginTop: 4 });
+  const estInp = (w) => ({ ...inputBase, width: w || 80, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A" });
+
+  // Table cell styles matching screenshot: clean borders, generous padding
+  const cellBorder = "1px solid #E2E8F0";
+  const hdrCell = { padding: "10px 14px", fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 1, textAlign: "center", background: "#F8FAFC", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const valCell = (bg) => ({ padding: "12px 14px", textAlign: "center", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", background: bg || "#FFF" });
+  const lblCell = { ...hdrCell, textAlign: "left", fontSize: 13, fontWeight: 800, color: "#1E293B", minWidth: 120, background: "#F8FAFC" };
+  
+  // Section backgrounds
+  const bBg = "rgba(56,189,248,0.06)";
+  const gBg = "rgba(16,185,129,0.06)";
+  const aBg = "rgba(245,158,11,0.06)";
+  const pBg = "rgba(236,72,153,0.06)";
 
   const isCurrentMonth = activeMonth === curMonth;
   const monthLabel = (() => {
@@ -3370,152 +3498,217 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
     return `${MONTHS[parseInt(m) - 1]} ${y}`;
   })();
 
+  // ── Working days info for display ──
+  const getWorkDayInfo = () => {
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    const todayDate = new Date();
+    let worked = 0, total = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { total++; if (dt <= todayDate) worked++; }
+    }
+    return { worked, total, remaining: total - worked };
+  };
+  const wdInfo = getWorkDayInfo();
+
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
-      <main className="blitz-main" style={{ maxWidth: 950, margin: "0 auto", padding: "28px 32px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📊 Blitz Report</h2>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <main className="blitz-main" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 32px" }}>
+        {/* ── Header bar ── */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 26 }}>📊</span> Blitz Report
+            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500, marginLeft: 6 }}>auto-saves</span>
+          </h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <CurrencyBadges />
             {!isCurrentMonth && <button onClick={() => setActiveMonth(curMonth)} style={{ padding: "6px 14px", borderRadius: 8, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>← Current Month</button>}
             <button onClick={saveReport} style={{ padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>💾 Save Report</button>
           </div>
         </div>
 
-        {/* ═══ MAIN REPORT TABLE ═══ */}
-        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: 20 }}>
-          <div style={{ background: "linear-gradient(135deg,#334155,#475569)", color: "#FFF", padding: "12px 20px", fontSize: 16, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>Blitz Report — {monthLabel}</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* MAIN REPORT — Matching screenshot layout exactly          */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
+          {/* Dark header bar */}
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "14px 24px", fontSize: 18, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>
+            Blitz Report — {monthLabel}
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "15%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+            </colgroup>
             <tbody>
-              {/* ── Row 1: FTD header ── */}
+              {/* ═══ SECTION 1: FTDs ═══ */}
               <tr>
-                <td style={lblS}>
-                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(100), fontSize: 12 }} />
+                <td style={lblCell}>
+                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(110), fontSize: 13 }} />
                 </td>
-                <td style={hdrS}>Y FTDs</td>
-                <td style={hdrS}>Monthly FTDs</td>
-                <td style={hdrS}>Monthly EST</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Sales Target</td>
-              </tr>
-              {/* ── Row 2: FTD values ── */}
-              <tr>
-                <td style={lblS}></td>
-                <td style={valS(b)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(b)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}><input value={report.monthlyEst} onChange={e => set("monthlyEst", e.target.value)} style={inp()} /></td>
-                <td style={valS()}></td>
-                <td style={valS(a)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
-              </tr>
-              {/* ── Row 3: Super Target ── */}
-              <tr>
-                <td style={lblS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Super Target</td>
+                <td style={hdrCell}>Y FTDS</td>
+                <td style={hdrCell}>MONTHLY FTDS</td>
+                <td style={hdrCell}>MONTHLY EST</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}>SALES TARGET</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(g)}><input value={report.superTarget} onChange={e => set("superTarget", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(bBg)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}>
+                  <input value={report.monthlyEst} readOnly style={{ ...estInp(), cursor: "default" }} title={`Based on ${wdInfo.worked}/${wdInfo.total} working days (${wdInfo.remaining} left)`} />
+                </td>
+                <td style={valCell()}></td>
+                <td style={valCell(aBg)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
               </tr>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
-
-              {/* ── Brand row (🐦 icon from screenshot) ── */}
+              {/* Super Target row */}
               <tr>
-                <td style={lblS}>🐦</td>
-                <td style={hdrS}>Yesterday 🐦</td>
-                <td style={hdrS}>Monthly 🐦</td>
-                <td style={hdrS}>Monthly EST 🐦</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={{ ...hdrCell, borderBottom: cellBorder }}>SUPER TARGET</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS(b)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(b)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}><input value={report.monthlyBrandEst} onChange={e => set("monthlyBrandEst", e.target.value)} style={inp()} /></td>
-                <td style={hdrS}>New Affiliates</td>
-                <td style={hdrS}>New Brands</td>
-              </tr>
-              <tr>
-                <td style={lblS}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(b)}><input value={report.newAffiliates} onChange={e => set("newAffiliates", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}><input value={report.newBrands} onChange={e => set("newBrands", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(gBg)}><input value={report.superTarget} onChange={e => set("superTarget", e.target.value)} style={inp()} /></td>
               </tr>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
+              {/* ═══ DIVIDER ═══ */}
+              <tr><td colSpan={6} style={{ height: 10, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
 
-              {/* ── CRG Cap row ── */}
+              {/* ═══ SECTION 2: Brand FTDs (🐦) ═══ */}
               <tr>
-                <td style={hdrS}>Y CRG Cap</td>
-                <td style={hdrS}>Highest Daily CRG Cap</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Refund Affiliates</td>
-                <td style={hdrS}>Refund Brands</td>
+                <td style={lblCell}></td>
+                <td style={hdrCell}>YESTERDAY 🐦</td>
+                <td style={hdrCell}>MONTHLY 🐦</td>
+                <td style={hdrCell}>MONTHLY EST 🐦</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}></td>
               </tr>
               <tr>
-                <td style={valS(b)}><input value={report.yCrgCap} onChange={e => set("yCrgCap", e.target.value)} style={inp()} /></td>
-                <td style={valS(a)}>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(bBg)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}>
+                  <input value={report.monthlyBrandEst} readOnly style={{ ...estInp(), cursor: "default" }} title={`Based on ${wdInfo.worked}/${wdInfo.total} working days`} />
+                </td>
+                <td style={hdrCell}>NEW AFFILIATES</td>
+                <td style={hdrCell}>NEW BRANDS</td>
+              </tr>
+              <tr>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.newAffiliates} onChange={e => set("newAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}><input value={report.newBrands} onChange={e => set("newBrands", e.target.value)} style={inp()} /></td>
+              </tr>
+
+              {/* ═══ DIVIDER ═══ */}
+              <tr><td colSpan={6} style={{ height: 10, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
+
+              {/* ═══ SECTION 3: CRG Cap ═══ */}
+              <tr>
+                <td style={hdrCell}>Y CRG CAP</td>
+                <td style={hdrCell}>HIGHEST DAILY CRG CAP</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}>REFUND AFFILIATES</td>
+                <td style={hdrCell}>REFUND BRANDS</td>
+              </tr>
+              <tr>
+                <td style={valCell(bBg)}><input value={report.yCrgCap} onChange={e => set("yCrgCap", e.target.value)} style={inp()} /></td>
+                <td style={valCell(aBg)}>
                   <input value={report.highestDailyCap} onChange={e => set("highestDailyCap", e.target.value)} style={inp()} />
-                  <div><input value={report.highestDailyCapDate} onChange={e => set("highestDailyCapDate", e.target.value)} style={inp2(90)} placeholder="dd/mm/yyyy" /></div>
+                  <div><input value={report.highestDailyCapDate} onChange={e => set("highestDailyCapDate", e.target.value)} style={inp2(100)} placeholder="dd/mm/yyyy" /></div>
                 </td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(p)}><input value={report.refundAffiliates} onChange={e => set("refundAffiliates", e.target.value)} style={inp()} /></td>
-                <td style={valS(p)}><input value={report.refundBrands} onChange={e => set("refundBrands", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(pBg)}><input value={report.refundAffiliates} onChange={e => set("refundAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valCell(pBg)}><input value={report.refundBrands} onChange={e => set("refundBrands", e.target.value)} style={inp()} /></td>
               </tr>
+            </tbody>
+          </table>
+        </div>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
-
-              {/* ── Blitz Records row ── */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* BLITZ RECORDS — Separate card like screenshot              */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "10px 24px", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ background: "#10B981", padding: "2px 12px", borderRadius: 6, fontSize: 13 }}>Blitz Records</span>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+            </colgroup>
+            <tbody>
               <tr>
-                <td style={lblS}>Blitz Records</td>
-                <td style={hdrS}>Daily FTDs</td>
-                <td style={hdrS}>Weekend FTDs</td>
-                <td style={hdrS}>Weekly FTDs</td>
-                <td style={hdrS} colSpan={2}>Monthly FTDs</td>
+                <td style={hdrCell}>DAILY FTDS</td>
+                <td style={hdrCell}>DAILY FTDS</td>
+                <td style={hdrCell}>WEEKEND FTDS</td>
+                <td style={hdrCell}>WEEKLY FTDS</td>
+                <td style={hdrCell}>MONTHLY FTDS</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS(g)}>
+                <td style={valCell(gBg)}>
                   <input value={report.dailyFtdsRecord} onChange={e => set("dailyFtdsRecord", e.target.value)} style={inp()} />
-                  <div><input value={report.dailyFtdsDate} onChange={e => set("dailyFtdsDate", e.target.value)} style={inp2(90)} placeholder="date" /></div>
+                  <div><input value={report.dailyFtdsDate} onChange={e => set("dailyFtdsDate", e.target.value)} style={inp2()} placeholder="date" /></div>
                 </td>
-                <td style={valS(g)}>
+                <td style={valCell(gBg)}>
+                  <input value={report.dailyFtdsRecord2 || ""} onChange={e => set("dailyFtdsRecord2", e.target.value)} style={inp()} />
+                  <div><input value={report.dailyFtdsDate2 || ""} onChange={e => set("dailyFtdsDate2", e.target.value)} style={inp2()} placeholder="date" /></div>
+                </td>
+                <td style={valCell(gBg)}>
                   <input value={report.weekendFtdsRecord} onChange={e => set("weekendFtdsRecord", e.target.value)} style={inp()} />
-                  <div><input value={report.weekendFtdsDate} onChange={e => set("weekendFtdsDate", e.target.value)} style={inp2(90)} placeholder="date range" /></div>
+                  <div><input value={report.weekendFtdsDate} onChange={e => set("weekendFtdsDate", e.target.value)} style={inp2()} placeholder="date range" /></div>
                 </td>
-                <td style={valS(g)}>
+                <td style={valCell(gBg)}>
                   <input value={report.weeklyFtdsRecord} onChange={e => set("weeklyFtdsRecord", e.target.value)} style={inp()} />
-                  <div><input value={report.weeklyFtdsDate} onChange={e => set("weeklyFtdsDate", e.target.value)} style={inp2(90)} placeholder="date range" /></div>
+                  <div><input value={report.weeklyFtdsDate} onChange={e => set("weeklyFtdsDate", e.target.value)} style={inp2()} placeholder="date range" /></div>
                 </td>
-                <td style={valS(g)} colSpan={2}>
+                <td style={valCell(gBg)}>
                   <input value={report.monthlyFtdsRecord} onChange={e => set("monthlyFtdsRecord", e.target.value)} style={inp()} />
-                  <div><input value={report.monthlyFtdsDate} onChange={e => set("monthlyFtdsDate", e.target.value)} style={inp2(90)} placeholder="month" /></div>
+                  <div><input value={report.monthlyFtdsDate} onChange={e => set("monthlyFtdsDate", e.target.value)} style={inp2()} placeholder="month" /></div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* ── Target Progress (if targets filled) ── */}
+        {/* ── Working Days Info Bar ── */}
+        <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#1E40AF", flex: 1, minWidth: 160, textAlign: "center" }}>
+            📅 Working days: <b>{wdInfo.worked}</b> / {wdInfo.total} <span style={{ color: "#64748B" }}>({wdInfo.remaining} remaining)</span>
+          </div>
+          {report.monthlyFtds && <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#166534", flex: 1, minWidth: 160, textAlign: "center" }}>
+            📈 Daily avg: <b>{(parseInt(report.monthlyFtds) / Math.max(1, wdInfo.worked)).toFixed(1)}</b> FTDs/day → EST: <b>{report.monthlyEst}</b> by month end
+          </div>}
+        </div>
+
+        {/* ── Target Progress ── */}
         {(report.salesTarget || report.superTarget) && report.monthlyFtds && (
           <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {monthLabel}</div>
