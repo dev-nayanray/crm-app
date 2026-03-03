@@ -2521,7 +2521,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
     <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
       <span style={{ fontSize: 11, fontWeight: 700, color: "#334155", minWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={name}>{name}</span>
-      <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+      <div style={{ flex: 1, height: 6, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
         <div style={{ height: "100%", width: (maxVal > 0 ? (val / maxVal) * 100 : 0) + "%", background: i === 0 ? color : "#CBD5E1", borderRadius: 5, transition: "width 0.4s" }} />
       </div>
       <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 45, textAlign: "right" }}>{val.toLocaleString()}{unit ? " " + unit : ""}</span>
@@ -3044,7 +3044,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                       <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 20 }}>#{i + 1}</span>
                         <span style={{ display: "inline-block", padding: "3px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 60, borderRadius: 4 }}>{name}</span>
-                        <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+                        <div style={{ flex: 1, height: 6, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
                           <div style={{ height: "100%", width: (topPartnerAgents[0][1] > 0 ? (count / topPartnerAgents[0][1]) * 100 : 0) + "%", background: i === 0 ? "linear-gradient(90deg, #EC4899, #F472B6)" : "#CBD5E1", borderRadius: 5 }} />
                         </div>
                         <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace", minWidth: 25, textAlign: "right" }}>{count}</span>
@@ -3373,9 +3373,9 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
 
   const emptyReport = () => ({
     date: today,
-    yFtds: "", monthlyFtds: "", monthlyEst: "",
+    yFtds: "", monthlyFtds: "", monthlyEst: "", monthlyEstOverride: false,
     salesTarget: "", superTarget: "",
-    yBrandFtds: "", monthlyBrandFtds: "", monthlyBrandEst: "",
+    yBrandFtds: "", monthlyBrandFtds: "", monthlyBrandEst: "", brandEstOverride: false,
     newAffiliates: "", newBrands: "",
     yCrgCap: "", highestDailyCap: "", highestDailyCapDate: "",
     refundAffiliates: "", refundBrands: "",
@@ -3457,16 +3457,16 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
     return Math.round((mFtds / workedDays) * totalWorkDays).toString();
   };
 
-  // Auto-compute EST when monthly FTDs change
+  // Auto-compute EST when monthly FTDs change (unless manually overridden)
   useEffect(() => {
-    if (report.monthlyFtds) {
+    if (report.monthlyFtds && !report.monthlyEstOverride) {
       const est = calcMonthlyEst(report.monthlyFtds);
       if (est !== report.monthlyEst) setReport(p => ({ ...p, monthlyEst: est }));
     }
   }, [report.monthlyFtds]);
 
   useEffect(() => {
-    if (report.monthlyBrandFtds) {
+    if (report.monthlyBrandFtds && !report.brandEstOverride) {
       const est = calcBrandEst(report.monthlyBrandFtds);
       if (est !== report.monthlyBrandEst) setReport(p => ({ ...p, monthlyBrandEst: est }));
     }
@@ -3475,16 +3475,16 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
   const oldMonths = Object.keys(allReports).filter(m => m !== curMonth).sort().reverse();
 
   // ── Styles — matching screenshot exactly ──
-  const inputBase = { padding: "6px 8px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 15, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF", outline: "none" };
-  const inp = (w) => ({ ...inputBase, width: w || 80 });
-  const inp2 = (w) => ({ ...inputBase, width: w || 90, fontSize: 10, fontWeight: 500, color: "#64748B", marginTop: 4 });
-  const estInp = (w) => ({ ...inputBase, width: w || 80, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A" });
+  const inputBase = { padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF", outline: "none" };
+  const inp = (w) => ({ ...inputBase, width: w || 64 });
+  const inp2 = (w) => ({ ...inputBase, width: w || 72, fontSize: 9, fontWeight: 500, color: "#64748B", marginTop: 2 });
+  const estInp = (w) => ({ ...inputBase, width: w || 64, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A" });
 
-  // Table cell styles matching screenshot: clean borders, generous padding
+  // Table cell styles — compact layout (v9.20: 20% smaller)
   const cellBorder = "1px solid #E2E8F0";
-  const hdrCell = { padding: "10px 14px", fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 1, textAlign: "center", background: "#F8FAFC", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", fontFamily: "'Plus Jakarta Sans',sans-serif" };
-  const valCell = (bg) => ({ padding: "12px 14px", textAlign: "center", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", background: bg || "#FFF" });
-  const lblCell = { ...hdrCell, textAlign: "left", fontSize: 13, fontWeight: 800, color: "#1E293B", minWidth: 120, background: "#F8FAFC" };
+  const hdrCell = { padding: "7px 10px", fontSize: 10, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 0.8, textAlign: "center", background: "#F8FAFC", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const valCell = (bg) => ({ padding: "8px 10px", textAlign: "center", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", background: bg || "#FFF" });
+  const lblCell = { ...hdrCell, textAlign: "left", fontSize: 11, fontWeight: 800, color: "#1E293B", minWidth: 90, background: "#F8FAFC" };
   
   // Section backgrounds
   const bBg = "rgba(56,189,248,0.06)";
@@ -3518,7 +3518,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
-      <main className="blitz-main" style={{ maxWidth: 1000, margin: "0 auto", padding: "28px 32px" }}>
+      <main className="blitz-main" style={{ maxWidth: 960, margin: "0 auto", padding: "20px 24px" }}>
         {/* ── Header bar ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155", display: "flex", alignItems: "center", gap: 10 }}>
@@ -3537,7 +3537,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
         {/* ═══════════════════════════════════════════════════════════ */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
           {/* Dark header bar */}
-          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "14px 24px", fontSize: 18, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "10px 20px", fontSize: 15, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>
             Blitz Report — {monthLabel}
           </div>
 
@@ -3554,7 +3554,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
               {/* ═══ SECTION 1: FTDs ═══ */}
               <tr>
                 <td style={lblCell}>
-                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(110), fontSize: 13 }} />
+                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(95), fontSize: 11 }} />
                 </td>
                 <td style={hdrCell}>Y FTDS</td>
                 <td style={hdrCell}>MONTHLY FTDS</td>
@@ -3567,7 +3567,11 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
                 <td style={valCell(bBg)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
                 <td style={valCell(bBg)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
                 <td style={valCell(gBg)}>
-                  <input value={report.monthlyEst} readOnly style={{ ...estInp(), cursor: "default" }} title={`Based on ${wdInfo.worked}/${wdInfo.total} working days (${wdInfo.remaining} left)`} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <input value={report.monthlyEst} onChange={e => set("monthlyEst", e.target.value) || set("monthlyEstOverride", true)} style={{ ...estInp(), border: report.monthlyEstOverride ? "1px solid #FBBF24" : "1px solid #BBF7D0" }} title={`Working days: ${wdInfo.worked}/${wdInfo.total} (${wdInfo.remaining} left)${report.monthlyEstOverride ? " — manual override" : ""}`} />
+                    {report.monthlyEstOverride && <button onClick={() => { const est = calcMonthlyEst(report.monthlyFtds); setReport(p => ({ ...p, monthlyEst: est, monthlyEstOverride: false })); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }} title="Recalculate from working days">🔄</button>}
+                  </div>
+                  <div style={{ fontSize: 8, color: "#94A3B8", marginTop: 2 }}>{wdInfo.worked}/{wdInfo.total} work days</div>
                 </td>
                 <td style={valCell()}></td>
                 <td style={valCell(aBg)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
@@ -3592,7 +3596,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
               </tr>
 
               {/* ═══ DIVIDER ═══ */}
-              <tr><td colSpan={6} style={{ height: 10, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
+              <tr><td colSpan={6} style={{ height: 6, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
 
               {/* ═══ SECTION 2: Brand FTDs (🐦) ═══ */}
               <tr>
@@ -3608,7 +3612,11 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
                 <td style={valCell(bBg)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
                 <td style={valCell(bBg)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
                 <td style={valCell(gBg)}>
-                  <input value={report.monthlyBrandEst} readOnly style={{ ...estInp(), cursor: "default" }} title={`Based on ${wdInfo.worked}/${wdInfo.total} working days`} />
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <input value={report.monthlyBrandEst} onChange={e => set("monthlyBrandEst", e.target.value) || set("brandEstOverride", true)} style={{ ...estInp(), border: report.brandEstOverride ? "1px solid #FBBF24" : "1px solid #BBF7D0" }} title={`Working days: ${wdInfo.worked}/${wdInfo.total}${report.brandEstOverride ? " — manual override" : ""}`} />
+                    {report.brandEstOverride && <button onClick={() => { const est = calcBrandEst(report.monthlyBrandFtds); setReport(p => ({ ...p, monthlyBrandEst: est, brandEstOverride: false })); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }} title="Recalculate">🔄</button>}
+                  </div>
+                  <div style={{ fontSize: 8, color: "#94A3B8", marginTop: 2 }}>{wdInfo.worked}/{wdInfo.total} work days</div>
                 </td>
                 <td style={hdrCell}>NEW AFFILIATES</td>
                 <td style={hdrCell}>NEW BRANDS</td>
@@ -3623,7 +3631,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
               </tr>
 
               {/* ═══ DIVIDER ═══ */}
-              <tr><td colSpan={6} style={{ height: 10, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
+              <tr><td colSpan={6} style={{ height: 6, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
 
               {/* ═══ SECTION 3: CRG Cap ═══ */}
               <tr>
@@ -3653,7 +3661,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
         {/* BLITZ RECORDS — Separate card like screenshot              */}
         {/* ═══════════════════════════════════════════════════════════ */}
         <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
-          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "10px 24px", fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "8px 20px", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ background: "#10B981", padding: "2px 12px", borderRadius: 6, fontSize: 13 }}>Blitz Records</span>
           </div>
           <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
@@ -3699,19 +3707,19 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
         </div>
 
         {/* ── Working Days Info Bar ── */}
-        <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
-          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 10, padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#1E40AF", flex: 1, minWidth: 160, textAlign: "center" }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "7px 14px", fontSize: 11, fontWeight: 600, color: "#1E40AF", flex: 1, minWidth: 140, textAlign: "center" }}>
             📅 Working days: <b>{wdInfo.worked}</b> / {wdInfo.total} <span style={{ color: "#64748B" }}>({wdInfo.remaining} remaining)</span>
           </div>
-          {report.monthlyFtds && <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 10, padding: "10px 16px", fontSize: 12, fontWeight: 600, color: "#166534", flex: 1, minWidth: 160, textAlign: "center" }}>
+          {report.monthlyFtds && <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "7px 14px", fontSize: 11, fontWeight: 600, color: "#166534", flex: 1, minWidth: 140, textAlign: "center" }}>
             📈 Daily avg: <b>{(parseInt(report.monthlyFtds) / Math.max(1, wdInfo.worked)).toFixed(1)}</b> FTDs/day → EST: <b>{report.monthlyEst}</b> by month end
           </div>}
         </div>
 
         {/* ── Target Progress ── */}
         {(report.salesTarget || report.superTarget) && report.monthlyFtds && (
-          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {monthLabel}</div>
+          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 18px", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>🎯 Target Progress — {monthLabel}</div>
             {[
               { label: "Sales Target", target: parseInt(report.salesTarget) || 0, color: "#F59E0B" },
               ...(report.superTarget ? [{ label: "Super Target", target: parseInt(report.superTarget) || 0, color: "#10B981" }] : []),
