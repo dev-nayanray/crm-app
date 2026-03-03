@@ -1081,9 +1081,21 @@ endpoints.forEach(ep => {
 // When client saves ALL payments, server compares vs file on disk.
 // If server file was reset/restored, every old payment looks "new" → notification flood.
 // Fix: Track which payment IDs already got a "new" notification.
+// ═══════════════════════════════════════════════════════════════
+// v9.20: NOTIFICATION BATCHING — only sends the FINAL status
+// ═══════════════════════════════════════════════════════════════
+// Problem: User creates payment (Open) → server sends "NEW PAYMENT".
+// User clicks Approved → server sends "Approved". User clicks Paid → sends "PAID".
+// That's 3 messages for 1 payment. User only wants the FINAL one.
+//
+// Solution: When a payment notification is triggered, DELAY it by 5 seconds.
+// If another status change for the SAME payment arrives within 5s, cancel the
+// old notification and queue the new one. After 5s of no changes, send the final.
 const notifiedPaymentIds = new Set();
-const notifiedTransitions = new Set();
-// Populate from existing data on startup — everything already in the file is "known"
+const pendingNotifications = new Map(); // paymentId → { timer, payment, type }
+const NOTIFICATION_DELAY = 5000; // 5 seconds — enough for user to click through statuses
+
+// Pre-load existing payment IDs on startup to suppress "new" floods after restore
 try {
   const existingPayments = readJSON("payments.json", []);
   existingPayments.forEach(p => { if (p && p.id) notifiedPaymentIds.add(p.id); });
@@ -1093,6 +1105,25 @@ try {
 } catch (e) {}
 // Cleanup every 10 min
 setInterval(() => { if (notifiedPaymentIds.size > 10000) notifiedPaymentIds.clear(); }, 10 * 60 * 1000);
+
+// Queue a notification — replaces any pending notification for the same payment
+function queuePaymentNotification(payment, notifyFn) {
+  const id = payment.id;
+  // Cancel any pending notification for this payment
+  const existing = pendingNotifications.get(id);
+  if (existing) {
+    clearTimeout(existing.timer);
+    console.log(`🔔 Notification superseded for ${id}: was ${existing.desc}, now ${payment.status}`);
+  }
+  // Queue the new one
+  const desc = payment.status;
+  const timer = setTimeout(() => {
+    pendingNotifications.delete(id);
+    console.log(`🔔 Sending final notification for ${id}: ${desc}`);
+    notifyFn();
+  }, NOTIFICATION_DELAY);
+  pendingNotifications.set(id, { timer, desc });
+}
 
 // POST — atomic save with conflict detection, audit log, broadcast
 app.post("/api/payments", requireAuth, async (req, res) => {
@@ -1117,7 +1148,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   }
 
   // ═══════════════════════════════════════════════════════════
-  // NOTIFICATION LOGIC — v9.20: Prevent looping + duplicate messages
+  // NOTIFICATION LOGIC — v9.20: Batched — only FINAL status gets sent
   // ═══════════════════════════════════════════════════════════
   const oldPayments = readJSON("payments.json", []);
   const oldMap = new Map(oldPayments.map(p => [p.id, p]));
@@ -1128,37 +1159,29 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     
     if (!oldP) {
       // ── NEW PAYMENT ──
-      // Guard: skip if already notified (prevents loop when client re-sends all payments)
       if (notifiedPaymentIds.has(p.id)) return;
       notifiedPaymentIds.add(p.id);
       
+      // Queue notification — if user quickly changes status, only the FINAL one fires
       if (p.status === "Paid") {
-        sendAffiliatePaymentNotification(p, true);
+        queuePaymentNotification(p, () => sendAffiliatePaymentNotification(p, true));
       } else if (p.status === "Approved to pay") {
-        // ONLY send approved notification — NOT "new payment added" (was sending both)
-        sendApprovedToPayNotification(p);
+        queuePaymentNotification(p, () => sendApprovedToPayNotification(p));
       } else if (["Open", "On the way"].includes(p.status)) {
-        sendAffiliatePaymentNotification(p, false);
+        queuePaymentNotification(p, () => sendAffiliatePaymentNotification(p, false));
       }
       
     } else if (oldP.status !== p.status) {
       // ── STATUS CHANGED ──
-      // Guard: prevent duplicate notifications for same transition
-      const transKey = `${p.id}:${oldP.status}->${p.status}`;
-      if (notifiedTransitions.has(transKey)) return;
-      notifiedTransitions.add(transKey);
-      setTimeout(() => notifiedTransitions.delete(transKey), 60000);
-      
+      // Queue replaces any pending notification for this payment (the key fix)
       if (p.status === "Paid") {
-        sendAffiliatePaymentNotification(p, true);
+        queuePaymentNotification(p, () => sendAffiliatePaymentNotification(p, true));
       }
       else if (p.status === "Approved to pay") {
-        // ONLY "Approved to pay" message — no "NEW PAYMENT ADDED" alongside it
-        sendApprovedToPayNotification(p);
+        queuePaymentNotification(p, () => sendApprovedToPayNotification(p));
       }
       else if (["Open", "On the way"].includes(p.status) && oldP.status === "Paid") {
-        // Re-opened from Paid
-        sendAffiliatePaymentNotification(p, false);
+        queuePaymentNotification(p, () => sendAffiliatePaymentNotification(p, false));
       }
     }
   });
@@ -1281,13 +1304,13 @@ app.post("/api/payments", requireAuth, async (req, res) => {
           notifiedPaymentIds.add(cp.id);
           
           if (cp.status === "Received") {
-            sendBrandPaymentNotification(cp);
+            queuePaymentNotification(cp, () => sendBrandPaymentNotification(cp));
           } else {
-            sendAffiliatePaymentNotification(cp, false);
+            queuePaymentNotification(cp, () => sendAffiliatePaymentNotification(cp, false));
           }
         } else if (oldCp.status !== cp.status) {
           if (cp.status === "Received" && oldCp.status !== "Received") {
-            sendBrandPaymentNotification(cp);
+            queuePaymentNotification(cp, () => sendBrandPaymentNotification(cp));
           }
         }
       });
