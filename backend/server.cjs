@@ -2207,7 +2207,8 @@ function formatBrandNewOpenPaymentMessage(p) {
   
   return `💰 NEW CUSTOMER PAYMENT 💰
 
-📋 Invoice: #${invoiceName}
+📋 Invoice: #${p.invoice}
+📋 Customer Name: #${invoiceName}
 💵 Amount: $${amount}
 🔗 Hash: ${p.paymentHash || "N/A"}
 
