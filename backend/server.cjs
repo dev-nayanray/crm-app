@@ -348,14 +348,14 @@ const OFFER_GEO_CODES = new Set([
   'KR','TW','BR','MX','AR','CL','CO','PE','TH','VN','ID','PH','TR','EG','SA','QA',
   'KW','BH','OM','US','UAE','GCC',
 ]);
-const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi']);
+const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi','native']);
 const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic)/i;
 
 // v9.51: Deal type keywords — these are NOT geo codes
 const DEAL_TYPE_KEYWORDS = new Set([
   'CPA', 'CPL', 'CPS', 'CPC', 'CPM', 'CPI', 'CPO', 'CPR',
   'REVSHARE', 'REV', 'HYBRID', 'FLAT', 'FTD', 'SOI', 'DOI',
-  'PPL', 'PPS', 'PPC',
+  'PPL', 'PPS', 'PPC', 'CRG',
 ]);
 
 function parseOfferMessageV2(messageText) {
@@ -443,90 +443,218 @@ function offerExtractGeo(word) {
   return null;
 }
 
-// v9.51: Only split on geo boundary if current tokens already contain a geo code
+// v10.0: Strip commas from words and handle comma-separated geos like "NL, SE"
 function offerSplitLine(line) {
   if (!line.trim()) return [];
+  
   const words = line.split(/\s+/).filter(w => w);
   if (words.length === 0) return [];
-  const offers = []; let currentTokens = [];
-  for (const word of words) {
+  
+  // Strip trailing commas from words for geo matching
+  const cleanWords = words.map(w => w.replace(/,+$/, ''));
+  
+  const offers = []; let currentTokens = []; let currentOrigTokens = [];
+  for (let wi = 0; wi < cleanWords.length; wi++) {
+    const word = cleanWords[wi];
+    const origWord = words[wi];
     if (offerIsGeoBoundary(word) && currentTokens.length > 0) {
       const hasGeoInCurrent = currentTokens.some(t => offerExtractGeo(t) !== null);
       if (hasGeoInCurrent) {
-        offers.push(offerParseTokens(currentTokens));
+        offers.push(offerParseTokens(currentTokens, currentOrigTokens));
         currentTokens = [word];
+        currentOrigTokens = [origWord];
       } else {
         currentTokens.push(word);
+        currentOrigTokens.push(origWord);
       }
-    } else { currentTokens.push(word); }
+    } else { currentTokens.push(word); currentOrigTokens.push(origWord); }
   }
-  if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens));
-  return offers.filter(o => o.country);
+  if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens, currentOrigTokens));
+  
+  // v10.0: Handle comma-separated geos sharing one offer (e.g. "NL, SE eng funnels CRG 1200$")
+  // If an offer has country but no price/funnel/dealType, it's a bare geo from comma-split
+  // Duplicate the next offer for this bare geo
+  const finalOffers = [];
+  for (let i = 0; i < offers.length; i++) {
+    const o = offers[i];
+    if (o.country && !o.price && !o.funnel && !o.dealType && i + 1 < offers.length) {
+      const nextOffer = offers[i + 1];
+      if (nextOffer.country) {
+        finalOffers.push({ ...nextOffer, country: o.country });
+      }
+    } else if (o.country) {
+      finalOffers.push(o);
+    }
+  }
+  
+  return finalOffers;
 }
 
-// v9.51: Deal-type-aware token parser — extracts dealType field for CRM table
-function offerParseTokens(tokens) {
+// v10.0: Rewritten token parser — properly extracts dealType (CRG/CPA/CPL), crRate, funnels, source
+// origTokens = original words with commas preserved (for funnel names like "Senvix, Btc Apex")
+function offerParseTokens(tokens, origTokens) {
   const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   if (!tokens || tokens.length === 0) return o;
+  
+  // Use clean tokens for matching, origTokens for funnel name output
+  const cleaned = tokens.map(t => t.replace(/^,+|,+$/g, ''));
+  const orig = origTokens || tokens; // fallback if no origTokens provided
   let idx = 0;
 
   // Phase 1: Collect deal type words BEFORE the geo code
   const dealTypeParts = [];
-  while (idx < tokens.length) {
-    const geoInfo = offerExtractGeo(tokens[idx]);
+  while (idx < cleaned.length) {
+    const geoInfo = offerExtractGeo(cleaned[idx]);
     if (geoInfo) break;
-    if (/^\d+/.test(tokens[idx]) && !DEAL_TYPE_KEYWORDS.has(tokens[idx].toUpperCase())) break;
-    dealTypeParts.push(tokens[idx]);
+    if (/^\d+/.test(cleaned[idx]) && !DEAL_TYPE_KEYWORDS.has(cleaned[idx].toUpperCase())) break;
+    dealTypeParts.push(cleaned[idx]);
     idx++;
   }
   if (dealTypeParts.length > 0) o.dealType = dealTypeParts.join(' ');
 
   // Phase 2: Extract geo code
-  if (idx < tokens.length) {
-    const geoInfo = offerExtractGeo(tokens[idx]);
+  if (idx < cleaned.length) {
+    const geoInfo = offerExtractGeo(cleaned[idx]);
     if (geoInfo) {
       o.country = geoInfo.lang ? geoInfo.geo+' '+geoInfo.lang : geoInfo.geo;
       idx++;
-      if (idx < tokens.length) {
-        const nxt = tokens[idx].toLowerCase();
-        if (OFFER_LANG_CODES.has(nxt) && !/^\d/.test(tokens[idx]) && !/^[A-Z]{2,3}$/.test(tokens[idx])) {
+      // Check for language code after geo (e.g. "AT de", "BE fr", "GCC eng")
+      if (idx < cleaned.length) {
+        const nxt = cleaned[idx].toLowerCase();
+        if (OFFER_LANG_CODES.has(nxt) && !/^\d/.test(cleaned[idx]) && !/^[A-Z]{2,3}$/.test(cleaned[idx])) {
           o.country += ' ' + nxt; idx++;
         }
       }
     } else if (dealTypeParts.length === 0) {
-      o.country = tokens[0]; idx = 1;
+      o.country = cleaned[0]; idx = 1;
     }
   }
 
-  // Phase 3: Parse remaining tokens
+  // Phase 3: Parse remaining tokens — extract funnels, price, deal type (CRG/CPA after geo), source, crRate
   const funnelParts = [];
-  for (let i = idx; i < tokens.length; i++) {
-    const t = tokens[i], tl = t.toLowerCase();
-    if (!o.price && /^\d+/.test(t)) {
+  let foundDealTypeAfterGeo = false;
+  
+  for (let i = idx; i < cleaned.length; i++) {
+    const t = cleaned[i], tl = t.toLowerCase(), tu = t.toUpperCase();
+    const origToken = orig[i]; // Use original (with commas) for funnel names
+    
+    // Deal type keyword (CRG, CPA, CPL etc) — can appear before or after price
+    // Pattern: "Crg 1200$+12%" or "1200$ CRG" or "CRG - 900$+8%"
+    if (DEAL_TYPE_KEYWORDS.has(tu)) {
+      if (!o.dealType) {
+        o.dealType = tu;
+      } else if (o.price && !foundDealTypeAfterGeo) {
+        // Second deal type after price = notes (e.g. "1250$ CPA 20 Leads Test after that 65$ CPL")
+        const remaining = tokens.slice(i).join(' ');
+        o.notes = o.notes ? o.notes + '; ' + remaining : remaining;
+        break;
+      }
+      foundDealTypeAfterGeo = true;
+      continue;
+    }
+    
+    // Skip dashes (e.g. "CRG - 900$")
+    if (t === '-' || t === '–') continue;
+    
+    // v10.0: After price is set, small numbers (<=30) are CRG rate if followed by deal type keyword
+    // Example: "1450 10 CRG" → price=1450, crRate=10, dealType=CRG
+    if (o.price && /^\d+%?$/.test(t) && !o.crRate) {
+      const numVal = parseInt(t);
+      if (numVal <= 30 || /^\d+%$/.test(t)) {
+        // Check if next token is a deal type keyword
+        if (i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
+          o.crRate = t;
+          continue;
+        }
+        // Or if it's a standalone percentage
+        if (/^\d+%$/.test(t)) {
+          o.crRate = t;
+          continue;
+        }
+      }
+    }
+    
+    // Price: number optionally with $ and +percentage
+    if (!o.price && /^\d/.test(t)) {
+      // Check if this is a small number that could be CRG rate (e.g. "10" after funnels)
+      const numVal = parseInt(t);
+      // Look ahead — if next token is a deal type keyword, this is the CRG rate
+      if (numVal <= 30 && i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
+        o.crRate = t;
+        continue;
+      }
+      // Otherwise treat as price
       let ps = t;
-      while (i+1 < tokens.length) {
-        const nx = tokens[i+1];
+      while (i+1 < cleaned.length) {
+        const nx = cleaned[i+1];
         if (/^[\+\*]$/.test(nx)) { ps += nx; i++; }
         else if (/^[\+\*]\d+/.test(nx)) { ps += nx; i++; }
         else if (/^\d+%?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
         else break;
       }
-      o.price = ps.replace(/\s+/g, ''); continue;
+      o.price = ps.replace(/\s+/g, '');
+      // Extract CRG rate from price if it has +N% pattern (e.g. "1200$+12%")
+      const crgMatch = o.price.match(/\+(\d+%?)$/);
+      if (crgMatch && o.dealType && o.dealType.toUpperCase() === 'CRG') {
+        o.crRate = crgMatch[1];
+      }
+      continue;
     }
-    if (/^\+\d+%?$/.test(t)) { if (o.price) o.price += t; else o.price = t; continue; }
-    if (/deduct/i.test(t)) { const nx = tokens[i+1]; if (nx && /^\d+%?$/.test(nx)) { o.deduction = nx; i++; } continue; }
-    if (/^\d+%$/.test(t) && i+1 < tokens.length && /deduct/i.test(tokens[i+1])) { o.deduction = t; i++; continue; }
-    if (/^cr$/i.test(t) && i+1 < tokens.length) { o.crRate = tokens[i+1]; i++; continue; }
+    if (/^\+\d+%?$/.test(t)) { 
+      if (o.price) { 
+        o.price += t; 
+        // Extract CRG rate
+        const crgMatch = t.match(/^\+(\d+%?)$/);
+        if (crgMatch && o.dealType && o.dealType.toUpperCase() === 'CRG') {
+          o.crRate = crgMatch[1];
+        }
+      } else o.price = t; 
+      continue; 
+    }
+    
+    // Deductions
+    if (/deduct/i.test(t)) { const nx = cleaned[i+1]; if (nx && /^\d+%?$/.test(nx)) { o.deduction = nx; i++; } continue; }
+    if (/^\d+%$/.test(t) && i+1 < cleaned.length && /deduct/i.test(cleaned[i+1])) { o.deduction = t; i++; continue; }
+    
+    // CR rate standalone
+    if (/^cr$/i.test(t) && i+1 < cleaned.length && /^\d/.test(cleaned[i+1])) { o.crRate = cleaned[i+1]; i++; continue; }
+    
+    // "Funnel" or "Funnels" keyword as inline label — next tokens are funnel names
+    if (/^funnels?$/i.test(t)) {
+      // Collect everything after "Funnel" keyword as funnel name (until next geo or end)
+      const funnelRest = [];
+      for (let j = i+1; j < cleaned.length; j++) {
+        const ft = cleaned[j];
+        if (offerIsGeoBoundary(ft)) break;
+        funnelRest.push(orig[j]); // Use original tokens to preserve commas
+      }
+      if (funnelRest.length > 0) {
+        const funnelStr = funnelRest.join(' ').replace(/__/g, '').trim();
+        o.funnel = o.funnel ? o.funnel + ', ' + funnelStr : funnelStr;
+        i += funnelRest.length;
+      }
+      continue;
+    }
+    
+    // Source keywords (GG, FB, SEO, etc.)
     if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
-    // v9.51: Deal type keywords after price go to notes (e.g. "CPA 20 Leads Test after that 65$ CPL")
-    if (DEAL_TYPE_KEYWORDS.has(t.toUpperCase()) && o.price) {
-      const remaining = tokens.slice(i).join(' ');
-      o.notes = o.notes ? o.notes + '; ' + remaining : remaining;
-      break;
-    }
-    funnelParts.push(t);
+    
+    // Everything else goes to funnels — use original token to preserve commas
+    funnelParts.push(origToken);
   }
-  if (funnelParts.length > 0) o.funnel = funnelParts.join(' ').replace(/__/g, '').trim();
+  
+  if (funnelParts.length > 0) {
+    const funnelStr = funnelParts.join(' ').replace(/__/g, '').replace(/\s*,\s*/g, ', ').trim();
+    o.funnel = o.funnel ? funnelStr + ', ' + o.funnel : funnelStr;
+  }
+  
+  // v10.0: Auto-detect CRG deal type from price pattern (e.g. "1000$+8%" implies CRG)
+  if (!o.dealType && o.price && /\+\d+%/.test(o.price)) {
+    o.dealType = 'CRG';
+    const crgMatch = o.price.match(/\+(\d+%?)$/);
+    if (crgMatch && !o.crRate) o.crRate = crgMatch[1];
+  }
+  
   return o;
 }
 
