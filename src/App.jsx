@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.50";
+const VERSION = "10.0";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -548,6 +548,23 @@ async function apiGet(endpoint) {
     if (json.version) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
+    }
+    // v10.0: Handle server tombstones — IDs that were deleted by other users
+    if (Array.isArray(json.tombstoned) && json.tombstoned.length > 0) {
+      json.tombstoned.forEach(id => {
+        if (!persistDeletedIDs[endpoint]) persistDeletedIDs[endpoint] = new Set();
+        persistDeletedIDs[endpoint].add(id);
+      });
+      // Remove tombstoned IDs from the data we're about to save locally
+      if (Array.isArray(data)) {
+        const tombSet = new Set(json.tombstoned);
+        const cleaned = data.filter(r => !r || !r.id || !tombSet.has(r.id));
+        if (cleaned.length < data.length) {
+          console.log(`🪦 [${endpoint}]: Removed ${data.length - cleaned.length} tombstoned records from server response`);
+        }
+        lsSave(endpoint, cleaned);
+        return cleaned;
+      }
     }
     if (Array.isArray(data)) {
       lsSave(endpoint, data); // Always save, even empty arrays (important after deletes)
@@ -716,6 +733,16 @@ async function apiSave(endpoint, data, userEmail) {
   // Collect any explicit deletes for this table
   const deleted = getAndClearDeletes(endpoint);
 
+  // v10.0: Stamp updatedAt on all records so server LWW uses actual timestamps
+  const now_ts = Date.now();
+  if (Array.isArray(data)) {
+    data.forEach(r => {
+      if (r && r.id) {
+        if (!r.updatedAt) r.updatedAt = now_ts; // Only stamp if not already set
+      }
+    });
+  }
+
   // ALWAYS save to localStorage first — this is the safety net
   lsSave(endpoint, data);
   // Then push to server with version info + auth token + deleted IDs
@@ -814,8 +841,20 @@ function connectWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'update') {
           if (msg.version) dataVersions[msg.table] = msg.version;
+          // v10.0: Process tombstoned IDs from broadcast — add to persistDeletedIDs
+          if (Array.isArray(msg.tombstoned) && msg.tombstoned.length > 0) {
+            if (!persistDeletedIDs[msg.table]) persistDeletedIDs[msg.table] = new Set();
+            msg.tombstoned.forEach(id => persistDeletedIDs[msg.table].add(id));
+          }
           if (Array.isArray(msg.data)) {
-            lsSave(msg.table, msg.data);
+            // v10.0: Filter out tombstoned records before saving
+            const persistDeleted = persistDeletedIDs[msg.table] || new Set();
+            const cleanData = persistDeleted.size > 0 
+              ? msg.data.filter(r => !r || !r.id || !persistDeleted.has(r.id))
+              : msg.data;
+            lsSave(msg.table, cleanData);
+            // Update msg.data for listeners so they also get clean data
+            msg.data = cleanData;
           }
           wsListeners.forEach(fn => fn(msg));
         } else if (msg.type === 'versions') {
@@ -3932,7 +3971,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
 
   const handleSave = form => { 
     if (editPay) { 
-      const updated = { ...editPay, ...form }; 
+      const updated = { ...editPay, ...form, updatedAt: Date.now() }; 
       // Send telegram notification when status changes to Paid
       if (form.status === "Paid" && editPay.status !== "Paid") { 
         updated.month = month; 
@@ -3948,7 +3987,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
     } else { 
       // New payment added
-      const newPayment = { ...form, id: genId(), month, year };
+      const newPayment = { ...form, id: genId(), month, year, createdAt: Date.now(), updatedAt: Date.now() };
       setPayments(prev => [...prev, newPayment]);
       // Send notification for new payment
       telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
@@ -4683,7 +4722,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
 
   const handleSave = form => {
     if (editPay) {
-      const updated = { ...editPay, ...form };
+      const updated = { ...editPay, ...form, updatedAt: Date.now() };
       if (["Received", "Refund"].includes(form.status) && !["Received", "Refund"].includes(editPay.status)) {
         updated.month = month;
         updated.year = year;
@@ -4691,7 +4730,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
       }
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
-      setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
+      setPayments(prev => [...prev, { ...form, id: genId(), month, year, createdAt: Date.now(), updatedAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditPay(null);
@@ -5034,7 +5073,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
       setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
       // New deals start as "pending" — need 3 confirmations before going live
-      setDeals(prev => [...prev, { ...form, id: genId(), status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false, rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now() }]);
+      setDeals(prev => [...prev, { ...form, id: genId(), status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false, rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now(), updatedAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -5874,9 +5913,9 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
 
   const handleSave = form => {
     if (editDeal) {
-      setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form } : d));
+      setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
-      setDeals(prev => [...prev, { ...form, id: genId() }]);
+      setDeals(prev => [...prev, { ...form, id: genId(), createdAt: Date.now(), updatedAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -6514,6 +6553,7 @@ function AppInner() {
 
     // FIX: Respect locally deleted records — don't resurrect them from server data
     // v9.15: Also check persistDeletedIDs which survives clear cycles
+    // v10.0: persistDeletedIDs now also contains server-side tombstones from apiGet
     const localDeletedSet = deletedIDs[tableName] || new Set();
     const persistDeleted = persistDeletedIDs[tableName] || new Set();
 
