@@ -1833,26 +1833,18 @@ function sendOpenPaymentNotification(p) {
 // A1: Sent to Brands group when a crypto hash is detected in the group chat
 function formatBrandNewOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `💰 NEW CUSTOMER PAYMENT 💰
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-🏷️ Brand: ${p.brand || "N/A"}
-🔗 Hash: ${p.paymentHash || "N/A"}
-📅 Date: ${p.paidDate || "N/A"}
-🔖 Status: Open`;
+  let msg = `💰 NEW CUSTOMER PAYMENT 💰\n\n📋 Invoice: #${p.invoice}\n`;
+  if (p.customerName) msg += `👤 Customer: ${p.customerName}\n`;
+  msg += `💵 Amount: $${amount}\n🏷️ Brand: ${p.brand || "N/A"}\n🔗 Hash: ${p.paymentHash || "N/A"}\n📅 Date: ${p.paidDate || "N/A"}\n🔖 Status: Open`;
+  return msg;
 }
 
 // A2: Sent to Brands group when customer payment is marked as Received in CRM
 function formatBrandPaymentReceivedMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `✅ PAYMENT RECEIVED ✅
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-🏷️ Brand: ${p.brand || "N/A"}
-👤 Paid by: ${p.openBy || "Unknown"}
-🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
+  let msg = `✅ PAYMENT RECEIVED ✅\n\n📋 Invoice: #${p.invoice}\n`;
+  if (p.customerName) msg += `👤 Customer: ${p.customerName}\n`;
+  msg += `💵 Amount: $${amount}\n🏷️ Brand: ${p.brand || "N/A"}\n👤 Paid by: ${p.openBy || "Unknown"}\n🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
 }
 
 // sendBrandPaymentNotification — only fires for RECEIVED status now
@@ -2482,6 +2474,26 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         const brandMatch = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
         const extractedBrand = brandMatch ? brandMatch[1] : null;
         
+        // v9.20: Extract customer name from message text
+        // Patterns: text before the hash link, "customer: Name", "name: Name", or first line text
+        let extractedCustomer = "";
+        const custMatch = messageText.match(/(?:customer|name|client)[:\s]+([A-Za-z0-9\s]+?)(?:\n|$|https?:)/i);
+        if (custMatch) {
+          extractedCustomer = custMatch[1].trim();
+        } else {
+          // Fallback: extract non-hash, non-amount text from the message as customer name
+          // e.g. "test https://etherscan.io/tx/0x..." → customer = "test"
+          const lines = messageText.split('\n').map(l => l.trim()).filter(l => l);
+          for (const line of lines) {
+            // Skip lines that are just hashes, amounts, or URLs
+            const cleaned = line.replace(/https?:\/\/\S+/g, '').replace(/\b[0-9a-fA-F]{64}\b/g, '').replace(/\$[\d,.]+|[\d,.]+\$/g, '').trim();
+            if (cleaned && cleaned.length > 0 && cleaned.length < 100 && /[a-zA-Z]/.test(cleaned)) {
+              extractedCustomer = cleaned;
+              break;
+            }
+          }
+        }
+        
         // Extract any payment hashes (erc/trc/btc)
         const hashes = extractAllUsdtHashes(messageText);
         
@@ -2582,6 +2594,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
               trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
               ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
               brand: extractedBrand || "",
+              customerName: extractedCustomer || "",
               walletMatched: walletVerify.matched,
               // FIX 9.18: Added blockchain metadata fields from employee update
               blockchainType: type,
@@ -2612,6 +2625,23 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // USDT hash detection (finance group only)
       if (isFinanceGroup) {
       const messageText = msg.text || '';
+      
+      // v9.20: Extract customer name from message
+      let extractedCustomerFinance = "";
+      const custMatchF = messageText.match(/(?:customer|name|client)[:\s]+([A-Za-z0-9\s]+?)(?:\n|$|https?:)/i);
+      if (custMatchF) {
+        extractedCustomerFinance = custMatchF[1].trim();
+      } else {
+        const fLines = messageText.split('\n').map(l => l.trim()).filter(l => l);
+        for (const line of fLines) {
+          const cleaned = line.replace(/https?:\/\/\S+/g, '').replace(/\b[0-9a-fA-F]{64}\b/g, '').replace(/\$[\d,.]+|[\d,.]+\$/g, '').trim();
+          if (cleaned && cleaned.length > 0 && cleaned.length < 100 && /[a-zA-Z]/.test(cleaned)) {
+            extractedCustomerFinance = cleaned;
+            break;
+          }
+        }
+      }
+      
       const hashes = extractAllUsdtHashes(messageText);
       const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
       if (txHashes.length === 0) return;
@@ -2675,6 +2705,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
           blockchainVerified: txResult.success,
           toAddress: txResult.toAddress || "",
           instructions: statusNote,
+          customerName: extractedCustomerFinance || "",
           month: new Date().getMonth(), year: new Date().getFullYear()
         };
 
@@ -2684,7 +2715,9 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         broadcastUpdate("customer-payments", cp);
 
         // FIX 9.18: Richer confirmation message with toAddress and tx amount
-        let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
+        let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n`;
+        if (extractedCustomerFinance) confirmMsg += `👤 Customer: <b>${extractedCustomerFinance}</b>\n`;
+        confirmMsg += `💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
         if (txResult.success) {
           confirmMsg += `✅ Blockchain: <b>Verified</b>\n`;
           confirmMsg += `📍 To: <code>${(txResult.toAddress || '').substring(0, 12)}...</code>\n`;
