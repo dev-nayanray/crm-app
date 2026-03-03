@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "9.17";
+const VERSION = "9.50";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
