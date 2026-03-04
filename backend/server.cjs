@@ -55,13 +55,12 @@ process.on('unhandledRejection', (reason) => {
 // ═══════════════════════════════════════════════════════════════
 // STRUCTURED LOGGING — module / event / result / timestamp
 // ═══════════════════════════════════════════════════════════════
-// Q1: Centralised log helper used across all Telegram modules
 function structuredLog(module, event, result, details = {}) {
   const entry = {
     ts: new Date().toISOString(),
     module,
     event,
-    result, // "ok" | "error" | "skip" | "warn"
+    result,
     ...details,
   };
   const icon = result === 'ok' ? '✅' : result === 'error' ? '❌' : result === 'skip' ? '⏭️' : '⚠️';
@@ -69,7 +68,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.1";
+const VERSION = "10.3";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -85,9 +84,6 @@ const TOMBSTONE_DIR = path.join(__dirname, "tombstones");
 // ═══════════════════════════════════════════════════════════════
 // v10.0: TOMBSTONE SYSTEM — prevents deleted records from resurrecting
 // ═══════════════════════════════════════════════════════════════
-// When a user deletes a record, we store its ID in a per-table tombstone file.
-// Any client that later tries to re-add that ID will have it silently filtered out.
-// Tombstones expire after 7 days to prevent unbounded growth.
 const TOMBSTONE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function getTombstoneFile(table) {
@@ -104,7 +100,7 @@ function readTombstones(table) {
   } catch (err) {
     console.error(`⚠️ Error reading tombstones for ${table}:`, err.message);
   }
-  return {}; // { recordId: timestamp }
+  return {};
 }
 
 function writeTombstones(table, tombstones) {
@@ -121,7 +117,6 @@ function addTombstones(table, ids) {
   const tombstones = readTombstones(table);
   const now = Date.now();
   ids.forEach(id => { tombstones[id] = now; });
-  // Prune expired tombstones while we're at it
   const cutoff = now - TOMBSTONE_TTL_MS;
   for (const [id, ts] of Object.entries(tombstones)) {
     if (ts < cutoff) delete tombstones[id];
@@ -133,7 +128,7 @@ function isTombstoned(table, id) {
   const tombstones = readTombstones(table);
   const ts = tombstones[id];
   if (!ts) return false;
-  if (Date.now() - ts > TOMBSTONE_TTL_MS) return false; // expired
+  if (Date.now() - ts > TOMBSTONE_TTL_MS) return false;
   return true;
 }
 
@@ -147,7 +142,6 @@ function getTombstonedIds(table) {
   return active;
 }
 
-// Nightly tombstone cleanup (called from scheduleNightlyTasks)
 function cleanupTombstones() {
   try {
     const files = fs.readdirSync(TOMBSTONE_DIR);
@@ -189,8 +183,6 @@ const INITIAL_USERS = [
 ];
 
 // ── Seed / repair users.json on startup ──
-// Ensures all INITIAL_USERS exist with correct password hashes
-// Fixes the bug where client synced stripped (no passwordHash) users back to server
 function seedUsers() {
   const usersFile = path.join(DATA_DIR, "users.json");
   let existing = [];
@@ -202,12 +194,10 @@ function seedUsers() {
   for (const iu of INITIAL_USERS) {
     const eu = existingMap.get(iu.email);
     if (!eu) {
-      // Missing user — add it
       existing.push(iu);
       changed = true;
       console.log(`👤 Added user: ${iu.email}`);
     } else if (!eu.passwordHash) {
-      // User exists but passwordHash was stripped — restore it
       eu.passwordHash = iu.passwordHash;
       changed = true;
       console.log(`🔑 Restored passwordHash for: ${iu.email}`);
@@ -225,51 +215,38 @@ function seedUsers() {
 seedUsers();
 
 // Telegram Bot Configuration
-// Using hardcoded token (no .env required)
 const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 
 // Telegram Group Chat IDs (hardcoded)
 const AFFILIte_FINANCE_GROUP_CHAT_ID = "-1002830517753";
-const BRANDS_GROUP_CHAT_ID = "-1002796530029";        // Finance | Brands group
-const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
-const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
-const CRG_GROUP_CHAT_ID = "-1002560408661";           // CRG Deals Telegram Group
+const BRANDS_GROUP_CHAT_ID = "-1002796530029";
+const OFFER_GROUP_CHAT_ID = "-1002183891044";
+const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";
+const CRG_GROUP_CHAT_ID = "-1002560408661";
 const MONITORING_GROUP_CHAT_ID = "-1002832299846";
 
-// Helper function to validate and normalize chat ID for supergroups
 function normalizeChatId(chatId) {
   if (!chatId) return null;
   const idStr = String(chatId).trim();
-  
-  // Check if it's a valid numeric ID
-  if (!/^-?\d+$/.test(idStr)) {
-    return null;
-  }
-  
-  // For supergroups in Telegram, the format should be -100XXXXXXXXXX
-  // If the ID starts with just - (not -100), it's likely a supergroup that needs -100 prefix
+  if (!/^-?\d+$/.test(idStr)) return null;
   let normalizedId = idStr;
   if (idStr.startsWith('-') && !idStr.startsWith('-100')) {
-    // Extract the numeric part and add -100 prefix
-    const numericPart = idStr.substring(1); // Remove the leading -
+    const numericPart = idStr.substring(1);
     normalizedId = `-100${numericPart}`;
     console.log(`🔧 Normalized chat ID: ${idStr} -> ${normalizedId}`);
   }
-  
   return normalizedId;
 }
 
-// Get all possible chat ID formats for comparison
 function getChatIdVariants(chatId) {
   const idStr = String(chatId).replace(/-/g, '');
   return [
-    chatId,                           // Original
-    `-100${idStr}`,                   // With -100 prefix
-    `-${idStr.replace(/^100/, '')}`, // Without -100 if present
+    chatId,
+    `-100${idStr}`,
+    `-${idStr.replace(/^100/, '')}`,
   ];
 }
 
-// Test and log all configured chat IDs on startup
 function testChatIds() {
   const groups = [
     { name: 'Finance', id: AFFILIte_FINANCE_GROUP_CHAT_ID },
@@ -278,7 +255,6 @@ function testChatIds() {
     { name: 'Open Payment', id: OPEN_PAYMENT_GROUP_CHAT_ID },
     { name: 'Monitoring', id: MONITORING_GROUP_CHAT_ID },
   ];
-  
   console.log("\n📱 Configured Telegram Groups:");
   groups.forEach(g => {
     const variants = getChatIdVariants(g.id);
@@ -286,8 +262,6 @@ function testChatIds() {
   });
   console.log("");
 }
-
-// Run chat ID diagnostics
 testChatIds();
 
 // Crypto verification APIs
@@ -336,15 +310,20 @@ function extractCustomerName(messageText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v10.2: OFFER MESSAGE PARSER — Fixed price/CRG/source/funnel extraction
+// v10.3: OFFER MESSAGE PARSER — Full LatAm GEO support +
+//        CR rate normalization (2,5% / 3%+ / 2-3% / 2-4%+)
 // ═══════════════════════════════════════════════════════════════
 
+// FIX 1: Extended GEO codes — added LatAm countries missing in v10.2
 const OFFER_GEO_CODES = new Set([
   'NL','BE','DE','FR','UK','AU','MY','SI','HR','ES','IT','GR','RO','IN','CA','AE',
   'AT','CH','CZ','PL','PT','SE','NO','DK','FI','IE','IL','ZA','NZ','SG','HK','JP',
   'KR','TW','BR','MX','AR','CL','CO','PE','TH','VN','ID','PH','TR','EG','SA','QA',
   'KW','BH','OM','US','UAE','GCC',
+  // LatAm additions (v10.3):
+  'DO','EC','UY','GT','PA','CR','HN','SV','BO','PY','VE','CU','PR',
 ]);
+
 const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi','native']);
 const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic)/i;
 
@@ -354,61 +333,72 @@ const DEAL_TYPE_KEYWORDS = new Set([
   'PPL', 'PPS', 'PPC', 'CRG',
 ]);
 
+// FIX 2: CR rate normalizer — handles European decimals, ranges, trailing +
+// Examples: "3%+" → "3%", "2,5%" → "2.5%", "2-3%" → "3%", "2-4%+" → "4%"
+function normalizeCRToken(t) {
+  if (!t) return t;
+  // Strip trailing +
+  let s = t.replace(/\+$/, '');
+  // European decimal comma → dot
+  s = s.replace(/(\d),(\d)/g, '$1.$2');
+  // Range "2-3%" → take the higher value
+  const rangeMatch = s.match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)(%?)$/);
+  if (rangeMatch) s = rangeMatch[2] + rangeMatch[3];
+  return s;
+}
+
+// FIX 3: CR rate token detector — recognizes all variant formats
+// Matches: "14%", "15%", "3%+", "2,5%", "2-3%", "2-4%+", "2.5%"
+function isCRRateToken(t) {
+  return /^\d[\d,.-]*%\+?$/.test(t);
+}
+
 function parseOfferMessageV2(messageText) {
   if (!messageText) return { affiliateId: null, offers: [] };
   const fullText = messageText.trim();
-  
-  // Match header: "Offer:" or "Offers:" followed by optional ID
+
   const headerMatch = fullText.match(/^offers?\s*:\s*(\d+)?/i);
   if (!headerMatch) return { affiliateId: null, offers: [] };
-  
+
   let affiliateId = headerMatch[1] || null;
   let remaining = fullText.slice(headerMatch[0].length).trim();
-  
-  // v10.2 FIX: If ID not found on same line, check if first line of remaining is just a number
-  // Example: "Offer:\n211\nPL..."
+
   if (!affiliateId) {
     const lines = remaining.split('\n');
     const firstLine = lines[0].trim();
-    // Check if first line is purely numeric (Affiliate ID)
     if (/^\d+$/.test(firstLine)) {
       affiliateId = firstLine;
       remaining = lines.slice(1).join('\n').trim();
     }
   }
-  
-  // Check if remaining contains labeled format (Country:/Geo:/Price: etc)
+
   if (/(?:^|\n)\s*(?:geo|country)\s*:/im.test(remaining)) {
     const result = parseOfferLabeledFormat(remaining);
     if (result.affiliateId) affiliateId = affiliateId || result.affiliateId;
     return { affiliateId, offers: result.offers };
   }
-  
-  // Check for labeled format with Affiliate ID on separate line (labeled as "Affiliate ID:")
+
   const affLineMatch = remaining.match(/^(?:affiliate\s*(?:id)?)\s*:\s*(\d+)$/im);
   if (affLineMatch && !affiliateId) {
     affiliateId = affLineMatch[1];
     remaining = remaining.replace(affLineMatch[0], '').trim();
   }
-  
-  // Extract shared Source and Funnels if labeled
+
   let sharedFunnels = '', sharedSource = '';
   const sourceMatch = remaining.match(/\bSource\s*:\s*([^\n]+?)(?=\s{2,}Funnels?\s*:|$)/i) || remaining.match(/\bSource\s*:\s*(.+?)$/im);
   if (sourceMatch) { sharedSource = sourceMatch[1].trim(); remaining = remaining.replace(sourceMatch[0], ' ').trim(); }
   const funnelMatch = remaining.match(/\bFunnels?\s*:\s*(.+?)(?=\s{2,}Source\s*:|$)/i) || remaining.match(/\bFunnels?\s*:\s*(.+?)$/im);
   if (funnelMatch) { sharedFunnels = funnelMatch[1].trim().replace(/__/g, '').replace(/\s*\/\s*/g, ' / '); remaining = remaining.replace(funnelMatch[0], ' ').trim(); }
-  
-  // Parse compact format
+
   const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|affiliate)\s*:/i.test(l));
   const offers = [];
   for (const line of lines) offers.push(...offerSplitLine(line));
-  
-  // Apply shared source/funnels to offers that don't have them
+
   for (const o of offers) {
     if (!o.funnel && sharedFunnels) o.funnel = sharedFunnels;
     if (!o.source && sharedSource) o.source = sharedSource;
   }
-  
+
   return { affiliateId, offers };
 }
 
@@ -416,13 +406,11 @@ function parseOfferLabeledFormat(text) {
   const offers = [];
   let currentOffer = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   let affiliateId = null;
-  
+
   for (const line of text.split('\n').map(l => l.trim()).filter(l => l)) {
-    // Affiliate ID - global, not per-offer
     const affM = line.match(/^affiliate\s*(?:id)?\s*:\s*(\d+)$/i);
     if (affM) { affiliateId = affM[1]; continue; }
-    
-    // Country/Geo - starts a new offer if we already have one
+
     const gM = line.match(/^(?:geo|country)\s*:\s*(.+)$/i);
     if (gM) {
       if (currentOffer.country) {
@@ -432,63 +420,45 @@ function parseOfferLabeledFormat(text) {
       currentOffer.country = offerExpandGeo(gM[1].trim());
       continue;
     }
-    
-    // Funnel(s)
+
     const fM = line.match(/^funnels?\s*:\s*(.+)$/i);
-    if (fM) { 
-      currentOffer.funnel = fM[1].trim().replace(/__/g,''); 
-      continue; 
-    }
-    
-    // Price (might have CRG embedded like "Price:1400 CRG:15%")
+    if (fM) { currentOffer.funnel = fM[1].trim().replace(/__/g,''); continue; }
+
     const pM = line.match(/^price\s*:\s*(.+)$/i);
     if (pM) {
       const priceLine = pM[1].trim();
-      // Check for embedded CRG
-      const crgMatch = priceLine.match(/CRG\s*:?\s*(\d+%?)/i);
+      const crgMatch = priceLine.match(/CRG\s*:?\s*(\d[\d,.-]*%?\+?)/i);
       if (crgMatch) {
-        currentOffer.crRate = crgMatch[1];
+        currentOffer.crRate = normalizeCRToken(crgMatch[1]);
         if (!currentOffer.dealType) currentOffer.dealType = 'CRG';
       }
-      // Extract just the price number (handle $, commas)
       const priceMatch = priceLine.match(/^\$?([\d,]+)/);
-      if (priceMatch) {
-        currentOffer.price = priceMatch[1].replace(/,/g, '');
-      }
+      if (priceMatch) currentOffer.price = priceMatch[1].replace(/,/g, '');
       continue;
     }
-    
-    // CRG rate
-    const crgM = line.match(/^crg\s*:?\s*(\d+%?)$/i);
-    if (crgM) { 
-      currentOffer.crRate = crgM[1]; 
-      if (!currentOffer.dealType) currentOffer.dealType = 'CRG'; 
-      continue; 
+
+    const crgM = line.match(/^crg\s*:?\s*(\d[\d,.-]*%?\+?)$/i);
+    if (crgM) {
+      currentOffer.crRate = normalizeCRToken(crgM[1]);
+      if (!currentOffer.dealType) currentOffer.dealType = 'CRG';
+      continue;
     }
-    
-    // Source
+
     const sM = line.match(/^source\s*:\s*(.+)$/i);
     if (sM) { currentOffer.source = sM[1].trim(); continue; }
-    
-    // Deal Type
+
     const dtM = line.match(/^(?:deal\s*type|type)\s*:\s*(.+)$/i);
     if (dtM) { currentOffer.dealType = dtM[1].trim(); continue; }
-    
-    // Deductions
+
     const dM = line.match(/^deductions?\s*:\s*(.+)$/i);
     if (dM) { currentOffer.deduction = dM[1].trim(); continue; }
-    
-    // Notes - unrecognized lines
+
     if (line && !line.match(/^[\s]*$/)) {
       currentOffer.notes = currentOffer.notes ? currentOffer.notes + '; ' + line : line;
     }
   }
-  
-  // Push the last offer if it has a country
-  if (currentOffer.country) {
-    offers.push(currentOffer);
-  }
-  
+
+  if (currentOffer.country) offers.push(currentOffer);
   return { offers, affiliateId };
 }
 
@@ -502,11 +472,20 @@ function offerExpandGeo(t) {
   return t;
 }
 
-function offerIsGeoBoundary(word) {
+// FIX 4: offerIsGeoBoundary — ONLY triggers for known GEO codes
+// Prevents brand names like YPF, BCP, UTE, PEMEX from being treated as geo boundaries
+// Also prevents "CR" being treated as Costa Rica when it appears in "CR 3%+" context —
+// that ambiguity is resolved in offerSplitLine by passing nextWord for lookahead.
+function offerIsGeoBoundary(word, nextWord) {
   if (!word || !/^[A-Z]/.test(word)) return false;
   const upper = word.toUpperCase();
   if (DEAL_TYPE_KEYWORDS.has(upper)) return false;
+  // "CR" is ambiguous: Costa Rica (GEO) vs CR-rate keyword.
+  // If the next word looks like a percentage/number, treat as rate keyword not GEO boundary.
+  if (upper === 'CR' && nextWord && /^\d[\d,.-]*%?\+?$/.test(nextWord)) return false;
+  // Must be ALL-CAPS and exist in known GEO codes set
   if (OFFER_GEO_CODES.has(upper) && word === upper) return true;
+  // Compound geo+lang (e.g. "NLnl", "FRfr") — first part must be in GEO codes
   if (word.length >= 4 && word.length <= 6) {
     const p2 = word.slice(0,2).toUpperCase(), s2 = word.slice(2).toLowerCase();
     if (OFFER_GEO_CODES.has(p2) && OFFER_LANG_CODES.has(s2) && word.slice(0,2) === p2) return true;
@@ -532,21 +511,21 @@ function offerExtractGeo(word) {
 
 function offerSplitLine(line) {
   if (!line.trim()) return [];
-  
+
   const words = line.split(/\s+/).filter(w => w);
   if (words.length === 0) return [];
-  
+
   const cleanWords = words.map(w => w.replace(/,+$/, ''));
-  
-  const offers = []; 
-  let currentTokens = []; 
+
+  const offers = [];
+  let currentTokens = [];
   let currentOrigTokens = [];
-  
+
   for (let wi = 0; wi < cleanWords.length; wi++) {
     const word = cleanWords[wi];
     const origWord = words[wi];
-    
-    if (offerIsGeoBoundary(word) && currentTokens.length > 0) {
+
+    if (offerIsGeoBoundary(word, cleanWords[wi + 1]) && currentTokens.length > 0) {
       const hasGeoInCurrent = currentTokens.some(t => offerExtractGeo(t) !== null);
       if (hasGeoInCurrent) {
         offers.push(offerParseTokens(currentTokens, currentOrigTokens));
@@ -556,13 +535,13 @@ function offerSplitLine(line) {
         currentTokens.push(word);
         currentOrigTokens.push(origWord);
       }
-    } else { 
-      currentTokens.push(word); 
-      currentOrigTokens.push(origWord); 
+    } else {
+      currentTokens.push(word);
+      currentOrigTokens.push(origWord);
     }
   }
   if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens, currentOrigTokens));
-  
+
   // Handle comma-separated geos sharing one offer
   const finalOffers = [];
   for (let i = 0; i < offers.length; i++) {
@@ -576,14 +555,14 @@ function offerSplitLine(line) {
       finalOffers.push(o);
     }
   }
-  
+
   return finalOffers;
 }
 
 function offerParseTokens(tokens, origTokens) {
   const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   if (!tokens || tokens.length === 0) return o;
-  
+
   const cleaned = tokens.map(t => t.replace(/^,+|,+$/g, ''));
   const orig = origTokens || tokens;
   let idx = 0;
@@ -593,10 +572,9 @@ function offerParseTokens(tokens, origTokens) {
   while (idx < cleaned.length) {
     const geoInfo = offerExtractGeo(cleaned[idx]);
     if (geoInfo) break;
-    // v10.2: Check for price-like tokens ($N, N$, just N) - these end deal type
     if (/^\$?\d/.test(cleaned[idx]) && !DEAL_TYPE_KEYWORDS.has(cleaned[idx].toUpperCase())) break;
-    // v10.2: Check for percentage - these are CRG rate, not deal type
-    if (/^\d+%$/.test(cleaned[idx])) break;
+    // FIX: Don't consume CR rate tokens as deal type parts
+    if (isCRRateToken(cleaned[idx])) break;
     dealTypeParts.push(cleaned[idx]);
     idx++;
   }
@@ -608,7 +586,6 @@ function offerParseTokens(tokens, origTokens) {
     if (geoInfo) {
       o.country = geoInfo.lang ? geoInfo.geo+' '+geoInfo.lang : geoInfo.geo;
       idx++;
-      // Check for language code after geo
       if (idx < cleaned.length) {
         const nxt = cleaned[idx].toLowerCase();
         if (OFFER_LANG_CODES.has(nxt) && !/^\d/.test(cleaned[idx]) && !/^[A-Z]{2,3}$/.test(cleaned[idx])) {
@@ -620,15 +597,15 @@ function offerParseTokens(tokens, origTokens) {
     }
   }
 
-  // Phase 3: Parse remaining tokens — CRITICAL ORDER: percentage BEFORE price
+  // Phase 3: Parse remaining tokens
   const funnelParts = [];
   let foundDealTypeAfterGeo = false;
-  
+
   for (let i = idx; i < cleaned.length; i++) {
     const t = cleaned[i], tl = t.toLowerCase(), tu = t.toUpperCase();
     const origToken = orig[i];
-    
-    // Deal type keyword (CRG, CPA, CPL etc)
+
+    // Deal type keyword
     if (DEAL_TYPE_KEYWORDS.has(tu)) {
       if (!o.dealType) {
         o.dealType = tu;
@@ -640,67 +617,76 @@ function offerParseTokens(tokens, origTokens) {
       foundDealTypeAfterGeo = true;
       continue;
     }
-    
-    // Skip dashes
-    if (t === '-' || t === '–') continue;
-    
-    // v10.2: CRG rate - standalone percentage (e.g., "14%", "15%")
-    // MUST CHECK THIS BEFORE PRICE since percentage starts with digit
-    if (/^\d+%$/.test(t) && !o.crRate) {
-      o.crRate = t;
+
+    // Skip dashes and pipes used as separators
+    if (t === '-' || t === '–' || t === '|') continue;
+
+    // FIX 5: CR rate — standalone percentage with all variant formats
+    // MUST CHECK BEFORE PRICE (both start with digit)
+    // Handles: "14%", "3%+", "2,5%", "2-3%", "2-4%+", "2.5%"
+    if (isCRRateToken(t) && !o.crRate) {
+      o.crRate = normalizeCRToken(t);
       if (!o.dealType) o.dealType = 'CRG';
       continue;
     }
-    
-    // v10.2: Price - $N or N (but NOT N%)
-    if (!o.price && /^\$?\d/.test(t)) {
-      // Remove $ prefix and commas for clean number
-      let ps = t.replace(/^\$/, '').replace(/,/g, '');
-      
-      // Continue collecting tokens if they're part of price
+
+    // Price — $N or plain N (but NOT a CR rate token)
+    if (!o.price && /^\$?\d/.test(t) && !isCRRateToken(t)) {
+      // FIX 6: Normalize European decimal commas in price before processing
+      let ps = t.replace(/^\$/, '').replace(/,(?=\d{3})/g, ''); // strip thousands commas
+      // Note: decimal commas like "700+2,5%" handled after extraction
+
+      // Continue collecting tokens that are part of the price expression
       while (i+1 < cleaned.length) {
         const nx = cleaned[i+1];
         if (/^[\+\*]$/.test(nx)) { ps += nx; i++; }
-        else if (/^[\+\*]\d+/.test(nx)) { ps += nx; i++; }
-        else if (/^\d+%?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
+        else if (/^[\+\*]\d/.test(nx)) { ps += nx; i++; }
+        else if (/^\d+[\d,.-]*%?\+?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
         else break;
       }
+
+      // FIX 7: Normalize European commas in the full price string (e.g. "700+2,5%")
+      ps = ps.replace(/(\d),(\d)/g, '$1.$2');
       o.price = ps;
-      
-      // Extract CRG rate from price if it has +N% pattern (e.g., "1200+12%")
-      const crgMatch = o.price.match(/\+(\d+%?)$/);
-      if (crgMatch) {
-        o.crRate = crgMatch[1];
+
+      // Extract CRG rate from price if it has +N% pattern (e.g., "600+3%", "700+2.5%")
+      const crgMatch = o.price.match(/\+(\d[\d.]*%?\+?)$/);
+      if (crgMatch && !o.crRate) {
+        o.crRate = normalizeCRToken(crgMatch[1]);
         if (!o.dealType) o.dealType = 'CRG';
       }
       continue;
     }
-    
+
     // Price continuation with +N%
-    if (/^\+\d+%?$/.test(t)) { 
-      if (o.price) { 
-        o.price += t; 
-        const crgMatch = t.match(/^\+(\d+%?)$/);
-        if (crgMatch) {
-          o.crRate = crgMatch[1];
+    if (/^\+\d[\d,.-]*%?\+?$/.test(t)) {
+      if (o.price) {
+        // Normalize comma decimals
+        const normalized = t.replace(/(\d),(\d)/g, '$1.$2');
+        o.price += normalized;
+        const crgMatch = normalized.match(/^\+(\d[\d.]*%?\+?)$/);
+        if (crgMatch && !o.crRate) {
+          o.crRate = normalizeCRToken(crgMatch[1]);
           if (!o.dealType) o.dealType = 'CRG';
         }
-      } else o.price = t; 
-      continue; 
+      } else {
+        o.price = t.replace(/(\d),(\d)/g, '$1.$2');
+      }
+      continue;
     }
-    
+
     // Deductions
     if (/deduct/i.test(t)) { const nx = cleaned[i+1]; if (nx && /^\d+%?$/.test(nx)) { o.deduction = nx; i++; } continue; }
     if (/^\d+%$/.test(t) && i+1 < cleaned.length && /deduct/i.test(cleaned[i+1])) { o.deduction = t; i++; continue; }
-    
-    // CR rate standalone (format: "CR 10")
-    if (/^cr$/i.test(t) && i+1 < cleaned.length && /^\d/.test(cleaned[i+1])) { 
-      o.crRate = cleaned[i+1]; 
+
+    // CR keyword — "CR 3%+" or "CR 2-4%+" or "CR 10"
+    if (/^cr$/i.test(t) && i+1 < cleaned.length && /^\d/.test(cleaned[i+1])) {
+      o.crRate = normalizeCRToken(cleaned[i+1]);
       if (!o.dealType) o.dealType = 'CRG';
-      i++; 
-      continue; 
+      i++;
+      continue;
     }
-    
+
     // "Funnel" or "Funnels" keyword as inline label
     if (/^funnels?$/i.test(t)) {
       const funnelRest = [];
@@ -716,31 +702,31 @@ function offerParseTokens(tokens, origTokens) {
       }
       continue;
     }
-    
-    // Source keywords (GG, FB, SEO, Taboola, etc.) - case insensitive
+
+    // Source keywords (GG, FB, SEO, Taboola, etc.)
     if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
-    
+
     // Everything else goes to funnels
     funnelParts.push(origToken);
   }
-  
+
   if (funnelParts.length > 0) {
     const funnelStr = funnelParts.join(' ').replace(/__/g, '').replace(/\s*,\s*/g, ', ').trim();
     o.funnel = o.funnel ? funnelStr + ', ' + o.funnel : funnelStr;
   }
-  
-  // v10.2: If we have a CRG rate but no deal type, set to CRG
-  if (o.crRate && !o.dealType) {
+
+  // Auto-set deal type if we have CR rate but no deal type
+  if (o.crRate && !o.dealType) o.dealType = 'CRG';
+
+  // Auto-detect CRG from price pattern (e.g., "600+3%")
+  if (!o.dealType && o.price && /\+\d[\d.]*%/.test(o.price)) {
     o.dealType = 'CRG';
+    if (!o.crRate) {
+      const crgMatch = o.price.match(/\+(\d[\d.]*%?)$/);
+      if (crgMatch) o.crRate = normalizeCRToken(crgMatch[1]);
+    }
   }
-  
-  // Auto-detect CRG deal type from price pattern (e.g., "1000+8%")
-  if (!o.dealType && o.price && /\+\d+%/.test(o.price)) {
-    o.dealType = 'CRG';
-    const crgMatch = o.price.match(/\+(\d+%?)$/);
-    if (crgMatch && !o.crRate) o.crRate = crgMatch[1];
-  }
-  
+
   return o;
 }
 
@@ -772,8 +758,7 @@ function sendBatchOfferNotification(affiliateId, offers) {
     console.log("📱 Batch offer notification skipped (no token configured)");
     return;
   }
-  
-  // Use bot instance if available, otherwise use HTTP API
+
   if (typeof bot !== 'undefined' && bot && bot.sendMessage) {
     const message = formatBatchOfferConfirmation(affiliateId, offers);
     if (typeof OFFER_GROUP_CHAT_ID !== 'undefined') {
@@ -782,7 +767,6 @@ function sendBatchOfferNotification(affiliateId, offers) {
         .catch(err => console.error("❌ Batch offer notification error:", err.message));
     }
   } else {
-    // Fallback to raw HTTP request if bot instance not available
     const message = formatBatchOfferConfirmation(affiliateId, offers);
     const postData = JSON.stringify({
       chat_id: OFFER_GROUP_CHAT_ID,
@@ -814,12 +798,11 @@ function sendBatchOfferNotification(affiliateId, offers) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN HANDLER
+// MAIN OFFER HANDLER
 // ═══════════════════════════════════════════════════════════════
 
 async function handleOfferMessage(bot, msg, messageText) {
   try {
-    // Dedup by message ID
     if (msg.message_id) {
       if (isMessageProcessed(msg.message_id)) {
         console.log("⏭️ Skipping duplicate offer message:", msg.message_id);
@@ -828,9 +811,8 @@ async function handleOfferMessage(bot, msg, messageText) {
       markMessageProcessed(msg.message_id);
     }
 
-    console.log("📝 [v10.2] Received offer message:", messageText);
+    console.log("📝 [v10.3] Received offer message:", messageText);
 
-    // Parse using the v10.2 multi-format parser
     const { affiliateId, offers: parsedOffers } = parseOfferMessageV2(messageText);
 
     if (!affiliateId) {
@@ -846,7 +828,6 @@ async function handleOfferMessage(bot, msg, messageText) {
       return;
     }
 
-    // Save ALL offers to offers.json
     let existingOffers = readJSON("offers.json", []);
     existingOffers = existingOffers.filter(o => String(o.affiliateId) !== String(affiliateId));
 
@@ -883,7 +864,6 @@ async function handleOfferMessage(bot, msg, messageText) {
 
     console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
 
-    // Send consolidated confirmation to Telegram
     sendBatchOfferNotification(affiliateId, parsedOffers);
 
   } catch (err) {
@@ -891,13 +871,13 @@ async function handleOfferMessage(bot, msg, messageText) {
     bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
   }
 }
+
 // ═══════════════════════════════════════════════════════════════
 // 2. ATOMIC FILE OPERATIONS WITH VERSION TRACKING
 // ═══════════════════════════════════════════════════════════════
 
-// In-memory version counters — increment on every write
 const dataVersions = {};
-const dataLocks = new Map(); // Prevents concurrent writes to same file
+const dataLocks = new Map();
 
 function readJSON(filename, fallback) {
   const filepath = path.join(DATA_DIR, filename);
@@ -911,7 +891,6 @@ function readJSON(filename, fallback) {
   } catch (err) {
     console.error(`❌ Error reading ${filename}:`, err.message);
   }
-  // FIX C4: Try to recover from most recent backup before returning empty fallback
   try {
     const backupDirs = fs.readdirSync(BACKUP_DIR).sort().reverse();
     for (const dir of backupDirs) {
@@ -921,7 +900,6 @@ function readJSON(filename, fallback) {
         const backupData = JSON.parse(backupRaw);
         if (Array.isArray(backupData) && backupData.length > 0) {
           console.log(`🔧 AUTO-RECOVERED ${filename} from backup ${dir} (${backupData.length} records)`);
-          // Restore the file from backup
           fs.writeFileSync(filepath, backupRaw, "utf8");
           return backupData;
         }
@@ -933,60 +911,45 @@ function readJSON(filename, fallback) {
   return fallback;
 }
 
-// v9.05: Atomic write with Write-Ahead Logging (WAL) — validates BEFORE overwriting
 function writeJSONAtomic(filename, data) {
   const filepath = path.join(DATA_DIR, filename);
   const tempPath = filepath + `.tmp.${Date.now()}.${crypto.randomBytes(4).toString('hex')}`;
   const walPath = filepath + `.wal.${Date.now()}`;
 
   try {
-    // WAL Step 1: Serialize and validate data BEFORE touching disk
     const jsonStr = JSON.stringify(data, null, 2);
-    const parsed = JSON.parse(jsonStr); // Verify round-trip
+    const parsed = JSON.parse(jsonStr);
     if (!Array.isArray(parsed)) throw new Error("Data is not an array after round-trip");
     if (jsonStr.length < 3) throw new Error("Suspiciously small payload");
 
-    // WAL Step 2: Write intent log (what we WANT to write)
     fs.writeFileSync(walPath, jsonStr, "utf8");
-
-    // WAL Step 3: Write to temp file
     fs.writeFileSync(tempPath, jsonStr, "utf8");
 
-    // WAL Step 4: Verify temp file matches intent
     const verify = fs.readFileSync(tempPath, "utf8");
     if (verify !== jsonStr) throw new Error("Temp file content mismatch — disk corruption?");
 
-    // WAL Step 5: Atomic rename (on same filesystem this is atomic)
     fs.renameSync(tempPath, filepath);
-
-    // WAL Step 6: Clean up WAL file (write succeeded)
     try { fs.unlinkSync(walPath); } catch {}
 
-    // Increment version
     const key = filename.replace('.json', '');
     dataVersions[key] = (dataVersions[key] || 0) + 1;
 
     return true;
   } catch (err) {
     console.error(`❌ Atomic write failed for ${filename}:`, err.message);
-    // Clean up temp and WAL files
     try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch {}
     try { if (fs.existsSync(walPath)) fs.unlinkSync(walPath); } catch {}
     return false;
   }
 }
 
-// v9.05: Concurrency Queue — serializes writes per table
-// If Telegram bot + user save at same ms, they're processed sequentially
-const writeQueues = {}; // { tableName: Promise }
+const writeQueues = {};
 
 async function lockedWrite(filename, data, meta) {
   const key = filename.replace('.json', '');
 
-  // Chain writes: each write waits for the previous one on same table
   const prev = writeQueues[key] || Promise.resolve();
   const current = prev.then(async () => {
-    // Double-check lock (belt + suspenders)
     const maxWait = 10000;
     const start = Date.now();
     while (dataLocks.has(key)) {
@@ -1019,22 +982,22 @@ async function lockedWrite(filename, data, meta) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// 3. AUDIT LOGGING — WHO changed WHAT and WHEN
+// 3. AUDIT LOGGING
 // ═══════════════════════════════════════════════════════════════
 
 function writeAuditLog(table, action, user, details) {
   try {
     const now = new Date();
-    const dateKey = now.toISOString().split('T')[0]; // 2026-02-23
+    const dateKey = now.toISOString().split('T')[0];
     const logFile = path.join(AUDIT_DIR, `audit_${dateKey}.jsonl`);
 
     const entry = {
       timestamp: now.toISOString(),
       table,
-      action, // "create", "update", "delete", "login", "restore"
-      user,   // email or "system"
+      action,
+      user,
       details,
-      ip: null, // set by caller if available
+      ip: null,
     };
 
     fs.appendFileSync(logFile, JSON.stringify(entry) + "\n", "utf8");
@@ -1043,7 +1006,6 @@ function writeAuditLog(table, action, user, details) {
   }
 }
 
-// Clean up old audit logs (keep 30 days)
 function cleanupAuditLogs() {
   try {
     const files = fs.readdirSync(AUDIT_DIR).filter(f => f.startsWith('audit_') && f.endsWith('.jsonl'));
@@ -1057,20 +1019,14 @@ function cleanupAuditLogs() {
     });
   } catch (err) {}
 }
-setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000); // Daily cleanup
+setInterval(cleanupAuditLogs, 24 * 60 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════════════
-// 4. CONFLICT RESOLUTION — Version Tracking (Last-Writer-Wins+)
+// 4. CONFLICT RESOLUTION — Version Tracking
 // ═══════════════════════════════════════════════════════════════
-
-// Each save includes a version number. If a client sends data with an
-// older version than what's on server, we log the conflict but still
-// accept (LWW) because in a CRM the latest user action is usually correct.
-// The audit log captures everything for rollback if needed.
 
 function getVersion(table) {
   if (!dataVersions[table]) {
-    // Initialize from file mtime
     const filepath = path.join(DATA_DIR, table + '.json');
     try {
       if (fs.existsSync(filepath)) {
@@ -1084,10 +1040,8 @@ function getVersion(table) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// INTERNAL DATA SYNC (reads local files directly — no HTTP self-call)
+// INTERNAL DATA SYNC
 // ═══════════════════════════════════════════════════════════════
-// NOTE: Previously these fetched from https://leeds-crm.com/api/* which IS this server.
-// After adding auth, the server couldn't call its own endpoints. Now reads files directly.
 async function syncExternalData() {
   console.log("🔄 Internal data sync check...");
   const crg = readJSON("crg-deals.json", []);
@@ -1100,7 +1054,6 @@ async function syncExternalData() {
 // 5. POINT-IN-TIME RECOVERY (PITR) — Enhanced Backup System
 // ═══════════════════════════════════════════════════════════════
 
-// Backup every 15 minutes (was 1 hour), keep 30 days of daily + 48 hours of hourly
 function createBackup(label) {
   const ts = label || new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const backupPath = path.join(BACKUP_DIR, ts);
@@ -1114,7 +1067,6 @@ function createBackup(label) {
     if (fs.existsSync(src)) { fs.copyFileSync(src, dst); count++; }
   });
 
-  // Also backup audit log for today
   const todayAudit = path.join(AUDIT_DIR, `audit_${new Date().toISOString().split('T')[0]}.jsonl`);
   if (fs.existsSync(todayAudit)) {
     fs.copyFileSync(todayAudit, path.join(backupPath, 'audit.jsonl'));
@@ -1132,7 +1084,6 @@ function cleanupBackups() {
     const TWO_DAYS = 48 * 60 * 60 * 1000;
     const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000;
 
-    // Keep: all backups within 48 hours, one per day for 30 days
     const kept = new Set();
     const dailyKept = new Set();
 
@@ -1143,9 +1094,9 @@ function cleanupBackups() {
         const dayKey = d.slice(0, 10);
 
         if (age < TWO_DAYS) {
-          kept.add(d); // Keep all recent
+          kept.add(d);
         } else if (age < THIRTY_DAYS && !dailyKept.has(dayKey)) {
-          kept.add(d); // Keep one per day
+          kept.add(d);
           dailyKept.add(dayKey);
         }
       } catch {}
@@ -1162,33 +1113,25 @@ function cleanupBackups() {
   }
 }
 
-// Backup every 1 hour
 setInterval(createBackup, 60 * 60 * 1000);
-// Backup on startup — CRITICAL: creates a snapshot before any new client code can write
 setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)), 2000);
 
-// v9.16: STARTUP INTEGRITY CHECK — restore from best available backup
-// Cascades: shutdown backups → hourly backups → daily snapshots
 (function startupIntegrityCheck() {
   try {
     const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners", "ftd-entries"];
-    
-    // Collect ALL backup sources in priority order
+
     const backupSources = [];
-    
-    // 1. Shutdown backups (highest priority)
+
     try {
       const shutdownDirs = fs.readdirSync(BACKUP_DIR).filter(d => d.startsWith("shutdown-")).sort().reverse();
       shutdownDirs.forEach(d => backupSources.push({ path: path.join(BACKUP_DIR, d), label: `shutdown/${d}` }));
     } catch {}
-    
-    // 2. Hourly/startup backups
+
     try {
       const allBackups = fs.readdirSync(BACKUP_DIR).filter(d => !d.startsWith("shutdown-") && !d.startsWith("safety-")).sort().reverse();
       allBackups.forEach(d => backupSources.push({ path: path.join(BACKUP_DIR, d), label: `backup/${d}` }));
     } catch {}
-    
-    // 3. Daily snapshots (last resort)
+
     const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
     try {
       if (fs.existsSync(SNAPSHOT_DIR)) {
@@ -1196,9 +1139,9 @@ setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.
         snapDirs.forEach(d => backupSources.push({ path: path.join(SNAPSHOT_DIR, d), label: `snapshot/${d}` }));
       }
     } catch {}
-    
+
     if (backupSources.length === 0) { console.log("📋 No backups found — skipping integrity check"); return; }
-    
+
     let restored = 0;
     endpoints.forEach(ep => {
       const dataFile = path.join(DATA_DIR, ep + ".json");
@@ -1207,24 +1150,22 @@ setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.
         try { currentData = JSON.parse(fs.readFileSync(dataFile, "utf8")); } catch { currentData = []; }
       }
       if (!Array.isArray(currentData)) currentData = [];
-      
-      // Find the best backup for this endpoint
+
       for (const source of backupSources) {
         const backupFile = path.join(source.path, ep + ".json");
         if (!fs.existsSync(backupFile)) continue;
         try {
           const backupData = JSON.parse(fs.readFileSync(backupFile, "utf8"));
           if (!Array.isArray(backupData) || backupData.length === 0) continue;
-          
-          // Restore if current data is significantly smaller (or empty)
+
           if (currentData.length < backupData.length * 0.5 && backupData.length > 3) {
             console.log(`🔧 STARTUP RESTORE [${ep}]: current=${currentData.length}, backup=${backupData.length} (from ${source.label}). Restoring.`);
             fs.writeFileSync(dataFile, JSON.stringify(backupData, null, 2), "utf8");
-            currentData = backupData; // Update so we don't try lower-priority sources
+            currentData = backupData;
             restored++;
-            break; // Found good backup, stop looking
+            break;
           } else {
-            break; // Current data is fine relative to this backup, stop looking
+            break;
           }
         } catch {}
       }
@@ -1235,15 +1176,13 @@ setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.
 })();
 
 // ═══════════════════════════════════════════════════════════════
-// v9.05: DAILY SNAPSHOT SYSTEM — "The Safety Net"
-// Keeps exactly 7 days of guaranteed-clean daily snapshots
-// Runs at 02:00 AM server time to avoid user activity
+// DAILY SNAPSHOT SYSTEM
 // ═══════════════════════════════════════════════════════════════
 const SNAPSHOT_DIR = path.join(__dirname, "snapshots");
 if (!fs.existsSync(SNAPSHOT_DIR)) fs.mkdirSync(SNAPSHOT_DIR, { recursive: true });
 
 function createDailySnapshot() {
-  const dateKey = new Date().toISOString().split('T')[0]; // 2026-03-01
+  const dateKey = new Date().toISOString().split('T')[0];
   const snapPath = path.join(SNAPSHOT_DIR, dateKey);
   if (fs.existsSync(snapPath)) { console.log(`📸 Daily snapshot ${dateKey} already exists — skipping`); return; }
   fs.mkdirSync(snapPath, { recursive: true });
@@ -1256,7 +1195,6 @@ function createDailySnapshot() {
   });
   console.log(`📸 Daily snapshot created: ${dateKey} (${count} files)`);
 
-  // Cleanup: keep only last 7 days
   try {
     const dirs = fs.readdirSync(SNAPSHOT_DIR).sort();
     while (dirs.length > 7) {
@@ -1267,24 +1205,20 @@ function createDailySnapshot() {
   } catch (err) { console.error("⚠️ Snapshot cleanup error:", err.message); }
 }
 
-// v9.05: Nightly auto-dedup at 03:00 AM — keeps database clean
 async function nightlyDedup() {
   console.log("🧹 Nightly auto-dedup starting...");
   let totalRemoved = 0;
 
-  // Dedup daily-cap
   try {
     const dc = readJSON("daily-cap.json", []);
     const seen = new Map();
     dc.forEach(r => {
-      // v10.1 FIX: Use record ID as primary dedup key
       if (r.id && seen.has(r.id)) {
         const existing = seen.get(r.id);
         if (Object.keys(r).length > Object.keys(existing).length) seen.set(r.id, r);
       } else if (r.id) {
         seen.set(r.id, r);
       } else {
-        // Legacy record without ID — use composite key
         const fallbackKey = `noid|${(r.date || '').trim()}|${(r.agent || '').trim().toLowerCase()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
         if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
       }
@@ -1297,19 +1231,16 @@ async function nightlyDedup() {
     }
   } catch (err) { console.error("⚠️ Dedup daily-cap error:", err.message); }
 
-  // Dedup crg-deals
   try {
     const crg = readJSON("crg-deals.json", []);
     const seen = new Map();
     crg.forEach(r => {
-      // v10.1 FIX: Use record ID as primary dedup key — composite keys collapsed different legitimate deals
       if (r.id && seen.has(r.id)) {
         const existing = seen.get(r.id);
         if (Object.keys(r).length > Object.keys(existing).length) seen.set(r.id, r);
       } else if (r.id) {
         seen.set(r.id, r);
       } else {
-        // Legacy record without ID — use composite key
         const fallbackKey = `noid|${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
         if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
       }
@@ -1326,7 +1257,6 @@ async function nightlyDedup() {
   else console.log("🧹 Nightly dedup: database is clean");
 }
 
-// Schedule daily snapshot at 02:00 and dedup at 03:00
 function scheduleNightlyTasks() {
   const now = new Date();
   const next2am = new Date(now);
@@ -1346,7 +1276,7 @@ function scheduleNightlyTasks() {
 
   setTimeout(() => {
     nightlyDedup();
-    cleanupTombstones(); // v10.0: prune expired tombstones
+    cleanupTombstones();
     setInterval(nightlyDedup, 24 * 60 * 60 * 1000);
     setInterval(cleanupTombstones, 24 * 60 * 60 * 1000);
   }, delay3);
@@ -1354,7 +1284,6 @@ function scheduleNightlyTasks() {
   console.log(`⏰ Nightly tasks scheduled: snapshot at 02:00 (in ${Math.round(delay2/60000)}min), dedup+tombstone cleanup at 03:00`);
 }
 
-// Also create snapshot on startup if none exists for today
 setTimeout(createDailySnapshot, 5000);
 scheduleNightlyTasks();
 
@@ -1362,17 +1291,12 @@ scheduleNightlyTasks();
 // 6. EXPRESS + SECURITY MIDDLEWARE
 // ═══════════════════════════════════════════════════════════════
 
-// FIX C6: Restrict CORS to known origins (env var or defaults)
 const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || "").split(",").filter(Boolean);
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (server-to-server, curl, mobile apps)
     if (!origin) return callback(null, true);
-    // Allow localhost in dev
     if (origin.includes("localhost") || origin.includes("127.0.0.1")) return callback(null, true);
-    // Allow configured origins
     if (ALLOWED_ORIGINS.length > 0 && ALLOWED_ORIGINS.some(o => origin.includes(o))) return callback(null, true);
-    // Allow same-domain (Nginx proxy setup)
     if (ALLOWED_ORIGINS.length === 0) return callback(null, true);
     callback(new Error("CORS blocked"));
   },
@@ -1380,21 +1304,19 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
-// v9.05: Input Sanitization Middleware — strips XSS/injection from all POST bodies
 function sanitizeValue(val) {
   if (typeof val === 'string') {
     return val
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '') // Strip script tags
-      .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '') // Strip event handlers
-      .replace(/javascript\s*:/gi, '') // Strip javascript: URIs
-      .replace(/data\s*:\s*text\/html/gi, '') // Strip data:text/html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
+      .replace(/javascript\s*:/gi, '')
+      .replace(/data\s*:\s*text\/html/gi, '')
       .trim();
   }
   if (Array.isArray(val)) return val.map(sanitizeValue);
   if (val && typeof val === 'object') {
     const clean = {};
     for (const [k, v] of Object.entries(val)) {
-      // Block prototype pollution
       if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
       clean[k] = sanitizeValue(v);
     }
@@ -1410,7 +1332,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Catch JSON parse errors (malformed body) — return proper JSON, not HTML
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
     return res.status(400).json({ error: "Invalid JSON in request body" });
@@ -1418,14 +1339,9 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-// ── FIX C4/C5: Session token authentication ──
-// On login success, server issues a random session token.
-// All data/admin endpoints require valid token in Authorization header.
-// activeSessions loaded above from SESSION_FILE
-const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000; // v9.05: 14 days (was 7)
+const SESSION_DURATION = 14 * 24 * 60 * 60 * 1000;
 const SESSION_FILE = path.join(DATA_DIR, ".sessions.json");
 
-// Load persisted sessions on startup (survive server restarts)
 const activeSessions = new Map();
 try {
   if (fs.existsSync(SESSION_FILE)) {
@@ -1459,9 +1375,8 @@ function cleanupSessions() {
   }
   if (cleaned > 0) { persistSessions(); console.log(`🧹 Cleaned ${cleaned} expired sessions`); }
 }
-setInterval(cleanupSessions, 60 * 60 * 1000); // Hourly cleanup
+setInterval(cleanupSessions, 60 * 60 * 1000);
 
-// Auth middleware — checks Authorization: Bearer <token>
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -1476,11 +1391,10 @@ function requireAuth(req, res, next) {
     activeSessions.delete(token);
     return res.status(401).json({ error: "Session expired" });
   }
-  req.userSession = session; // Attach user info to request
+  req.userSession = session;
   next();
 }
 
-// Admin-only middleware (checks email against admin list)
 const ADMIN_EMAILS = ["office1092021@gmail.com", "y0505300530@gmail.com", "wpnayanray@gmail.com"];
 function requireAdmin(req, res, next) {
   requireAuth(req, res, () => {
@@ -1491,10 +1405,9 @@ function requireAdmin(req, res, next) {
   });
 }
 
-// Rate limiting: 200 req/min per IP (increased for WebSocket fallback polling)
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000;
-const RATE_LIMIT_MAX = 300; // v9.05: was 200
+const RATE_LIMIT_MAX = 300;
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
@@ -1508,13 +1421,11 @@ function rateLimit(req, res, next) {
 }
 setInterval(() => { const now = Date.now(); for (const [ip, e] of rateLimitMap) { if (now - e.windowStart > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(ip); } }, 5 * 60 * 1000);
 
-// v10.1: Auto-ban IPs that hit blocked paths repeatedly
-const ipBanMap = new Map(); // ip → { count, firstSeen, banned }
-const IP_BAN_THRESHOLD = 15; // 15 blocked requests = auto-ban
-const IP_BAN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
-const IP_BAN_WINDOW = 60 * 60 * 1000; // Count within 1 hour
+const ipBanMap = new Map();
+const IP_BAN_THRESHOLD = 15;
+const IP_BAN_DURATION = 24 * 60 * 60 * 1000;
+const IP_BAN_WINDOW = 60 * 60 * 1000;
 
-// Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -1527,23 +1438,20 @@ app.use((req, res, next) => {
 });
 app.use('/api/', rateLimit);
 
-// Block attack paths
-// v10.1: Rate-limit audit logging for repeated blocked requests (same IP+path)
-const blockedRequestLog = new Map(); // key="ip|path" → lastLoggedAt
-const BLOCKED_LOG_COOLDOWN = 3600000; // Only log same IP+path combo once per hour
+const blockedRequestLog = new Map();
+const BLOCKED_LOG_COOLDOWN = 3600000;
 
 app.use((req, res, next) => {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  
-  // v10.1: Check if IP is auto-banned
+
   const banEntry = ipBanMap.get(ip);
   if (banEntry && banEntry.banned) {
     if (Date.now() - banEntry.bannedAt < IP_BAN_DURATION) {
       return res.status(403).json({ error: "Forbidden" });
     }
-    ipBanMap.delete(ip); // Ban expired
+    ipBanMap.delete(ip);
   }
-  
+
   const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc', '/@fs/', '/../', '/..%2f', '/.htaccess', '/web.config', '/composer.json', '/package.json'];
   if (blocked.some(b => req.path.toLowerCase().includes(b))) {
     const logKey = `${ip}|${req.path}`;
@@ -1553,7 +1461,6 @@ app.use((req, res, next) => {
       writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${ip}`);
       blockedRequestLog.set(logKey, now);
     }
-    // v10.1: Track and auto-ban aggressive scanners (not localhost)
     if (ip !== '127.0.0.1' && ip !== '::1') {
       const entry = ipBanMap.get(ip) || { count: 0, firstSeen: now };
       if (now - entry.firstSeen > IP_BAN_WINDOW) { entry.count = 0; entry.firstSeen = now; }
@@ -1565,7 +1472,6 @@ app.use((req, res, next) => {
       }
       ipBanMap.set(ip, entry);
     }
-    // Cleanup old entries every so often
     if (blockedRequestLog.size > 500) {
       for (const [k, t] of blockedRequestLog) {
         if (now - t > BLOCKED_LOG_COOLDOWN * 2) blockedRequestLog.delete(k);
@@ -1576,10 +1482,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Input sanitization middleware
 app.use('/api/', (req, res, next) => {
   if (req.method === 'POST' && req.body && typeof req.body === 'object') {
-    // Prevent prototype pollution — check OWN properties only (not inherited ones like 'constructor')
     const keys = Object.keys(req.body);
     if (keys.includes('__proto__') || keys.includes('prototype')) {
       return res.status(400).json({ error: "Invalid input" });
@@ -1593,18 +1497,14 @@ app.use('/api/', (req, res, next) => {
 // ═══════════════════════════════════════════════════════════════
 
 const loginAttempts = new Map();
-const LOGIN_MAX_ATTEMPTS = 5; // v9.05: was 3
-const LOGIN_BLOCK_DURATION = 10 * 60 * 1000; // v9.05: 10 min (was 15)
+const LOGIN_MAX_ATTEMPTS = 5;
+const LOGIN_BLOCK_DURATION = 10 * 60 * 1000;
 setInterval(() => { const now = Date.now(); for (const [ip, e] of loginAttempts) { if (now - e.firstAttempt > LOGIN_BLOCK_DURATION) loginAttempts.delete(ip); } }, 5 * 60 * 1000);
 
-// ═══════════════════════════════════════════════════════════════
-// LOGIN — v3.09 BULLETPROOF with INITIAL_USERS fallback + debug
-// ═══════════════════════════════════════════════════════════════
 app.post("/api/login", (req, res) => {
   const ip = req.ip || req.headers['x-forwarded-for'] || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
 
-  // IP blocking
   const entry = loginAttempts.get(ip);
   if (entry && entry.count >= LOGIN_MAX_ATTEMPTS) {
     const unblockTime = entry.firstAttempt + LOGIN_BLOCK_DURATION;
@@ -1623,15 +1523,12 @@ app.post("/api/login", (req, res) => {
   const emailClean = email.toLowerCase().trim();
   const fileUsers = readJSON("users.json", []);
 
-  // ── TRY 1: Match against users.json file ──
   let user = fileUsers.find(u => u.email === emailClean && u.passwordHash === passwordHash);
 
-  // ── TRY 2: If file match failed, try INITIAL_USERS (hardcoded, always has hashes) ──
   if (!user) {
     const seedMatch = INITIAL_USERS.find(u => u.email === emailClean && u.passwordHash === passwordHash);
     if (seedMatch) {
       user = seedMatch;
-      // Also repair users.json while we're at it
       const existing = fileUsers.find(u => u.email === emailClean);
       if (existing && !existing.passwordHash) {
         existing.passwordHash = passwordHash;
@@ -1645,7 +1542,6 @@ app.post("/api/login", (req, res) => {
     }
   }
 
-  // ── Build debug info ──
   const fileMatch = fileUsers.find(u => u.email === emailClean);
   const seedMatch = INITIAL_USERS.find(u => u.email === emailClean);
   const debug = {
@@ -1671,7 +1567,6 @@ app.post("/api/login", (req, res) => {
     const token = generateSessionToken();
     activeSessions.set(token, { email: user.email, name: user.name, pageAccess: user.pageAccess, createdAt: Date.now() });
     persistSessions();
-    // ── Record lastLogin timestamp in users.json ──
     try {
       const allUsers = readJSON("users.json", []);
       const idx = allUsers.findIndex(u => u.email === emailClean);
@@ -1697,7 +1592,6 @@ app.post("/api/login", (req, res) => {
   }
 });
 
-// ── Logout ──
 app.post("/api/logout", (req, res) => {
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
@@ -1711,31 +1605,21 @@ app.post("/api/logout", (req, res) => {
   res.json({ ok: true });
 });
 
-// ── Session validation ──
 app.get("/api/session", requireAuth, (req, res) => {
   res.json({ ok: true, user: { email: req.userSession.email, name: req.userSession.name, pageAccess: req.userSession.pageAccess } });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 8. DATA ENDPOINTS — With Atomic Writes + Audit + Versioning
+// 8. DATA ENDPOINTS
 // ═══════════════════════════════════════════════════════════════
 
 const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
 
-// ═══════════════════════════════════════════════════════════════
-// v9.18: NOTIFICATION DEDUP — prevent looping Telegram messages
-// ═══════════════════════════════════════════════════════════════
-// When client saves ALL payments, server compares vs file on disk.
-// v10.1: Hash-based notification dedup — prevents duplicate messages when same payment hash
-// exists in both payments and customer-payments tables
 const notifiedHashes = new Set();
 setInterval(() => { if (notifiedHashes.size > 5000) notifiedHashes.clear(); }, 30 * 60 * 1000);
 
-// If server file was reset/restored, every old payment looks "new" → notification flood.
-// Fix: Track which payment IDs already got a "new" notification.
 const notifiedPaymentIds = new Set();
 const notifiedTransitions = new Set();
-// Populate from existing data on startup — everything already in the file is "known"
 try {
   const existingPayments = readJSON("payments.json", []);
   existingPayments.forEach(p => { if (p && p.id) notifiedPaymentIds.add(p.id); });
@@ -1743,48 +1627,39 @@ try {
   existingCP.forEach(p => { if (p && p.id) notifiedPaymentIds.add(p.id); });
   console.log(`🔔 Notification dedup: ${notifiedPaymentIds.size} existing payment IDs pre-loaded`);
 } catch (e) {}
-// Cleanup every 10 min
 setInterval(() => { if (notifiedPaymentIds.size > 10000) notifiedPaymentIds.clear(); }, 10 * 60 * 1000);
 
-// GET — returns data + version number (REQUIRES AUTH)
-// v9.16: Track last known record counts to detect data loss on GET
 const lastKnownServerCounts = {};
 endpoints.forEach(ep => {
   const file = ep + ".json";
   app.get(`/api/${ep}`, requireAuth, (req, res) => {
     let data = readJSON(file, []);
-    // FIX C2: Strip password hashes from user data — NEVER expose to client
     if (ep === "users") {
       data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
     }
-    // v9.16: Detect and log if a table went empty unexpectedly
     const prevCount = lastKnownServerCounts[ep] || 0;
     if (data.length === 0 && prevCount > 5) {
       console.error(`🔴 DATA LOSS DETECTED [${ep}]: returning 0 records, last known count was ${prevCount}. Attempting backup recovery.`);
       writeAuditLog(ep, "data_loss_detected", req.user?.email || "unknown", `[${ep}] GET returned 0 records, last known=${prevCount}. Triggering recovery.`);
-      // Try to recover from any backup
-      const recovered = readJSON(file, []); // readJSON already tries backups
+      const recovered = readJSON(file, []);
       if (recovered.length > 0) {
         data = recovered;
         console.log(`🔧 RECOVERED [${ep}]: ${recovered.length} records from backup`);
       }
     }
     if (data.length > 0) lastKnownServerCounts[ep] = data.length;
-    // v10.0: Include tombstoned IDs in response so clients can purge them locally
     const tombstoned = [...getTombstonedIds(ep)];
     res.json({ data, version: getVersion(ep), timestamp: Date.now(), tombstoned });
   });
 });
 
-// POST — atomic save with conflict detection, audit log, broadcast
+// POST payments
 app.post("/api/payments", requireAuth, async (req, res) => {
   const { data: newPayments, version: clientVersion, user: userEmail, deleted: deletedIDs } = req.body;
-  // Support legacy format (raw array)
   const payments = Array.isArray(req.body) ? req.body : newPayments;
   if (!Array.isArray(payments)) return res.status(400).json({ error: "Invalid data format" });
   if (payments.length > 10000) return res.status(400).json({ error: "Too many records" });
 
-  // Empty array protection
   if (payments.length === 0) {
     const existing = readJSON("payments.json", []);
     const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
@@ -1798,125 +1673,97 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // NOTIFICATION LOGIC — v9.18: Prevent looping + duplicate messages
-  // ═══════════════════════════════════════════════════════════
-  // ROOT CAUSE of loops: Client sends ALL payments on every save.
-  // If server file was reset/restored, every old payment looks "new" → flood.
-  // FIX: Track notified payment IDs in memory. Only notify truly new ones.
-  // FIX2: For "Approved to pay" — send ONLY the approved message, not "NEW PAYMENT ADDED" too.
-  
   const oldPayments = readJSON("payments.json", []);
   const oldMap = new Map(oldPayments.map(p => [p.id, p]));
-  
+
   payments.forEach(p => {
     if (!p || !p.id) return;
     const oldP = oldMap.get(p.id);
-    
+
     if (!oldP) {
-      // ── NEW PAYMENT ──
-      // Guard: skip if already notified (prevents loop when client re-sends all payments)
       if (notifiedPaymentIds.has(p.id)) return;
       notifiedPaymentIds.add(p.id);
-      // v10.1: Hash-based dedup — skip if this payment hash already triggered a notification
       if (p.paymentHash && notifiedHashes.has(p.paymentHash)) return;
       if (p.paymentHash) notifiedHashes.add(p.paymentHash);
-      
+
       if (p.status === "Paid") {
         sendAffiliatePaymentNotification(p, true);
       } else if (p.status === "Approved to pay") {
-        // ONLY send approved notification — NOT "new payment added" (was sending both)
         sendApprovedToPayNotification(p);
       } else if (["Open", "On the way"].includes(p.status)) {
         sendAffiliatePaymentNotification(p, false);
       }
-      
+
     } else if (oldP.status !== p.status) {
-      // ── STATUS CHANGED ──
-      // Guard: prevent duplicate notifications for same transition
       const transKey = `${p.id}:${oldP.status}->${p.status}`;
       if (notifiedTransitions.has(transKey)) return;
       notifiedTransitions.add(transKey);
       setTimeout(() => notifiedTransitions.delete(transKey), 60000);
-      // v10.1: Hash-based dedup
       if (p.paymentHash && notifiedHashes.has(p.paymentHash)) return;
       if (p.paymentHash) notifiedHashes.add(p.paymentHash);
-      
+
       if (p.status === "Paid") {
         sendAffiliatePaymentNotification(p, true);
-      }
-      else if (p.status === "Approved to pay") {
-        // ONLY "Approved to pay" message — no "NEW PAYMENT ADDED" alongside it
+      } else if (p.status === "Approved to pay") {
         sendApprovedToPayNotification(p);
-      }
-      else if (["Open", "On the way"].includes(p.status) && oldP.status === "Paid") {
-        // Re-opened from Paid
+      } else if (["Open", "On the way"].includes(p.status) && oldP.status === "Paid") {
         sendAffiliatePaymentNotification(p, false);
       }
     }
   });
 
-  // ═══════════════════════════════════════════════════════════
-  // SERVER-SIDE MERGE — v10.0: Tombstone-aware, updatedAt-aware
-  // ═══════════════════════════════════════════════════════════
   const serverData = readJSON("payments.json", []);
   const mergedMap = new Map();
   serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
-  
-  // v10.0: Load tombstones — IDs that were explicitly deleted by users
+
   const tombstonedIds = getTombstonedIds("payments");
-  
+
   let clientNew = 0, clientUpdated = 0, clientResurrectionBlocked = 0;
   const clientIDs = new Set();
   payments.forEach(r => {
     if (!r || !r.id) return;
     clientIDs.add(r.id);
-    
-    // v10.0: Block resurrection — if this ID was deleted, don't let stale clients re-add it
+
     if (tombstonedIds.has(r.id) && !mergedMap.has(r.id)) {
       clientResurrectionBlocked++;
-      return; // Skip — this record was intentionally deleted
+      return;
     }
-    
+
     const srv = mergedMap.get(r.id);
     if (!srv) {
-      r.updatedAt = r.updatedAt || Date.now(); // v10.0: stamp new records
+      r.updatedAt = r.updatedAt || Date.now();
       mergedMap.set(r.id, r);
       clientNew++;
     } else {
-      // v10.0: True last-write-wins using updatedAt
       const clientTime = r.updatedAt || 0;
       const serverTime = srv.updatedAt || 0;
       if (clientTime >= serverTime) {
         r.updatedAt = r.updatedAt || Date.now();
         mergedMap.set(r.id, r);
       }
-      // else: server version is newer, keep it
       clientUpdated++;
     }
   });
-  
+
   if (clientResurrectionBlocked > 0) {
     console.log(`🪦 [payments]: Blocked ${clientResurrectionBlocked} tombstoned records from resurrecting`);
   }
-  
+
   const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
-  
-  // Remove explicitly deleted records + add tombstones
+
   const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
   if (deleteSet.size > 0) {
     deleteSet.forEach(id => mergedMap.delete(id));
-    addTombstones("payments", [...deleteSet]); // v10.0: tombstone them
+    addTombstones("payments", [...deleteSet]);
     console.log(`🗑️ [payments]: ${deleteSet.size} record(s) explicitly deleted + tombstoned`);
   }
-  
+
   const merged = Array.from(mergedMap.values());
-  
+
   if (clientNew > 0 || serverOnly.length > 0) {
     console.log(`🔀 MERGE [payments]: client_sent=${payments.length} server_had=${serverData.length} → merged=${merged.length} (new=${clientNew}, preserved=${serverOnly.length}${clientResurrectionBlocked > 0 ? `, resurrection_blocked=${clientResurrectionBlocked}` : ''})`);
   }
 
-  // Atomic write
   const success = await lockedWrite("payments.json", merged, {
     action: "update", user: userEmail || "unknown", details: `[payments] ${merged.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved)`
   });
@@ -1929,7 +1776,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   }
 });
 
-// Generic POST for other tables — SERVER-SIDE MERGE (never destructive replace)
+// Generic POST for other tables
 ["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"].forEach(ep => {
   const file = ep + ".json";
   app.post(`/api/${ep}`, requireAuth, async (req, res) => {
@@ -1938,7 +1785,6 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     if (!Array.isArray(records)) return res.status(400).json({ error: "Invalid data format" });
     if (records.length > 10000) return res.status(400).json({ error: "Too many records" });
 
-    // C3 FIX: Declare deleteSet at outer scope — was inside if block, causing ReferenceError below
     const deleteSet = new Set(Array.isArray(deletedIDs) ? deletedIDs : []);
 
     if (records.length === 0) {
@@ -1947,40 +1793,33 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         console.log(`⚠️ BLOCKED empty save to ${ep} — ${existing.length} records protected (no delete IDs)`);
         return res.status(400).json({ error: "Cannot overwrite existing data with empty array" });
       }
-      // If deletedIDs present, this is an intentional bulk delete — allow it
       if (deleteSet.size > 0) {
         console.log(`🗑️ [${ep}]: Intentional bulk delete of ${deleteSet.size} records, allowing empty save`);
         createBackup(`pre-bulk-delete-${ep}-${Date.now()}`);
       }
     }
 
-    // ═══ DATA SHRINKAGE PROTECTION ═══
-    // If client sends significantly fewer records than server has, it likely has stale/demo data.
-    // Create a safety backup BEFORE merging so we can always recover.
     const existingBeforeMerge = readJSON(file, []);
     if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.3) {
       console.log(`🛡️ SHRINKAGE WARNING [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Creating safety backup.`);
       createBackup(`safety-${ep}-${Date.now()}`);
     }
-    // v9.09: Hard block if client sends less than 20% of server data (almost certainly a bug)
     if (existingBeforeMerge.length > 5 && records.length === 0 && deleteSet.size === 0) {
       console.log(`🛑 HARD BLOCK [${ep}]: client sending 0 records, server has ${existingBeforeMerge.length}. Rejected.`);
       writeAuditLog(ep, "hard_block", userEmail || "unknown", `[${ep}] REJECTED: client=0 server=${existingBeforeMerge.length} — empty payload`);
       return res.status(400).json({ error: "Cannot replace existing data with empty payload", serverCount: existingBeforeMerge.length });
     }
-    // v9.13: Block stale client — if client sends <50% of server records and no explicit deletes, reject and force re-fetch
     if (existingBeforeMerge.length > 10 && records.length < existingBeforeMerge.length * 0.5 && deleteSet.size === 0) {
       console.log(`🛑 STALE BLOCK [${ep}]: client sending ${records.length} records, server has ${existingBeforeMerge.length}. Client likely has stale data. Rejected.`);
       writeAuditLog(ep, "stale_block", userEmail || "unknown", `[${ep}] REJECTED: client=${records.length} server=${existingBeforeMerge.length} — stale data`);
-      return res.status(409).json({ 
-        error: "stale_data", 
+      return res.status(409).json({
+        error: "stale_data",
         message: `Server has ${existingBeforeMerge.length} records, you sent ${records.length}. Please refresh to get latest data.`,
         serverCount: existingBeforeMerge.length,
         clientCount: records.length
       });
     }
 
-    // SPECIAL HANDLING: customer-payments status change notifications
     if (ep === "customer-payments") {
       const oldRecords = readJSON("customer-payments.json", []);
       const oldMap = new Map(oldRecords.map(p => [p.id, p]));
@@ -1988,13 +1827,11 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         if (!cp || !cp.id) return;
         const oldCp = oldMap.get(cp.id);
         if (!oldCp) {
-          // v9.18: Skip if already notified (prevents loop)
           if (notifiedPaymentIds.has(cp.id)) return;
           notifiedPaymentIds.add(cp.id);
-          // v10.1: Hash-based dedup — skip if this hash already sent a notification from payments table
           if (cp.paymentHash && notifiedHashes.has(cp.paymentHash)) return;
           if (cp.paymentHash) notifiedHashes.add(cp.paymentHash);
-          
+
           if (cp.status === "Received") {
             sendBrandPaymentNotification(cp);
           } else {
@@ -2008,84 +1845,59 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       });
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // SERVER-SIDE MERGE — v10.0: Tombstone-aware, updatedAt-aware
-    // ═══════════════════════════════════════════════════════════
-    // Read current server data
     const serverData = readJSON(file, []);
-    
-    // v10.0: Load tombstones — IDs that were explicitly deleted by users
     const tombstonedIds = getTombstonedIds(ep);
-    
-    // Build merged result: start with all server records, layer client on top
+
     const mergedMap = new Map();
     serverData.forEach(r => { if (r && r.id) mergedMap.set(r.id, r); });
-    
+
     let clientNew = 0, clientUpdated = 0, clientDeleted = 0, clientResurrectionBlocked = 0;
     const clientIDs = new Set();
     records.forEach(r => {
       if (!r || !r.id) return;
       clientIDs.add(r.id);
-      
-      // v10.0: Block resurrection — if this ID was tombstoned and not currently on server, skip
+
       if (tombstonedIds.has(r.id) && !mergedMap.has(r.id)) {
         clientResurrectionBlocked++;
-        return; // This record was intentionally deleted — don't let stale client resurrect it
+        return;
       }
-      
+
       const srv = mergedMap.get(r.id);
       if (!srv) {
-        // New record from client — KEEP (stamp updatedAt if not present)
         r.updatedAt = r.updatedAt || Date.now();
         mergedMap.set(r.id, r);
         clientNew++;
       } else {
-        // Both have it — v10.0: Use updatedAt for true last-write-wins
         const clientTime = r.updatedAt || 0;
         const serverTime = srv.updatedAt || 0;
         if (clientTime >= serverTime) {
           r.updatedAt = r.updatedAt || Date.now();
           mergedMap.set(r.id, r);
         }
-        // else: server version is newer, keep it
         clientUpdated++;
       }
     });
-    
+
     if (clientResurrectionBlocked > 0) {
       console.log(`🪦 [${ep}]: Blocked ${clientResurrectionBlocked} tombstoned records from resurrecting`);
     }
-    
-    // Records on server but NOT in client payload:
-    // These could be records added by OTHER users that this client hasn't seen yet.
-    // KEEP THEM — never delete other users' work.
+
     const serverOnly = serverData.filter(r => r && r.id && !clientIDs.has(r.id));
-    // Note: serverOnly records are already in mergedMap from the initial forEach above.
-    
-    // Remove explicitly deleted records + add tombstones (deleteSet declared at top of handler — C3 FIX)
+
     if (deleteSet.size > 0) {
       deleteSet.forEach(id => mergedMap.delete(id));
-      addTombstones(ep, [...deleteSet]); // v10.0: tombstone them so stale clients can't resurrect
+      addTombstones(ep, [...deleteSet]);
       console.log(`🗑️ [${ep}]: ${deleteSet.size} record(s) explicitly deleted + tombstoned`);
       writeAuditLog(ep, "delete", userEmail || "unknown", `[${ep}] ${deleteSet.size} record(s) deleted by user | IDs: ${[...deleteSet].slice(0, 5).join(', ')}${deleteSet.size > 5 ? '...' : ''}`);
     }
-    
+
     const merged = Array.from(mergedMap.values());
-    
-    // ═══════════════════════════════════════════════════════════
-    // DEDUPLICATION — v10.0 FIX: Use record ID (unique) not date+affiliate
-    // ═══════════════════════════════════════════════════════════
-    // Previous bug: dedup key was `date__affiliate` which silently deleted
-    // different deals for the same affiliate on the same date.
-    // Now: dedup only uses the composite key that matches nightly dedup,
-    // including brokerCap, so different broker deals are preserved.
+
     let deduped = merged;
     if (ep === "daily-cap") {
-      // v10.1 FIX: Use record ID as primary dedup key — composite keys were too aggressive
       const seen = new Map();
       for (const r of merged) {
         if (r.id && seen.has(r.id)) {
-          // Same ID appeared twice — keep the one with more data
           const existing = seen.get(r.id);
           const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
           const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
@@ -2093,7 +1905,6 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         } else if (r.id) {
           seen.set(r.id, r);
         } else {
-          // Record has no ID — use composite key as fallback
           const fallbackKey = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
           if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
         }
@@ -2102,13 +1913,9 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       if (deduped.length < merged.length) console.log(`🧹 DEDUP [daily-cap]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} exact duplicates)`);
     }
     if (ep === "crg-deals") {
-      // v10.1 FIX: Use record ID as primary dedup key — composite keys were collapsing
-      // different legitimate deals (same affiliate+broker+date but different caps/funnels).
-      // Now: only dedup truly identical records (same ID), never merge different records.
       const seen = new Map();
       for (const r of merged) {
         if (r.id && seen.has(r.id)) {
-          // Same ID appeared twice — keep the one with more data
           const existing = seen.get(r.id);
           const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
           const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
@@ -2116,7 +1923,6 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         } else if (r.id) {
           seen.set(r.id, r);
         } else {
-          // Record has no ID — use composite key as fallback
           const fallbackKey = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}|${(r.cap || "").toString().trim()}`;
           if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
         }
@@ -2124,34 +1930,29 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       deduped = Array.from(seen.values());
       if (deduped.length < merged.length) console.log(`🧹 DEDUP [crg-deals]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} exact duplicates)`);
     }
-    
-    // CRG DEALS NOTIFICATIONS: Detect new deals and send Telegram notification
+
     if (ep === "crg-deals" && clientNew > 0) {
-      // Find new deals (those that were added in this request)
       const oldRecords = readJSON("crg-deals.json", []);
       const oldMap = new Map(oldRecords.map(r => [r.id, r]));
-      
+
       records.forEach(newDeal => {
-        // Check if this is a new deal (not in old records)
         if (!oldMap.has(newDeal.id) && newDeal.affiliate && newDeal.cap) {
-          // Send notification to CRG group
           sendNewCRGDealNotification(newDeal);
           console.log(`📱 New CRG deal notification queued for affiliate: ${newDeal.affiliate}`);
         }
       });
     }
-    
+
     if (clientNew > 0 || serverOnly.length > 0 || clientResurrectionBlocked > 0) {
       console.log(`🔀 MERGE [${ep}]: client_sent=${records.length} server_had=${serverData.length} → merged=${deduped.length} (new=${clientNew}, updated=${clientUpdated}, server_preserved=${serverOnly.length}${clientResurrectionBlocked > 0 ? `, resurrection_blocked=${clientResurrectionBlocked}` : ''})`);
     }
 
-    // v8: Skip write entirely if merged result is identical to what's on disk
     if (clientNew === 0 && deleteSet.size === 0 && deduped.length === serverData.length && clientUpdated === 0) {
       return res.json({ ok: true, count: deduped.length, version: getVersion(ep), unchanged: true });
     }
 
     const success = await lockedWrite(file, deduped, {
-      action: "update", user: userEmail || "unknown", 
+      action: "update", user: userEmail || "unknown",
       details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted${clientResurrectionBlocked > 0 ? `, ${clientResurrectionBlocked} resurrection_blocked` : ''}) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length && deduped.length < serverData.length - deleteSet.size ? ' ⚠️SHRUNK' : ''}`
     });
 
@@ -2164,7 +1965,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
   });
 });
 
-// Users — separate endpoint to preserve full data + audit
+// Users endpoint
 app.post("/api/users", requireAuth, async (req, res) => {
   const { data: newUsers, user: userEmail } = req.body;
   let users = Array.isArray(req.body) ? req.body : newUsers;
@@ -2178,15 +1979,11 @@ app.post("/api/users", requireAuth, async (req, res) => {
     }
   }
 
-  // CRITICAL: Prevent client from stripping passwordHash
-  // Client receives users WITHOUT passwordHash (security fix C2).
-  // If client sends them back, we must preserve the existing passwordHash.
   const existing = readJSON("users.json", []);
   const existingMap = new Map(existing.map(u => [u.email, u]));
   const seedMap = new Map(INITIAL_USERS.map(u => [u.email, u]));
   users = users.map(u => {
     if (!u.passwordHash) {
-      // Restore from existing file or from seed
       const ex = existingMap.get(u.email);
       const seed = seedMap.get(u.email);
       if (ex && ex.passwordHash) return { ...u, passwordHash: ex.passwordHash };
@@ -2195,18 +1992,15 @@ app.post("/api/users", requireAuth, async (req, res) => {
     return u;
   });
 
-  // SERVER-SIDE MERGE for users — preserve users from other clients
   const mergedMap = new Map();
   existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
   users.forEach(u => { if (u && u.email) {
     const ex = mergedMap.get(u.email);
-    // Preserve lastLogin from server — client doesn't track this
     if (ex && ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
     mergedMap.set(u.email, u);
   } });
   const mergedUsers = Array.from(mergedMap.values());
 
-  // Skip write if data hasn't actually changed (prevents save loops)
   const existingStr = JSON.stringify(existing.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
   const mergedStr = JSON.stringify(mergedUsers.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
   if (existingStr === mergedStr) {
@@ -2226,7 +2020,6 @@ app.post("/api/users", requireAuth, async (req, res) => {
   }
 });
 
-// ── Version endpoint — clients check this to know if they need to re-fetch
 app.get("/api/versions", requireAuth, (req, res) => {
   const versions = {};
   endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
@@ -2246,7 +2039,6 @@ if (WS_AVAILABLE) {
   console.log("🔌 WebSocket server listening on /ws");
 
   wss.on('connection', (ws, req) => {
-    // FIX H1: Require auth token for WebSocket connections
     const url = new URL(req.url, `http://${req.headers.host}`);
     const token = url.searchParams.get("token");
     const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
@@ -2259,12 +2051,10 @@ if (WS_AVAILABLE) {
     wsClients.add(ws);
     console.log(`🔌 WebSocket connected: ${ip} (${wsClients.size} total)`);
 
-    // Send current versions on connect
     const versions = {};
     endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
     try { ws.send(JSON.stringify({ type: "versions", versions, timestamp: Date.now() })); } catch {}
 
-    // Handle messages from client
     ws.on('message', (msg) => {
       try {
         const data = JSON.parse(msg);
@@ -2284,7 +2074,6 @@ if (WS_AVAILABLE) {
     });
   });
 
-  // Heartbeat — keep connections alive + detect dead clients
   setInterval(() => {
     wsClients.forEach(ws => {
       if (ws.readyState !== WebSocket.OPEN) { wsClients.delete(ws); return; }
@@ -2298,7 +2087,6 @@ if (WS_AVAILABLE) {
   }, 30000);
 }
 
-// Broadcast data update to all connected WebSocket clients
 function broadcastUpdate(table, data, deletedIds) {
   if (!WS_AVAILABLE || wsClients.size === 0) return;
   const message = JSON.stringify({
@@ -2306,7 +2094,6 @@ function broadcastUpdate(table, data, deletedIds) {
     table,
     version: getVersion(table),
     data,
-    // v10.0: Include recently deleted IDs so clients remove them immediately
     tombstoned: deletedIds && deletedIds.length > 0 ? deletedIds : undefined,
     timestamp: Date.now(),
   });
@@ -2332,7 +2119,6 @@ function broadcastUpdate(table, data, deletedIds) {
 // 10. AUDIT LOG ENDPOINTS
 // ═══════════════════════════════════════════════════════════════
 
-// GET audit logs for a specific date or range
 app.get("/api/audit", requireAdmin, (req, res) => {
   const { date, days } = req.query;
   const targetDate = date || new Date().toISOString().split('T')[0];
@@ -2355,11 +2141,11 @@ app.get("/api/audit", requireAdmin, (req, res) => {
   }
 
   logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  res.json(logs.slice(0, 500)); // Max 500 entries
+  res.json(logs.slice(0, 500));
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 11. BACKUP & RESTORE ENDPOINTS (PITR)
+// 11. BACKUP & RESTORE ENDPOINTS
 // ═══════════════════════════════════════════════════════════════
 
 app.get("/api/backups", requireAdmin, (req, res) => {
@@ -2373,19 +2159,16 @@ app.get("/api/backups", requireAdmin, (req, res) => {
 });
 
 app.post("/api/restore/:backup", requireAdmin, async (req, res) => {
-  // FIX H2: Sanitize backup name — alphanumeric, dashes, T only (no ../  or path separators)
   const backupName = req.params.backup.replace(/[^a-zA-Z0-9\-T]/g, "");
   if (backupName !== req.params.backup || backupName.length < 5) {
     return res.status(400).json({ ok: false, error: "Invalid backup name" });
   }
   const bp = path.join(BACKUP_DIR, backupName);
-  // Double-check resolved path is inside BACKUP_DIR
   if (!path.resolve(bp).startsWith(path.resolve(BACKUP_DIR))) {
     return res.status(400).json({ ok: false, error: "Invalid backup path" });
   }
   if (!fs.existsSync(bp)) return res.json({ ok: false, error: "Backup not found" });
 
-  // Create a pre-restore backup first
   const preRestore = createBackup(`pre-restore-${Date.now()}`);
 
   const ip = req.ip || 'unknown';
@@ -2406,7 +2189,6 @@ app.post("/api/restore/:backup", requireAdmin, async (req, res) => {
   res.json({ ok: true, restored: req.params.backup, preRestoreBackup: preRestore, files: count });
 });
 
-// Manual backup trigger
 app.post("/api/backup", requireAdmin, (req, res) => {
   const label = createBackup();
   writeAuditLog("system", "manual_backup", req.body?.user || "admin", `Manual backup: ${label}`);
@@ -2417,12 +2199,9 @@ app.post("/api/backup", requireAdmin, (req, res) => {
 // 12. HEALTH & MONITORING
 // ═══════════════════════════════════════════════════════════════
 
-// ── TEMPORARY DEBUG ENDPOINT — remove after login is fixed! ──
 app.get("/api/health", (req, res) => {
-  // Public: basic status only. No sensitive info.
   const basic = { status: "ok", version: VERSION, time: new Date().toISOString() };
 
-  // If authenticated as admin, include extended info
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const session = activeSessions.get(authHeader.slice(7));
@@ -2440,9 +2219,8 @@ app.get("/api/health", (req, res) => {
   res.json(basic);
 });
 
-// ── Debug: check users.json state (no passwords exposed, just diagnostic info) ──
 // ═══════════════════════════════════════════════════════════════
-// 13. TELEGRAM BOT (preserved from v2.03)
+// 13. TELEGRAM BOT
 // ═══════════════════════════════════════════════════════════════
 
 function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
@@ -2451,28 +2229,20 @@ function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_
     return;
   }
 
-  const postData = JSON.stringify({
-    chat_id: chatId,
-    text: message
-  });
+  const postData = JSON.stringify({ chat_id: chatId, text: message });
 
   const options = {
     hostname: 'api.telegram.org',
     port: 443,
     path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
 
   const req = https.request(options, (res) => {
     let d = '';
     res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Telegram error:", d);
-    });
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Telegram error:", d); });
   });
 
   req.on('error', err => console.error("❌ Telegram error:", err.message));
@@ -2480,15 +2250,9 @@ function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_
   req.end();
 }
 
-
 function formatOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `🆕 NEW PAYMENT ADDED 💰
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-👤 Opened by: ${p.openBy || "Unknown"}
-Status: ${p.status || "Open"}`;
+  return `🆕 NEW PAYMENT ADDED 💰\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n👤 Opened by: ${p.openBy || "Unknown"}\nStatus: ${p.status || "Open"}`;
 }
 
 function formatApprovedToPayMessage(p) {
@@ -2496,328 +2260,149 @@ function formatApprovedToPayMessage(p) {
 }
 
 function sendApprovedToPayNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Approved to pay notification skipped (no token configured)");
-    return;
-  }
-
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
   const message = formatApprovedToPayMessage(p);
-  
-  const postData = JSON.stringify({
-    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
+  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
   const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    hostname: 'api.telegram.org', port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
-
   const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Approved to pay notification error:", d);
-      else console.log("✅ Approved to pay notification sent for invoice:", p.invoice);
-    });
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Approved to pay notification error:", d); else console.log("✅ Approved to pay notification sent for invoice:", p.invoice); });
   });
-
   req.on('error', err => console.error("❌ Approved to pay notification error:", err.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
 function sendOpenPaymentNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Open payment notification skipped (no token configured)");
-    return;
-  }
-
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
   const message = formatOpenPaymentMessage(p);
-  
-  const postData = JSON.stringify({
-    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
+  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
   const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    hostname: 'api.telegram.org', port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
-
   const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Open payment notification error:", d);
-      else console.log("✅ Open payment notification sent for invoice:", p.invoice);
-    });
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Open payment notification error:", d); else console.log("✅ Open payment notification sent for invoice:", p.invoice); });
   });
-
   req.on('error', err => console.error("❌ Open payment notification error:", err.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
-
-// Q2 FIX: Removed unused formatPaidPaymentMessage — was shadowed by formatAffiliatePaidPaymentMessage
-
-// ═══════════════════════════════════════════════════════════════
-// FINANCE | BRANDS GROUP NOTIFICATIONS (-1002796530029)
-// ═══════════════════════════════════════════════════════════════
-
-// formatBrandNewPaymentMessage removed — replaced by formatBrandNewOpenPaymentMessage below
-
-// A1: Sent to Brands group when a crypto hash is detected in the group chat
-// v9.52: Updated format — Invoice shows customer name, wallet check line added
+// ── Brands group notifications ──
 function formatBrandNewOpenPaymentMessage(p) {
-  const amount = Number(p.amount || 0).toLocaleString("en-US", { minimumFractionDigits: p.amount && String(p.amount).includes('.') ? String(p.amount).split('.')[1].length : 0 });
+  const amount = Number(p.amount || 0).toLocaleString("en-US");
   const invoiceName = p.customerName || p.invoice || "Unknown";
-  
-  // Wallet check line
   let walletCheck = "❓ Wallet check: Wallet unknown";
   if (p.walletMatched && p.walletType) {
     walletCheck = `✅ Wallet check: It's our ${p.walletType} wallet`;
   } else if (p.walletMatched) {
-    // Determine type from blockchainType
     const wType = p.blockchainType || "Unknown";
     walletCheck = `✅ Wallet check: It's our ${wType} wallet`;
   }
-  
-  return `💰 NEW CUSTOMER PAYMENT 💰
-
-📋 Invoice: #${invoiceName}
-💵 Amount: $${amount}
-🔗 Hash: ${p.paymentHash || "N/A"}
-
-${walletCheck}`;
+  return `💰 NEW CUSTOMER PAYMENT 💰\n\n📋 Invoice: #${invoiceName}\n💵 Amount: $${amount}\n🔗 Hash: ${p.paymentHash || "N/A"}\n\n${walletCheck}`;
 }
 
-// A2: Sent to Brands group when customer payment is marked as Received in CRM
 function formatBrandPaymentReceivedMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `✅ PAYMENT RECEIVED ✅
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-🏷️ Brand: ${p.brand || "N/A"}
-👤 Paid by: ${p.openBy || "Unknown"}
-🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
+  return `✅ PAYMENT RECEIVED ✅\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n🏷️ Brand: ${p.brand || "N/A"}\n👤 Paid by: ${p.openBy || "Unknown"}\n🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
 }
 
-// sendBrandPaymentNotification — only fires for RECEIVED status now
 function sendBrandPaymentNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Brand payment notification skipped (no token configured)");
-    return;
-  }
-
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
   const message = formatBrandPaymentReceivedMessage(p);
-
-  const postData = JSON.stringify({
-    chat_id: BRANDS_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
+  const postData = JSON.stringify({ chat_id: BRANDS_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
   const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    hostname: 'api.telegram.org', port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
-
   const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Brand payment received notification error:", d);
-      else console.log(`✅ Brand payment RECEIVED notification sent for invoice: ${p.invoice}`);
-    });
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Brand payment received notification error:", d); else console.log(`✅ Brand payment RECEIVED notification sent for invoice: ${p.invoice}`); });
   });
-
   req.on('error', err => console.error("❌ Brand payment notification error:", err.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// FINANCE | AFFILIATE GROUP NOTIFICATIONS (-1002830517753)
-// ═══════════════════════════════════════════════════════════════
-
+// ── Affiliate group notifications ──
 function formatAffiliateNewPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `🆕 NEW PAYMENT ADDED 💰
-
-📋 Affiliate ID: ${p.invoice}
-💵 Amount: $${amount}
-👤 Opened by: ${p.openBy || "Unknown"}
-Status: ${p.status || "Open"}`;
+  return `🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${p.invoice}\n💵 Amount: $${amount}\n👤 Opened by: ${p.openBy || "Unknown"}\nStatus: ${p.status || "Open"}`;
 }
 
 function formatAffiliatePaidPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
-  return `💰 PAYMENT ${p.invoice} marked as PAID 💰
-
-📋 Invoice: #${p.invoice}
-💵 Amount: $${amount}
-👤 Paid by: ${p.openBy || "Unknown"}
-Payment Hash: ${p.paymentHash || "N/A"}`;
+  return `💰 PAYMENT ${p.invoice} marked as PAID 💰\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: ${p.paymentHash || "N/A"}`;
 }
 
 function sendAffiliatePaymentNotification(p, isPaid = false) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Affiliate payment notification skipped (no token configured)");
-    return;
-  }
-
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
   const message = isPaid ? formatAffiliatePaidPaymentMessage(p) : formatAffiliateNewPaymentMessage(p);
-  
-  const postData = JSON.stringify({
-    chat_id: OPEN_PAYMENT_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
+  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
   const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    hostname: 'api.telegram.org', port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
-
   const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) console.log("❌ Affiliate payment notification error:", d);
-      else console.log(`✅ Affiliate payment notification sent for invoice: ${p.invoice} (${isPaid ? 'paid' : 'new'})`);
-    });
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Affiliate payment notification error:", d); else console.log(`✅ Affiliate payment notification sent for invoice: ${p.invoice} (${isPaid ? 'paid' : 'new'})`); });
   });
-
   req.on('error', err => console.error("❌ Affiliate payment notification error:", err.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
-// ═══════════════════════════════════════════════════════════════
-// OFFERS BLITZ GROUP NOTIFICATIONS (-1002183891044)
-// ═══════════════════════════════════════════════════════════════
-
-function formatNewOfferMessage(affiliateId, country, brand) {
-  let msg = `📋 Added a new offer:\nAffiliate ${affiliateId}\nCountry ${country}`;
-  if (brand) msg += `\nBrand: ${brand}`;
-  return msg;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CRG DEALS NOTIFICATIONS (-1002560408661)
-// ═══════════════════════════════════════════════════════════════
-
+// ── CRG Deals notifications ──
 function formatNewCRGDealMessage(deal) {
   const affiliate = deal.affiliate || "Unknown";
   const cap = deal.cap || "N/A";
   const brokerCap = deal.brokerCap || "N/A";
   const date = deal.date || new Date().toISOString().split("T")[0];
   const manageAff = deal.manageAff || "";
-  
-  let msg = `📋 <b>NEW CRG DEAL</b>\n\n`;
-  msg += `🏷️ Affiliate: <b>${affiliate}</b>\n`;
-  msg += `💰 Cap: <b>${cap}</b>\n`;
-  msg += `🏦 Broker: ${brokerCap}\n`;
-  msg += `📅 Date: ${date}\n`;
+  let msg = `📋 <b>NEW CRG DEAL</b>\n\n🏷️ Affiliate: <b>${affiliate}</b>\n💰 Cap: <b>${cap}</b>\n🏦 Broker: ${brokerCap}\n📅 Date: ${date}\n`;
   if (manageAff) msg += `👤 Manager: ${manageAff}\n`;
-  
   return msg;
 }
 
 function sendNewCRGDealNotification(deal) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 New CRG deal notification skipped (no token configured)");
-    return;
-  }
-
+  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
   const message = formatNewCRGDealMessage(deal);
-  
-  const postData = JSON.stringify({
-    chat_id: CRG_GROUP_CHAT_ID,
-    text: message,
-    parse_mode: "HTML"
-  });
-
+  const postData = JSON.stringify({ chat_id: CRG_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
   const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Content-Length': Buffer.byteLength(postData)
-    }
+    hostname: 'api.telegram.org', port: 443,
+    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
   };
-
   const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => {
-      if (res.statusCode !== 200) {
-        console.log("❌ New CRG deal notification error:", d);
-      } else {
-        console.log(`✅ New CRG deal notification sent for affiliate: ${deal.affiliate}`);
-      }
-    });
+    let d = ''; res.on('data', c => d += c);
+    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ New CRG deal notification error:", d); else console.log(`✅ New CRG deal notification sent for affiliate: ${deal.affiliate}`); });
   });
-
   req.on('error', err => console.error("❌ New CRG deal notification error:", err.message));
-  req.write(postData);
-  req.end();
+  req.write(postData); req.end();
 }
 
 // ── Telegram Bot Commands & Hash Detection ──
 let bot;
 const userStates = {};
 
-// Track processed message IDs to prevent duplicates
-// L5 FIX: Increased TTL from 30s → 5 minutes to prevent re-processing on bot restart
 const processedMessageIds = new Map();
-const MESSAGE_ID_TTL = 300000; // 5 minutes
-const MESSAGE_ID_CLEANUP_INTERVAL = 60000; // cleanup every 60s
+const MESSAGE_ID_TTL = 300000;
+const MESSAGE_ID_CLEANUP_INTERVAL = 60000;
 
-// Cleanup old message IDs periodically
 setInterval(() => {
   const now = Date.now();
   for (const [msgId, timestamp] of processedMessageIds) {
-    if (now - timestamp > MESSAGE_ID_TTL) {
-      processedMessageIds.delete(msgId);
-    }
+    if (now - timestamp > MESSAGE_ID_TTL) processedMessageIds.delete(msgId);
   }
 }, MESSAGE_ID_CLEANUP_INTERVAL);
 
-// L4 FIX: processedHashes at module level — was lazily init'd inside handler causing race conditions
 const processedHashes = new Map();
-const HASH_TTL = 300000; // 5 minutes
+const HASH_TTL = 300000;
 setInterval(() => {
   const now = Date.now();
   for (const [hash, ts] of processedHashes) {
@@ -2825,7 +2410,6 @@ setInterval(() => {
   }
 }, 60000);
 
-// Helper to check and mark message as processed
 function isMessageProcessed(msgId) {
   if (!msgId) return false;
   return processedMessageIds.has(msgId.toString());
@@ -2836,81 +2420,49 @@ function markMessageProcessed(msgId) {
   processedMessageIds.set(msgId.toString(), Date.now());
 }
 
+let pollingErrorCount = 0;
+
 if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   try {
-    bot = new TelegramBot(TELEGRAM_TOKEN, { 
-      polling: { 
-        interval: 2000,        // 2s between polls (default 300ms causes connection churn)
+    bot = new TelegramBot(TELEGRAM_TOKEN, {
+      polling: {
+        interval: 2000,
         autoStart: true,
-        params: { timeout: 30 } // Telegram long-poll: hold connection 30s
-      }, 
+        params: { timeout: 30 }
+      },
       filepath: false,
-      request: { timeout: 30000 } // HTTP timeout: 30s
+      request: { timeout: 30000 }
     });
     console.log("🤖 Telegram bot initialized (polling: 2s interval, 30s timeout)");
-    
-    // Test bot access to offer group on startup - silent check only (no message sent)
+
     setTimeout(() => {
       bot.getMe()
         .then(() => console.log("✅ Bot has access to Telegram API"))
-        .catch(err => {
-          console.log("❌ Bot cannot access Telegram:", err.message);
-        });
-    }, 5000); // Wait 5 seconds after startup
-    
-    let pollingErrorCount = 0;
+        .catch(err => console.log("❌ Bot cannot access Telegram:", err.message));
+    }, 5000);
+
     let lastPollingRestart = 0;
-    const POLLING_RESTART_COOLDOWN = 30000; // 30 seconds between restarts
-    
-    bot.on('polling_error', (error) => { 
+    const POLLING_RESTART_COOLDOWN = 30000;
+
+    bot.on('polling_error', (error) => {
       pollingErrorCount++;
       const now = Date.now();
       console.log(`⚠️ Telegram polling error #${pollingErrorCount}: ${error.code || error.message}`);
-      
-      // ETELEGRAM means bot was removed and re-added to group - need to restart polling
+
       if (error.code === 'ETELEGRAM' || error.message.includes('Forbidden')) {
-        // Check cooldown to prevent constant restarts
-        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) {
-          return;
-        }
-        
+        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) return;
         lastPollingRestart = now;
-        
-        // Stop polling and restart to get fresh updates
         bot.stopPolling().then(() => {
           console.log("⏹️ Polling stopped, restarting...");
           return bot.startPolling();
-        }).then(() => {
-          console.log("✅ Telegram polling restarted - bot should now receive messages");
-        }).catch(err => {
-          console.error("❌ Failed to restart polling:", err.message);
-        });
-        
-        // Also try to send a message to verify access
-        // bot.sendMessage(OFFER_GROUP_CHAT_ID, "")
-        //   .then(() => console.log("✅ Bot has access to offer group"))
-        //   .catch(err => {
-        //     console.log(`❌ Bot cannot access offer group: ${err.message}`);
-        //     console.log("⚠️ Please check:");
-        //     console.log("   1. Bot is an admin in the group");
-        //     console.log("   2. Bot has permission to read messages");
-        //     console.log("   3. Group is not a private supergroup");
-        //   });
-        
-        // Reset error count after handling ETELEGRAM
+        }).then(() => console.log("✅ Telegram polling restarted"))
+          .catch(err => console.error("❌ Failed to restart polling:", err.message));
         pollingErrorCount = 0;
         return;
       }
-      
+
       if (pollingErrorCount >= 10) {
-        // Only restart if cooldown has passed
-        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) {
-          console.log("⏳ Too many errors but on cooldown, waiting...");
-          pollingErrorCount = 0;
-          return;
-        }
-        
-        // console.log("🔄 Too many polling errors — restarting bot polling...");
+        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) { pollingErrorCount = 0; return; }
         lastPollingRestart = now;
         pollingErrorCount = 0;
         bot.stopPolling().then(() => {
@@ -2922,7 +2474,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       }
     });
 
-    // M3 FIX: Added /help, /ping, /status to registered command list
     bot.setMyCommands([
       { command:"/start", description:"Welcome message" },
       { command:"/help", description:"Command list" },
@@ -2936,7 +2487,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       { command:"/status", description:"Server health" },
     ]).catch(e => console.log("⚠️ Register commands:", e.message));
 
-    // M4 FIX: Separated /start and /help into distinct handlers
     bot.onText(/\/start/, (msg) => {
       structuredLog("cmd", "/start", "ok", { chat: msg.chat.id });
       bot.sendMessage(msg.chat.id, `👋 <b>Welcome to Blitz CRM Bot v${VERSION}</b>\n\nType /help for the full command list.`, { parse_mode: "HTML" });
@@ -2958,14 +2508,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       );
     });
 
-    // M1 FIX: /ping command — latency test
     bot.onText(/\/ping/, (msg) => {
       const start = Date.now();
       structuredLog("cmd", "/ping", "ok", { chat: msg.chat.id });
       bot.sendMessage(msg.chat.id, `🏓 Pong! Response: ${Date.now() - start}ms | Uptime: ${Math.round(process.uptime())}s`);
     });
 
-    // M2 FIX: /status command — server health
     bot.onText(/\/status/, (msg) => {
       try {
         const mem = process.memoryUsage();
@@ -2975,12 +2523,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         const h = Math.floor(uptime / 3600), m = Math.floor((uptime % 3600) / 60), s = uptime % 60;
         structuredLog("cmd", "/status", "ok", { chat: msg.chat.id, heap: heapMB });
         bot.sendMessage(msg.chat.id,
-          `🖥️ <b>Server Status</b>\n\n` +
-          `✅ Online\n` +
-          `⏱ Uptime: ${h}h ${m}m ${s}s\n` +
-          `💾 Heap: ${heapMB}MB / RSS: ${rssMB}MB\n` +
-          `🔌 WS clients: ${wsClients.size}\n` +
-          `📦 v${VERSION}`,
+          `🖥️ <b>Server Status</b>\n\n✅ Online\n⏱ Uptime: ${h}h ${m}m ${s}s\n💾 Heap: ${heapMB}MB / RSS: ${rssMB}MB\n🔌 WS clients: ${wsClients.size}\n📦 v${VERSION}`,
           { parse_mode: "HTML" }
         );
       } catch (err) {
@@ -2988,16 +2531,17 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       }
     });
 
-    // /wallets
     bot.onText(/\/wallets/, (msg) => {
-      const wallets = readJSON("wallets.json", []); if (!wallets.length) { bot.sendMessage(msg.chat.id, "❌ No wallets found."); return; }
+      const wallets = readJSON("wallets.json", []);
+      if (!wallets.length) { bot.sendMessage(msg.chat.id, "❌ No wallets found."); return; }
       const w = wallets[0];
       const ds = w.date ? (() => { const d = new Date(w.date + "T00:00:00"); return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`; })() : "N/A";
       bot.sendMessage(msg.chat.id, `💳 Current Wallets (${ds})\n\nTRC-20:\n${w.trc || "—"}\n\nERC-20 (USDT/USDC):\n${w.erc || "—"}\n\nBTC:\n${w.btc || "—"}\n\nLast updated: ${ds}\n*3% fee`);
     });
 
     bot.onText(/\/payments/, (msg) => {
-      const payments = readJSON("payments.json", []); const open = payments.filter(p => p.status !== "Paid");
+      const payments = readJSON("payments.json", []);
+      const open = payments.filter(p => p.status !== "Paid");
       const total = open.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0);
       let t = `📊 <b>Open Payments: ${open.length}</b>\n💰 Total: <b>$${total.toLocaleString("en-US")}</b>\n\n`;
       open.slice(0, 10).forEach(p => { t += `#${p.invoice} — $${parseFloat(p.amount).toLocaleString("en-US")} [${p.status}]\n`; });
@@ -3005,7 +2549,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       bot.sendMessage(msg.chat.id, t, { parse_mode: "HTML" });
     });
 
-    // /deals — all-time with inline keyboard
     bot.onText(/\/deals/, (msg) => {
       delete userStates[msg.chat.id];
       userStates[msg.chat.id] = { state: "waiting_for_country_deals", command: "/deals" };
@@ -3019,7 +2562,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       });
     });
 
-    // /crgdeals — today's deals with inline keyboard
     bot.onText(/\/crgdeals/, (msg) => {
       delete userStates[msg.chat.id];
       userStates[msg.chat.id] = { state: "waiting_for_country_crg", command: "/crgdeals" };
@@ -3032,7 +2574,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       });
     });
 
-    // ── Inline keyboard callback handler ──
     bot.on("callback_query", async (cq) => {
       const chatId = cq.message.chat.id; bot.answerCallbackQuery(cq.id);
       const isAll = cq.data.startsWith("all_"); const cc = isAll ? cq.data.substring(4) : cq.data;
@@ -3055,32 +2596,21 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       bot.sendMessage(chatId, t, { parse_mode: "HTML" });
     });
 
-    // ── Text input handler — FIXED: handles BOTH state types + USDT hash detection ──
-    // BUG FIX from v1.055: /deals set state to 'waiting_for_country_deals' but
-    // text handler only checked 'waiting_for_country' → typing country code did NOTHING
     bot.on("message", async (msg) => {
       if (msg.text && msg.text.startsWith("/")) return;
-      const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
+      const chatId = msg.chat.id;
+      const userText = msg.text ? msg.text.trim().toUpperCase() : "";
       const st = userStates[chatId];
 
-      // Handle Offer: / Offers: messages from the offer group FIRST (before state checks)
-      // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
       const offerLower = offerMessageText.toLowerCase();
       const chatIdStr = chatId.toString();
-      
-      // Debug: show chat ID
+
       console.log("💬 Message from chat ID:", chatIdStr, "| OFFER_GROUP_CHAT_ID:", OFFER_GROUP_CHAT_ID);
-      
-      // L1 FIX: Direct string comparison — old .replace('-100','-') chain was fragile
-      // and could accidentally match wrong groups with similar numeric suffixes
+
       const isOfferGroup = chatIdStr === OFFER_GROUP_CHAT_ID;
-      
-      // L2 FIX: Removed overly broad /^\d+$/ check — it matched ANY message whose
-      // first line was a standalone number (e.g. "500" in a payment message).
-      // Now only explicit "Offer:" / "Offers:" prefix triggers offer parsing.
       const isOfferFormat = offerLower.startsWith('offer:') || offerLower.startsWith('offers:');
-      
+
       if (isOfferGroup && isOfferFormat) {
         console.log("✅ Detected offer message in group!");
         try {
@@ -3092,7 +2622,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         return;
       }
 
-      // Handle /deals country text input
       if (st && st.state === "waiting_for_country_deals") {
         delete userStates[chatId];
         if (!VALID_COUNTRIES.includes(userText)) { bot.sendMessage(chatId, `❌ Invalid: ${userText}\n\nValid: ${VALID_COUNTRIES.join(", ")}`, { parse_mode: "HTML" }); return; }
@@ -3105,7 +2634,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         bot.sendMessage(chatId, t, { parse_mode: "HTML" }); return;
       }
 
-      // Handle /crgdeals country text input
       if (st && st.state === "waiting_for_country_crg") {
         delete userStates[chatId];
         if (!VALID_COUNTRIES.includes(userText)) { bot.sendMessage(chatId, `❌ Invalid: ${userText}\n\nValid: ${VALID_COUNTRIES.join(", ")}`, { parse_mode: "HTML" }); return; }
@@ -3119,81 +2647,47 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         bot.sendMessage(chatId, t, { parse_mode: "HTML" }); return;
       }
 
-      // Skip hash detection if in ANY waiting state
       if (st) return;
 
-      // Prevent duplicate processing: check recently processed hashes (last 30 seconds)
       const now = Date.now();
       if (!bot._processedHashes) bot._processedHashes = new Map();
-      // Clean old entries (older than 30 seconds)
       for (const [hash, timestamp] of bot._processedHashes) {
         if (now - timestamp > 30000) bot._processedHashes.delete(hash);
       }
 
-      // USDT hash detection (Brands group)
       const isBrandsGroup = chatId.toString() === BRANDS_GROUP_CHAT_ID;
-      // C1 FIX: was FINANCE_GROUP_CHAT_ID (undefined) — caused ReferenceError crash
       const isFinanceGroup = chatId.toString() === AFFILIte_FINANCE_GROUP_CHAT_ID;
-      
-      // Handle payment messages from Brands group with payment links
+
       if (isBrandsGroup) {
         const messageText = msg.text || '';
-        
-        // Try to extract brand name from message (look for brand name patterns)
         const brandMatch = messageText.match(/(?:brand|Brand)[:\s]+([A-Za-z0-9]+)/i);
         const extractedBrand = brandMatch ? brandMatch[1] : null;
-        
-        // v9.51: Extract customer name using robust helper
         const extractedCustomer = extractCustomerName(messageText);
-        
-        // Extract any payment hashes (erc/trc/btc)
         const hashes = extractAllUsdtHashes(messageText);
-        
-        // DEDUPLICATION: Remove duplicate hashes - use a Map to keep only unique hashes
-        // If same hash appears multiple times, keep only the first occurrence
+
         const uniqueHashesMap = new Map();
         for (const h of hashes) {
           if (h.type === 'TRC20' || h.type === 'ERC20' || h.type === 'BTC') {
-            if (!uniqueHashesMap.has(h.hash)) {
-              uniqueHashesMap.set(h.hash, h);
-            }
+            if (!uniqueHashesMap.has(h.hash)) uniqueHashesMap.set(h.hash, h);
           }
         }
         const uniqueTxHashes = Array.from(uniqueHashesMap.values());
-        
-        // Filter out recently processed hashes to prevent duplicate processing
         const newTxHashes = uniqueTxHashes.filter(h => !bot._processedHashes.has(h.hash));
-        
+
         if (newTxHashes.length > 0) {
-          // Process payment hashes from Brands group
-          const messageText = msg.text || '';
-          
-          // Extract ALL dollar amounts from the message - improved regex to handle more formats
           const amounts = [];
-          // Pattern 1: $500, $1,000, $1,000.00, $11,315.754
           const p1 = /\$(\d+(?:,\d{3})*(?:\.\d+)?)/g;
           let m;
-          while ((m = p1.exec(messageText)) !== null) {
-            amounts.push(m[1].replace(/,/g, ''));
-          }
-          // Pattern 2: 500$, 1000$, 1000.50$, 11315.754$ (amount before $)
+          while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
           const p2 = /(\d+(?:,\d{3})*(?:\.\d+)?)\$/g;
-          while ((m = p2.exec(messageText)) !== null) {
-            amounts.push(m[1].replace(/,/g, ''));
-          }
-          // Pattern 3: Just numbers that look like amounts (standalone numbers that could be dollars)
-          // This helps when the $ sign is on a different line
+          while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
           const p3 = /(?:^|\n)\s*(\d{3,})\s*(?:\n|$)/gm;
           while ((m = p3.exec(messageText)) !== null) {
-            // Only add if it's not already in amounts and looks like a dollar amount
             const val = m[1].replace(/,/g, '');
-            if (!amounts.includes(val) && parseInt(val) > 0) {
-              amounts.push(val);
-            }
+            if (!amounts.includes(val) && parseInt(val) > 0) amounts.push(val);
           }
-          
+
           console.log("💰 Found amounts:", amounts);
-          
           const wallets = readJSON("wallets.json", []);
 
           for (let i = 0; i < newTxHashes.length; i++) {
@@ -3203,14 +2697,11 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
             else if (type === 'BTC') txResult = await checkBTCTransaction(hash);
 
-            // v9.19 FIX: Prefer blockchain amount when available and non-zero
-            // Previously: (amounts[i] || txResult.amount || "0") — blockchain "0" was ignored
             const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
             const messageAmount = amounts[i] || null;
             const amount = (blockchainAmount || messageAmount || "0").toString();
             console.log(`💰 [Brands] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
             const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-            // A1: Always create as "Open" — CRM user will manually mark as Received
             const status = "Open";
             const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
 
@@ -3238,91 +2729,82 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash (Brands group)` });
             broadcastUpdate("customer-payments", cp);
 
-            // Mark hash as processed to prevent duplicates
             bot._processedHashes.set(hash, Date.now());
-
-            // A1: Always notify Brands group with "NEW CUSTOMER PAYMENT" when hash detected
             bot.sendMessage(BRANDS_GROUP_CHAT_ID, formatBrandNewOpenPaymentMessage(newPayment));
-            
-            
             console.log(`✅ Payment from Brands group: Invoice ${invoice}, Brand: ${extractedBrand || 'N/A'}, Amount: $${amount}`);
           }
           return;
         }
       }
-      
-      // USDT hash detection (finance group only)
+
       if (isFinanceGroup) {
-      const messageText = msg.text || '';
-      // v9.51: Extract customer name
-      const extractedCustomerFinance = extractCustomerName(messageText);
-      const hashes = extractAllUsdtHashes(messageText);
-      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20' || h.type === 'BTC');
-      if (txHashes.length === 0) return;
+        const messageText = msg.text || '';
+        const extractedCustomerFinance = extractCustomerName(messageText);
+        const hashes = extractAllUsdtHashes(messageText);
+        const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20' || h.type === 'BTC');
+        if (txHashes.length === 0) return;
 
-      const amounts = [];
-      const p1 = /\$(\d+(?:,\d{3})*(?:\.\d+)?)/g;
-      let m; while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
-      const p2 = /(\d+(?:,\d{3})*(?:\.\d+)?)\$/g;
-      while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+        const amounts = [];
+        const p1 = /\$(\d+(?:,\d{3})*(?:\.\d+)?)/g;
+        let m;
+        while ((m = p1.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
+        const p2 = /(\d+(?:,\d{3})*(?:\.\d+)?)\$/g;
+        while ((m = p2.exec(messageText)) !== null) amounts.push(m[1].replace(/,/g, ''));
 
-      const wallets = readJSON("wallets.json", []);
+        const wallets = readJSON("wallets.json", []);
 
-      for (let i = 0; i < txHashes.length; i++) {
-        const { hash, type } = txHashes[i];
-        let txResult = { success: false };
-        if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
-        else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
-        else if (type === 'BTC') txResult = await checkBTCTransaction(hash);
+        for (let i = 0; i < txHashes.length; i++) {
+          const { hash, type } = txHashes[i];
+          let txResult = { success: false };
+          if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
+          else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
+          else if (type === 'BTC') txResult = await checkBTCTransaction(hash);
 
-        // v9.19 FIX: Prefer blockchain amount when available and non-zero
-        const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
-        const messageAmount = amounts[i] || null;
-        const amount = (blockchainAmount || messageAmount || "0").toString();
-        console.log(`💰 [Finance] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
-        const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
-        const status = walletVerify.matched ? "Received" : "Pending";
-        const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
+          const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
+          const messageAmount = amounts[i] || null;
+          const amount = (blockchainAmount || messageAmount || "0").toString();
+          console.log(`💰 [Finance] Hash ${hash.slice(0,10)}... → blockchain=$${blockchainAmount || 'N/A'}, message=$${messageAmount || 'N/A'}, final=$${amount}`);
+          const walletVerify = verifyWalletAddress(txResult.toAddress || "", wallets);
+          const status = walletVerify.matched ? "Received" : "Pending";
+          const invoice = `CP-${Date.now().toString(36).toUpperCase()}`;
 
-        const newPayment = {
-          id: crypto.randomBytes(5).toString('hex'),
-          invoice, amount, fee: "", status, type: "Customer Payment",
-          openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
-          paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
-          ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
-          btcAddress: type === 'BTC' ? (txResult.toAddress || "") : "",
-          customerName: extractedCustomerFinance || "",
-          blockchainType: type,
-          blockchainVerified: txResult.success,
-          toAddress: txResult.toAddress || "",
-          month: new Date().getMonth(), year: new Date().getFullYear()
-        };
+          const newPayment = {
+            id: crypto.randomBytes(5).toString('hex'),
+            invoice, amount, fee: "", status, type: "Customer Payment",
+            openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
+            paymentHash: hash,
+            trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
+            ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+            btcAddress: type === 'BTC' ? (txResult.toAddress || "") : "",
+            customerName: extractedCustomerFinance || "",
+            blockchainType: type,
+            blockchainVerified: txResult.success,
+            toAddress: txResult.toAddress || "",
+            month: new Date().getMonth(), year: new Date().getFullYear()
+          };
 
-        const cp = readJSON("customer-payments.json", []);
-        cp.unshift(newPayment);
-        await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
-        broadcastUpdate("customer-payments", cp);
+          const cp = readJSON("customer-payments.json", []);
+          cp.unshift(newPayment);
+          await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
+          broadcastUpdate("customer-payments", cp);
 
-        let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n`;
-        if (extractedCustomerFinance) confirmMsg += `👤 Customer: <b>${extractedCustomerFinance}</b>\n`;
-        confirmMsg += `💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
-        confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
-        confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
-        confirmMsg += `\n📊 Status: <b>${status}</b>`;
-        bot.sendMessage(AFFILIte_FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+          let confirmMsg = `📨 <b>Payment Processed!</b>\n\n📋 Invoice: <b>${invoice}</b>\n`;
+          if (extractedCustomerFinance) confirmMsg += `👤 Customer: <b>${extractedCustomerFinance}</b>\n`;
+          confirmMsg += `💵 Amount: <b>$${amount}</b>\n🔗 Hash (${type}): <code>${hash}</code>\n`;
+          confirmMsg += txResult.success ? `✅ Blockchain: <b>Verified</b>\n` : `⚠️ Blockchain: <b>Could not verify</b>\n`;
+          confirmMsg += walletVerify.matched ? `✅ Wallet: <b>MATCHED</b>\n` : `❌ Wallet: <b>${walletVerify.error}</b>\n`;
+          confirmMsg += `\n📊 Status: <b>${status}</b>`;
+          bot.sendMessage(AFFILIte_FINANCE_GROUP_CHAT_ID, confirmMsg, { parse_mode: "HTML" });
+        }
       }
-      } // close if (isFinanceGroup)
-    }); // <-- FIX: Added missing closing brace and parenthesis for bot.on('message') handler
+    });
 
     console.log("✅ USDT hash detection enabled");
-    
+
     // ═══════════════════════════════════════════════════════════════
     // 15. SCREENSHOT + TEXT FALLBACK COMMANDS
-    // C4 FIX: Removed duplicate text-only /todaycrgcap and /todayagentscap handlers.
-    // These screenshot handlers now include text fallback if Puppeteer unavailable.
     // ═══════════════════════════════════════════════════════════════
 
-    // /todaycrgcap — screenshot with text fallback
     bot.onText(/\/todaycrgcap/, async (msg) => {
       structuredLog("cmd", "/todaycrgcap", "ok", { chat: msg.chat.id });
       try {
@@ -3331,7 +2813,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         structuredLog("cmd", "/todaycrgcap", "ok", { method: result.method });
       } catch (err) {
         structuredLog("cmd", "/todaycrgcap", "warn", { error: err.message, fallback: "text" });
-        // Text fallback
         try {
           const all = readJSON("crg-deals.json", []);
           const dates = [...new Set(all.map(d => d.date))].sort().reverse();
@@ -3352,7 +2833,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       }
     });
 
-    // /todayagentscap — screenshot with text fallback
     bot.onText(/\/todayagentscap/, async (msg) => {
       structuredLog("cmd", "/todayagentscap", "ok", { chat: msg.chat.id });
       try {
@@ -3361,7 +2841,6 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         structuredLog("cmd", "/todayagentscap", "ok", { method: result.method });
       } catch (err) {
         structuredLog("cmd", "/todayagentscap", "warn", { error: err.message, fallback: "text" });
-        // Text fallback
         try {
           const all = readJSON("daily-cap.json", []);
           const dates = [...new Set(all.map(c => c.date))].sort().reverse();
@@ -3386,34 +2865,36 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   }
 }
 
-// Hash extraction helpers (preserved)
+// ═══════════════════════════════════════════════════════════════
+// HASH EXTRACTION HELPERS
+// ═══════════════════════════════════════════════════════════════
+
 function extractAllUsdtHashes(text) {
   if (!text) return [];
   const hashes = [];
-  const seenHashes = new Set(); // Track unique hashes to prevent duplicates
-  
+  const seenHashes = new Set();
+
   const tronMatches = text.matchAll(/tronscan\.org\/[^\/]*\/transaction\/([a-zA-Z0-9]{33,64})/gi);
   for (const match of tronMatches) {
     const h = match[1];
-    if (seenHashes.has(h)) continue; // Skip duplicates
+    if (seenHashes.has(h)) continue;
     if (TRC20_ADDRESS_REGEX.test(h)) { hashes.push({ hash: h, type: 'TRC20_ADDRESS' }); seenHashes.add(h); }
     else if (h.length === 64) { hashes.push({ hash: h, type: 'TRC20' }); seenHashes.add(h); }
   }
   const ethMatches = text.matchAll(/etherscan\.io\/tx\/(0x[a-fA-F0-9]{64})/gi);
   for (const match of ethMatches) {
     const h = match[1];
-    if (seenHashes.has(h)) continue; // Skip duplicates
+    if (seenHashes.has(h)) continue;
     hashes.push({ hash: h, type: 'ERC20' });
     seenHashes.add(h);
   }
   text.split(/\s+/).forEach(w => {
     const t = w.trim();
-    if (seenHashes.has(t)) return; // Already have this hash
+    if (seenHashes.has(t)) return;
     if (ERC20_HASH_REGEX.test(t)) { hashes.push({ hash: t, type: 'ERC20' }); seenHashes.add(t); }
     else if (TRC20_HASH_REGEX.test(t)) { hashes.push({ hash: t, type: 'TRC20' }); seenHashes.add(t); }
   });
-  
-  // v10.1: Extract BTC transaction hashes from blockchain explorer URLs
+
   const btcPatterns = [
     /blockchain\.com\/(?:btc\/)?tx\/([a-fA-F0-9]{64})/gi,
     /blockchair\.com\/bitcoin\/transaction\/([a-fA-F0-9]{64})/gi,
@@ -3430,32 +2911,29 @@ function extractAllUsdtHashes(text) {
       }
     }
   }
-  
+
   return hashes;
 }
 
 async function checkTRC20Transaction(txHash) {
   try {
     console.log(`🔍 [TRC20] Checking transaction: ${txHash}`);
-    
-    // Known TRC20 stablecoin contracts
+
     const TRC20_STABLECOINS = {
       [TRC20_USDT_CONTRACT]: { symbol: "USDT", decimals: 6 },
       "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8": { symbol: "USDC", decimals: 6 },
     };
-    
-    // ═══ METHOD 1: Tronscan API — transaction-info endpoint ═══
+
     try {
       const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
       const raw = await httpRequest(url);
       const data = JSON.parse(raw);
-      
+
       if (!data || data.error || (!data.hash && !data.contractData)) {
         console.log(`⚠️ [TRC20] Tronscan returned no data for ${txHash.slice(0,12)}...`);
       } else {
         console.log(`📋 [TRC20] Tronscan response keys: ${Object.keys(data).join(', ')}`);
-        
-        // Method 1a: trc20TransferInfo (newer Tronscan API field)
+
         if (data.trc20TransferInfo && Array.isArray(data.trc20TransferInfo) && data.trc20TransferInfo.length > 0) {
           const transfer = data.trc20TransferInfo.find(t => {
             const addr = (t.contract_address || "").trim();
@@ -3470,8 +2948,7 @@ async function checkTRC20Transaction(txHash) {
             return { success: true, amount, toAddress: transfer.to_address || data.toAddress || "", fromAddress: transfer.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
           }
         }
-        
-        // Method 1b: tokenTransferInfo (original field)
+
         if (data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
           const transfer = data.tokenTransferInfo.find(t => {
             const addr = (t.contract_address || "").trim();
@@ -3485,8 +2962,7 @@ async function checkTRC20Transaction(txHash) {
             return { success: true, amount, toAddress: transfer.to_address || data.toAddress || "", fromAddress: transfer.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
           }
         }
-        
-        // Method 1c: trigger_info (smart contract call data)
+
         if (data.trigger_info && data.trigger_info.parameter) {
           const param = data.trigger_info.parameter;
           const contractAddr = data.trigger_info.contract_address || data.toAddress || "";
@@ -3502,8 +2978,7 @@ async function checkTRC20Transaction(txHash) {
             }
           }
         }
-        
-        // Method 1d: contractData (for TriggerSmartContract calls)
+
         if (data.contractData && data.contractData.amount) {
           const contractAddr = data.contractData.contract_address || data.toAddress || "";
           const stablecoin = TRC20_STABLECOINS[contractAddr];
@@ -3515,8 +2990,7 @@ async function checkTRC20Transaction(txHash) {
             return { success: true, amount, toAddress: data.contractData.owner_address || data.toAddress || "", fromAddress: data.ownerAddress || "", confirmed: data.confirmed !== false };
           }
         }
-        
-        // Method 1e: token_info fallback
+
         if (data.token_info && (data.token_info.symbol === "USDT" || data.token_info.symbol === "USDC")) {
           const raw = data.amount || data.token_info.amount || "0";
           const dec = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
@@ -3524,21 +2998,20 @@ async function checkTRC20Transaction(txHash) {
           console.log(`✅ [TRC20] Found via token_info: $${amount}`);
           return { success: true, amount, toAddress: data.to_address || data.toAddress || "", fromAddress: data.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
         }
-        
-        console.log(`⚠️ [TRC20] No USDT/USDC transfer found in Tronscan response. contractType=${data.contractType}, contractRet=${data.contractRet}`);
+
+        console.log(`⚠️ [TRC20] No USDT/USDC transfer found in Tronscan response.`);
       }
     } catch (err) {
       console.log(`⚠️ [TRC20] Tronscan API error: ${err.message}`);
     }
-    
-    // ═══ METHOD 2: TronGrid API fallback ═══
+
     try {
       const tgUrl = `https://api.trongrid.io/v1/transactions/${txHash}/events`;
       const tgRaw = await httpRequest(tgUrl);
       const tgData = JSON.parse(tgRaw);
-      
+
       if (tgData && tgData.data && Array.isArray(tgData.data)) {
-        const transferEvent = tgData.data.find(e => 
+        const transferEvent = tgData.data.find(e =>
           e.event_name === "Transfer" && TRC20_STABLECOINS[e.contract_address]
         );
         if (transferEvent && transferEvent.result) {
@@ -3552,160 +3025,127 @@ async function checkTRC20Transaction(txHash) {
     } catch (err) {
       console.log(`⚠️ [TRC20] TronGrid fallback error: ${err.message}`);
     }
-    
+
     console.log(`❌ [TRC20] All methods failed for ${txHash.slice(0,12)}...`);
     return { success: false, error: "Could not verify TRC20 transaction" };
-  } catch (err) { 
+  } catch (err) {
     console.error(`❌ [TRC20] Fatal error: ${err.message}`);
-    return { success: false, error: err.message }; 
+    return { success: false, error: err.message };
   }
 }
 
 async function checkERC20Transaction(txHash) {
   try {
     console.log(`🔍 [ERC20] Checking transaction: ${txHash}`);
-    
-    // Known stablecoin contracts (lowercase for comparison)
+
     const STABLECOINS = {
       "0xdac17f958d2ee523a2206206994597c13d831ec7": { symbol: "USDT", decimals: 6 },
       "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { symbol: "USDC", decimals: 6 },
       "0x6b175474e89094c44da98b954eedeac495271d0f": { symbol: "DAI", decimals: 18 },
     };
-    // Transfer event topic: keccak256("Transfer(address,address,uint256)")
     const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-    
+
     let amount = "0";
     let fromAddress = "";
     let toAddress = "";
     let confirmed = false;
-    
-    // ═══ METHOD 1: Transaction Receipt (most reliable — has Transfer event logs) ═══
+
     try {
       const receiptUrl = `${ETHERSCAN_V2_API}?chainid=1&module=proxy&action=eth_getTransactionReceipt&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
       const receiptRaw = await httpRequest(receiptUrl);
       const receiptData = JSON.parse(receiptRaw);
-      
+
       if (receiptData.result && typeof receiptData.result === 'object') {
         const receipt = receiptData.result;
         confirmed = receipt.status === "0x1";
         fromAddress = receipt.from || "";
         toAddress = receipt.to || "";
-        
-        // Parse Transfer event logs to find stablecoin transfers
+
         if (receipt.logs && Array.isArray(receipt.logs)) {
           for (const log of receipt.logs) {
             if (log.topics && log.topics.length >= 3 && log.topics[0] === TRANSFER_TOPIC) {
               const contractAddr = (log.address || "").toLowerCase();
               const stablecoin = STABLECOINS[contractAddr];
-              
+
               if (stablecoin) {
-                // Decode amount from log data field
                 const rawAmount = BigInt(log.data);
                 const divisor = 10n ** BigInt(stablecoin.decimals);
-                // Use Number for final result (safe for amounts up to ~9 quadrillion with 6 decimals)
                 const parsedAmount = Number(rawAmount) / Number(divisor);
                 amount = parsedAmount.toString();
-                
-                // Decode from/to addresses from indexed topics
-                if (log.topics[1]) {
-                  fromAddress = "0x" + log.topics[1].slice(26); // Remove 24 chars of zero-padding
-                }
-                if (log.topics[2]) {
-                  toAddress = "0x" + log.topics[2].slice(26);
-                }
-                
-                console.log(`✅ [ERC20] ${stablecoin.symbol} Transfer found via receipt logs: $${amount} from ${fromAddress} to ${toAddress}`);
-                break; // Use the first stablecoin transfer found
+
+                if (log.topics[1]) fromAddress = "0x" + log.topics[1].slice(26);
+                if (log.topics[2]) toAddress = "0x" + log.topics[2].slice(26);
+
+                console.log(`✅ [ERC20] ${stablecoin.symbol} Transfer found via receipt logs: $${amount}`);
+                break;
               }
             }
           }
         }
-        
+
         if (amount !== "0") {
           return { success: true, amount, toAddress, fromAddress, confirmed, hash: txHash };
         }
-        console.log(`⚠️ [ERC20] No stablecoin Transfer event in receipt logs, trying input data...`);
-      } else {
-        console.log(`⚠️ [ERC20] Receipt API returned no result, trying transaction data...`);
       }
     } catch (receiptErr) {
-      console.log(`⚠️ [ERC20] Receipt API error: ${receiptErr.message}, trying transaction data...`);
+      console.log(`⚠️ [ERC20] Receipt API error: ${receiptErr.message}`);
     }
-    
-    // ═══ METHOD 2: Transaction data (input field parsing) ═══
+
     try {
       const txUrl = `${ETHERSCAN_V2_API}?chainid=1&module=proxy&action=eth_getTransactionByHash&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
       const txRaw = await httpRequest(txUrl);
       const txData = JSON.parse(txRaw);
-      
+
       if (txData.result && typeof txData.result === 'object') {
         const tx = txData.result;
         if (!fromAddress) fromAddress = tx.from || "";
         const contractAddress = (tx.to || "").toLowerCase();
         const input = tx.input || "";
-        
-        // ERC20 transfer(address,uint256) selector = 0xa9059cbb
-        // Full input: 0xa9059cbb (10 chars) + address (64 chars) + amount (64 chars) = 138 chars
+
         if (input.startsWith("0xa9059cbb") && input.length >= 138) {
-          const recipientAddr = "0x" + input.slice(34, 74); // Extract 40-char address
-          const rawAmountHex = "0x" + input.slice(74, 138); // Extract 64-char amount
+          const recipientAddr = "0x" + input.slice(34, 74);
+          const rawAmountHex = "0x" + input.slice(74, 138);
           const rawAmount = BigInt(rawAmountHex);
-          
-          // Check if the contract is a known stablecoin
           const stablecoin = STABLECOINS[contractAddress];
-          const decimals = stablecoin ? stablecoin.decimals : 6; // Default to 6 (USDT standard)
+          const decimals = stablecoin ? stablecoin.decimals : 6;
           const divisor = BigInt(Math.pow(10, decimals));
           const parsedAmount = Number(rawAmount) / Number(divisor);
           amount = parsedAmount.toString();
           toAddress = recipientAddr;
-          
           const symbol = stablecoin ? stablecoin.symbol : "ERC20";
-          console.log(`✅ [ERC20] ${symbol} Transfer found via input data: $${amount} to ${toAddress}`);
+          console.log(`✅ [ERC20] ${symbol} Transfer found via input data: $${amount}`);
         } else if (tx.value && tx.value !== "0x0" && tx.value !== "0x") {
-          // Native ETH transfer
           const ethAmount = Number(BigInt(tx.value)) / 1e18;
           amount = ethAmount.toString();
           toAddress = tx.to || toAddress;
-          console.log(`✅ [ERC20] Native ETH transfer: ${amount} ETH to ${toAddress}`);
-        }
-        
-        // Get confirmation status if we don't have it yet
-        if (!confirmed) {
-          try {
-            const statusUrl = `${ETHERSCAN_V2_API}?chainid=1&module=transaction&action=gettxreceiptstatus&txhash=${txHash}&apikey=${ETHERSCAN_API_KEY}`;
-            const statusRaw = await httpRequest(statusUrl);
-            const statusData = JSON.parse(statusRaw);
-            confirmed = statusData.status === "1" && statusData.result && statusData.result.status === "1";
-          } catch {}
+          console.log(`✅ [ERC20] Native ETH transfer: ${amount} ETH`);
         }
       }
     } catch (txErr) {
       console.log(`⚠️ [ERC20] Transaction data API error: ${txErr.message}`);
     }
-    
+
     console.log(`📊 [ERC20] Final result: amount=$${amount}, to=${toAddress}, confirmed=${confirmed}`);
     return { success: amount !== "0", amount, toAddress, fromAddress, confirmed, hash: txHash };
   } catch (err) {
-    console.error(`❌ [ERC20] checkERC20Transaction error for ${txHash}:`, err.message);
+    console.error(`❌ [ERC20] checkERC20Transaction error:`, err.message);
     return { success: false, error: err.message };
   }
 }
 
-// v10.1: BTC transaction verification via blockchain.com API
 async function checkBTCTransaction(txHash) {
   try {
     console.log(`🔍 [BTC] Checking transaction: ${txHash}`);
-    
-    // Method 1: blockchain.com API
+
     try {
       const url = `https://blockchain.info/rawtx/${txHash}`;
       const raw = await httpRequest(url);
       const data = JSON.parse(raw);
-      
+
       if (data && data.hash) {
         let toAddress = "";
         let largestOutput = 0;
-        
+
         if (data.out && Array.isArray(data.out)) {
           for (const out of data.out) {
             if ((out.value || 0) > largestOutput) {
@@ -3714,32 +3154,30 @@ async function checkBTCTransaction(txHash) {
             }
           }
         }
-        
+
         let fromAddress = "";
         if (data.inputs && Array.isArray(data.inputs) && data.inputs.length > 0) {
           fromAddress = data.inputs[0].prev_out ? data.inputs[0].prev_out.addr || "" : "";
         }
-        
+
         const amountBTC = (largestOutput / 100000000).toFixed(8);
         const confirmed = data.block_height > 0;
-        
-        console.log(`✅ [BTC] Found: ${amountBTC} BTC to ${toAddress} (confirmed: ${confirmed})`);
+        console.log(`✅ [BTC] Found: ${amountBTC} BTC to ${toAddress}`);
         return { success: true, amount: `${amountBTC} BTC`, toAddress, fromAddress, confirmed, isBTC: true };
       }
     } catch (err) {
       console.log(`⚠️ [BTC] blockchain.com API error: ${err.message}`);
     }
-    
-    // Method 2: Blockchair API fallback
+
     try {
       const url = `https://api.blockchair.com/bitcoin/dashboards/transaction/${txHash}`;
       const raw = await httpRequest(url);
       const data = JSON.parse(raw);
-      
+
       if (data && data.data && data.data[txHash]) {
         const tx = data.data[txHash].transaction;
         const outputs = data.data[txHash].outputs || [];
-        
+
         let toAddress = "";
         let largestOutput = 0;
         for (const out of outputs) {
@@ -3748,23 +3186,37 @@ async function checkBTCTransaction(txHash) {
             toAddress = out.recipient || "";
           }
         }
-        
+
         const amountBTC = (largestOutput / 100000000).toFixed(8);
         const confirmed = tx.block_id > 0;
-        
         console.log(`✅ [BTC] Found via Blockchair: ${amountBTC} BTC`);
         return { success: true, amount: `${amountBTC} BTC`, toAddress, fromAddress: "", confirmed, isBTC: true };
       }
     } catch (err) {
       console.log(`⚠️ [BTC] Blockchair API error: ${err.message}`);
     }
-    
+
     console.log(`❌ [BTC] All methods failed for ${txHash.slice(0,12)}...`);
     return { success: false, error: "Could not verify BTC transaction" };
   } catch (err) {
     console.error(`❌ [BTC] Fatal error: ${err.message}`);
     return { success: false, error: err.message };
   }
+}
+
+// HTTP request helper (used by blockchain verification functions)
+function httpRequest(url) {
+  return new Promise((resolve, reject) => {
+    const isHttps = url.startsWith('https');
+    const lib = isHttps ? https : http;
+    const req = lib.get(url, { timeout: 10000, headers: { 'User-Agent': 'BlitzCRM/10.3' } }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => resolve(data));
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timeout')); });
+  });
 }
 
 function verifyWalletAddress(address, wallets) {
@@ -3786,7 +3238,6 @@ app.get("/api/sync/status", (req, res) => {
   res.json({ crgDeals: { count: crg.length, latestDates: [...new Set(crg.map(d => d.date))].sort().reverse().slice(0, 5) }, dailyCap: { count: dc.length, latestDates: [...new Set(dc.map(d => d.date))].sort().reverse().slice(0, 5) }, lastCheck: new Date().toISOString() });
 });
 
-// ── Telegram test endpoint
 app.post("/api/telegram/notify", (req, res) => {
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: "Message required" });
@@ -3808,8 +3259,6 @@ app.get("/api/telegram/test", (req, res) => {
   r.end();
 });
 
-// API endpoint to send CRG screenshot on demand
-// C2 FIX: was FINANCE_GROUP_CHAT_ID (undefined) — replaced with AFFILIte_FINANCE_GROUP_CHAT_ID
 app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
@@ -3822,7 +3271,6 @@ app.post("/api/telegram/screenshot/crg", requireAdmin, async (req, res) => {
   }
 });
 
-// API endpoint to send Agents screenshot on demand
 app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
@@ -3835,7 +3283,6 @@ app.post("/api/telegram/screenshot/agents", requireAdmin, async (req, res) => {
   }
 });
 
-// API endpoint to send both screenshots on demand
 app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
   if (!bot) return res.json({ ok: false, error: "Bot not initialized" });
   try {
@@ -3851,106 +3298,9 @@ app.post("/api/telegram/screenshot/all", requireAdmin, async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// OFFER MESSAGE PARSER — Handles "Offer:" messages from Telegram
+// ADMIN ENDPOINTS
 // ═══════════════════════════════════════════════════════════════
 
-// v9.19: COMPLETELY REWRITTEN — robust multi-format offer parser
-// Supports: Labeled (Geo:/Funnel:/Price:/Source:), Compact, Mixed formats
-async function handleOfferMessage(bot, msg, messageText) {
-  try {
-    // Dedup by message ID
-    if (msg.message_id) {
-      if (isMessageProcessed(msg.message_id)) {
-        console.log("\u23ed\ufe0f Skipping duplicate offer message:", msg.message_id);
-        return;
-      }
-      markMessageProcessed(msg.message_id);
-    }
-
-    console.log("\ud83d\udcdd [v9.51] Received offer message:", messageText);
-
-    // ── STEP 1: Parse using the v9.51 multi-format parser ──
-    const { affiliateId, offers: parsedOffers } = parseOfferMessageV2(messageText);
-
-    if (!affiliateId) {
-      bot.sendMessage(msg.chat.id, "\u274c Could not find affiliate ID in the message.\nExpected format: Offers: <ID> [DealType] <GEO> <Price> [Source] [Funnels: X]");
-      return;
-    }
-
-    console.log(`\ud83d\udce6 Affiliate: ${affiliateId}, Offers parsed: ${parsedOffers.length}`);
-    parsedOffers.forEach((o, i) => console.log(`  ${i+1}. type=${o.dealType} country=${o.country} price=${o.price} funnel=${o.funnel} source=${o.source} notes=${o.notes}`));
-
-    if (parsedOffers.length === 0) {
-      bot.sendMessage(msg.chat.id, `\u274c Could not parse any offers from the message.\nAffiliate ID: ${affiliateId}`);
-      return;
-    }
-
-    // ── STEP 2: Save ALL offers to offers.json ──
-    // v9.51: All CRM table fields are mapped:
-    //   affiliateId  → "Affiliate ID"
-    //   country      → "Country"
-    //   price        → "Price"
-    //   crg/crRate   → "CRG"
-    //   dealType     → "Deal Type"
-    //   deduction    → "Deductions"
-    //   funnel/funnels → "Funnels"
-    //   source       → "Source"
-    //   createdDate  → "Date"
-    //   openBy       → "Open By"
-    let existingOffers = readJSON("offers.json", []);
-
-    // Keep offers from OTHER affiliates, remove old ones for THIS affiliate
-    existingOffers = existingOffers.filter(o => String(o.affiliateId) !== String(affiliateId));
-
-    const timestamp = new Date().toISOString().split("T")[0];
-    const senderName = msg.from ? (msg.from.first_name || msg.from.username || "Telegram") : "Telegram";
-
-    const newOfferRecords = parsedOffers.map(o => ({
-      id: crypto.randomBytes(4).toString('hex'),
-      affiliateId: affiliateId,
-      country: o.country,
-      price: o.price,
-      crg: o.crRate || "",
-      crRate: o.crRate || "",
-      dealType: o.dealType || "",
-      deduction: o.deduction || "",
-      funnel: o.funnel || "",
-      funnels: o.funnel || "",
-      source: o.source || "",
-      notes: o.notes || "",
-      status: "Open",
-      createdDate: timestamp,
-      openBy: senderName,
-      rawMessage: messageText
-    }));
-
-    existingOffers.push(...newOfferRecords);
-
-    await lockedWrite("offers.json", existingOffers, {
-      action: "create",
-      user: "telegram-bot",
-      details: `Added ${parsedOffers.length} offers for affiliate ${affiliateId} (by ${senderName})`
-    });
-    broadcastUpdate("offers", existingOffers);
-
-    console.log(`\u2705 Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
-
-    // ── STEP 3: Send consolidated confirmation ──
-    sendBatchOfferNotification(affiliateId, parsedOffers);
-
-  } catch (err) {
-    console.error("\u274c Error handling offer message:", err.message, err.stack);
-    bot.sendMessage(msg.chat.id, `\u274c Error processing offer: ${err.message}`);
-  }
-}
-
-
-
-
-// ═══════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════
-// MANUAL BACKUP — trigger from Admin panel before deploying new version
-// ═══════════════════════════════════════════════════════════════
 app.post("/api/admin/backup", requireAdmin, async (req, res) => {
   const label = "manual-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   const ts = createBackup(label);
@@ -3958,16 +3308,12 @@ app.post("/api/admin/backup", requireAdmin, async (req, res) => {
   res.json({ ok: true, backup: ts, message: "Backup created successfully" });
 });
 
-// DATA DEDUPLICATION — clean existing duplicates (admin only)
-// ═══════════════════════════════════════════════════════════════
 app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   const results = {};
-  
-  // Deduplicate daily-cap: use record ID as primary key
+
   const dc = readJSON("daily-cap.json", []);
   const dcSeen = new Map();
   for (const r of dc) {
-    // v10.1 FIX: Use record ID — composite keys were too aggressive
     if (r.id && dcSeen.has(r.id)) {
       const existing = dcSeen.get(r.id);
       const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
@@ -3987,11 +3333,9 @@ app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   }
   results["daily-cap"] = { before: dc.length, after: dcDeduped.length, removed: dc.length - dcDeduped.length };
 
-  // Deduplicate crg-deals: use record ID as primary key
   const crg = readJSON("crg-deals.json", []);
   const crgSeen = new Map();
   for (const r of crg) {
-    // v10.1 FIX: Use record ID — composite keys were collapsing different legitimate deals
     if (r.id && crgSeen.has(r.id)) {
       const existing = crgSeen.get(r.id);
       const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
@@ -4015,8 +3359,6 @@ app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   res.json({ ok: true, results });
 });
 
-// DATA RECONCILIATION — recover orphaned local records
-// ═══════════════════════════════════════════════════════════════
 app.post("/api/reconcile", requireAuth, async (req, res) => {
   const { table, localData } = req.body;
   if (!table || !Array.isArray(localData)) return res.status(400).json({ error: "Need table name and localData array" });
@@ -4035,7 +3377,8 @@ app.post("/api/reconcile", requireAuth, async (req, res) => {
   }
 });
 
-// GLOBAL ERROR HANDLER — catch-all, always returns JSON
+// ═══════════════════════════════════════════════════════════════
+// GLOBAL ERROR HANDLER
 // ═══════════════════════════════════════════════════════════════
 app.use((err, req, res, next) => {
   console.error('💥 Express error:', err.message);
@@ -4043,7 +3386,7 @@ app.use((err, req, res, next) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// MEMORY MONITORING — detect leaks before they crash
+// MEMORY MONITORING
 // ═══════════════════════════════════════════════════════════════
 const memoryLog = [];
 const MAX_MEMORY_LOG = 120;
@@ -4069,7 +3412,6 @@ setInterval(() => {
   if (snap.heapUsed > 400) {
     console.error(`🚨 HIGH MEMORY: heap=${snap.heapUsed}MB rss=${snap.rss}MB ws=${snap.wsClients}`);
   }
-  // v9.05: Force GC at 500MB to prevent OOM
   if (snap.heapUsed > 500 && global.gc) {
     console.warn(`🧹 Forcing GC at ${snap.heapUsed}MB heap...`);
     try { global.gc(); } catch {}
@@ -4082,7 +3424,7 @@ setInterval(() => {
 }, 60000);
 
 // ═══════════════════════════════════════════════════════════════
-// ADMIN DIAGNOSTICS — live health + downloadable logs
+// ADMIN DIAGNOSTICS
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
   const snap = getMemorySnapshot();
@@ -4094,7 +3436,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
       recentAudit.push({ file: f, entries: lines.map(l => { try { return JSON.parse(l); } catch { return l; } }) });
     }
   } catch {}
-  // Backup status
+
   let backupInfo = { count: 0, latest: null, oldest: null };
   try {
     if (fs.existsSync(BACKUP_DIR)) {
@@ -4104,7 +3446,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
       if (dirs.length > 1) backupInfo.oldest = dirs[dirs.length - 1];
     }
   } catch {}
-  // v9.06: Snapshot info
+
   let snapshotInfo = { count: 0, latest: null };
   try {
     if (fs.existsSync(SNAPSHOT_DIR)) {
@@ -4118,7 +3460,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
     server: { version: VERSION, uptime: Math.round(process.uptime()), uptimeFormatted: `${Math.floor(process.uptime()/3600)}h ${Math.floor((process.uptime()%3600)/60)}m`, startedAt: new Date(Date.now()-process.uptime()*1000).toISOString(), nodeVersion: process.version, pid: process.pid, crashes: crashCount, recentCrashes: CRASH_LOG.slice(-10) },
     memory: snap, memoryHistory: memoryLog.slice(-30),
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
-    telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
+    telegram: { botActive: !!bot, pollingErrors: pollingErrorCount },
     security: { bannedIPs: [...ipBanMap.entries()].filter(([,v]) => v.banned).map(([ip, v]) => ({ ip, bannedAt: new Date(v.bannedAt).toISOString(), count: v.count })), blockedLogEntries: blockedRequestLog.size },
     backups: backupInfo,
     snapshots: snapshotInfo,
@@ -4133,7 +3475,7 @@ app.get("/api/admin/logs/download", requireAdmin, (req, res) => {
     server: { version: VERSION, uptime: process.uptime(), pid: process.pid, node: process.version },
     memoryNow: getMemorySnapshot(), memoryHistory: memoryLog,
     connections: { wsClients: wsClients.size, sessions: activeSessions.size },
-    telegram: { active: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 0 },
+    telegram: { active: !!bot, pollingErrors: pollingErrorCount },
   };
   try {
     const files = fs.readdirSync(AUDIT_DIR).sort().reverse().slice(0, 7);
@@ -4148,7 +3490,7 @@ app.get("/api/admin/logs/download", requireAdmin, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// GRACEFUL SHUTDOWN — flush data before dying
+// GRACEFUL SHUTDOWN
 // ═══════════════════════════════════════════════════════════════
 function gracefulShutdown(signal) {
   console.log(`\n🛑 ${signal} — graceful shutdown...`);
@@ -4164,7 +3506,7 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // ═══════════════════════════════════════════════════════════════
-// 14. START SERVER (HTTP + WebSocket on same port)
+// 14. START SERVER
 // ═══════════════════════════════════════════════════════════════
 
 server.listen(PORT, "0.0.0.0", () => {
@@ -4181,8 +3523,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
 
-  // Initial external sync on startup
   setTimeout(() => syncExternalData(), 3000);
-  // Sync every 15 minutes
   setInterval(() => syncExternalData(), 15 * 60 * 1000);
 });
