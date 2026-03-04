@@ -2325,138 +2325,82 @@ app.get("/api/health", (req, res) => {
 // 13. TELEGRAM BOT
 // ═══════════════════════════════════════════════════════════════
 
-function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Telegram notification skipped (no token configured)");
-    return;
-  }
-
-  const postData = JSON.stringify({ chat_id: chatId, text: message });
-
-  const options = {
-    hostname: 'api.telegram.org',
-    port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-  };
-
-  const req = https.request(options, (res) => {
-    let d = '';
-    res.on('data', c => d += c);
-    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Telegram error:", d); });
-  });
-
-  req.on('error', err => console.error("❌ Telegram error:", err.message));
-  req.write(postData);
-  req.end();
-}
-
 function formatOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `🆕 NEW PAYMENT ADDED 💰\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n👤 Opened by: ${p.openBy || "Unknown"}\nStatus: ${p.status || "Open"}`;
 }
-
 function formatApprovedToPayMessage(p) {
   return `🔄 Payment (Aff ${p.invoice}) status → Approved to pay by ${p.openBy || "Y Admin"}`;
 }
-
-function sendApprovedToPayNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
-  const message = formatApprovedToPayMessage(p);
-  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
-  const options = {
-    hostname: 'api.telegram.org', port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-  };
-  const req = https.request(options, (res) => {
-    let d = ''; res.on('data', c => d += c);
-    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Approved to pay notification error:", d); else console.log("✅ Approved to pay notification sent for invoice:", p.invoice); });
-  });
-  req.on('error', err => console.error("❌ Approved to pay notification error:", err.message));
-  req.write(postData); req.end();
-}
-
-function sendOpenPaymentNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
-  const message = formatOpenPaymentMessage(p);
-  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
-  const options = {
-    hostname: 'api.telegram.org', port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-  };
-  const req = https.request(options, (res) => {
-    let d = ''; res.on('data', c => d += c);
-    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Open payment notification error:", d); else console.log("✅ Open payment notification sent for invoice:", p.invoice); });
-  });
-  req.on('error', err => console.error("❌ Open payment notification error:", err.message));
-  req.write(postData); req.end();
-}
-
-// ── Brands group notifications ──
 function formatBrandNewOpenPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   const invoiceName = p.customerName || p.invoice || "Unknown";
   let walletCheck = "❓ Wallet check: Wallet unknown";
-  if (p.walletMatched && p.walletType) {
-    walletCheck = `✅ Wallet check: It's our ${p.walletType} wallet`;
-  } else if (p.walletMatched) {
-    const wType = p.blockchainType || "Unknown";
-    walletCheck = `✅ Wallet check: It's our ${wType} wallet`;
-  }
+  if (p.walletMatched && p.walletType) walletCheck = `✅ Wallet check: It's our ${p.walletType} wallet`;
+  else if (p.walletMatched) walletCheck = `✅ Wallet check: It's our ${p.blockchainType || "Unknown"} wallet`;
   return `💰 NEW CUSTOMER PAYMENT 💰\n\n📋 Invoice: #${invoiceName}\n💵 Amount: $${amount}\n🔗 Hash: ${p.paymentHash || "N/A"}\n\n${walletCheck}`;
 }
-
 function formatBrandPaymentReceivedMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `✅ PAYMENT RECEIVED ✅\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n🏷️ Brand: ${p.brand || "N/A"}\n👤 Paid by: ${p.openBy || "Unknown"}\n🔗 Payment Hash: ${p.paymentHash || "N/A"}`;
 }
-
-function sendBrandPaymentNotification(p) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
-  const message = formatBrandPaymentReceivedMessage(p);
-  const postData = JSON.stringify({ chat_id: BRANDS_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
-  const options = {
-    hostname: 'api.telegram.org', port: 443,
-    path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
-  };
-  const req = https.request(options, (res) => {
-    let d = ''; res.on('data', c => d += c);
-    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Brand payment received notification error:", d); else console.log(`✅ Brand payment RECEIVED notification sent for invoice: ${p.invoice}`); });
-  });
-  req.on('error', err => console.error("❌ Brand payment notification error:", err.message));
-  req.write(postData); req.end();
-}
-
-// ── Affiliate group notifications ──
 function formatAffiliateNewPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${p.invoice}\n💵 Amount: $${amount}\n👤 Opened by: ${p.openBy || "Unknown"}\nStatus: ${p.status || "Open"}`;
 }
-
 function formatAffiliatePaidPaymentMessage(p) {
   const amount = Number(p.amount || 0).toLocaleString("en-US");
   return `💰 PAYMENT ${p.invoice} marked as PAID 💰\n\n📋 Invoice: #${p.invoice}\n💵 Amount: $${amount}\n👤 Paid by: ${p.openBy || "Unknown"}\nPayment Hash: ${p.paymentHash || "N/A"}`;
 }
 
-function sendAffiliatePaymentNotification(p, isPaid = false) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) return;
-  const message = isPaid ? formatAffiliatePaidPaymentMessage(p) : formatAffiliateNewPaymentMessage(p);
-  const postData = JSON.stringify({ chat_id: OPEN_PAYMENT_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
+// ── Shared Telegram HTTPS sender (robust: timeout, empty-body, network errors) ──
+function sendTelegramHttps(chatId, text, label) {
+  if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE") return;
+  if (!chatId || chatId === "0") {
+    console.log(`⚠️ ${label} notification skipped: chat ID not configured`);
+    return;
+  }
+  const postData = JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" });
   const options = {
     hostname: 'api.telegram.org', port: 443,
     path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) }
+    headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) },
+    timeout: 15000
   };
   const req = https.request(options, (res) => {
     let d = ''; res.on('data', c => d += c);
-    res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Affiliate payment notification error:", d); else console.log(`✅ Affiliate payment notification sent for invoice: ${p.invoice} (${isPaid ? 'paid' : 'new'})`); });
+    res.on('end', () => {
+      if (res.statusCode !== 200) {
+        console.log(`❌ ${label} notification error: ${d ? d.slice(0, 200) : 'HTTP ' + res.statusCode}`);
+      } else {
+        console.log(`✅ ${label} notification sent`);
+      }
+    });
   });
-  req.on('error', err => console.error("❌ Affiliate payment notification error:", err.message));
+  req.on('timeout', () => { console.log(`❌ ${label} notification error: request timed out`); req.destroy(); });
+  req.on('error', err => console.error(`❌ ${label} notification error:`, err.message || err.code || String(err)));
   req.write(postData); req.end();
+}
+
+function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
+  sendTelegramHttps(chatId, message, "Telegram");
+}
+
+function sendApprovedToPayNotification(p) {
+  sendTelegramHttps(OPEN_PAYMENT_GROUP_CHAT_ID, formatApprovedToPayMessage(p), `ApprovedToPay[${p.invoice}]`);
+}
+
+function sendOpenPaymentNotification(p) {
+  sendTelegramHttps(OPEN_PAYMENT_GROUP_CHAT_ID, formatOpenPaymentMessage(p), `OpenPayment[${p.invoice}]`);
+}
+
+function sendBrandPaymentNotification(p) {
+  sendTelegramHttps(BRANDS_GROUP_CHAT_ID, formatBrandPaymentReceivedMessage(p), `BrandPayment[${p.invoice}]`);
+}
+
+function sendAffiliatePaymentNotification(p, isPaid = false) {
+  const msg = isPaid ? formatAffiliatePaidPaymentMessage(p) : formatAffiliateNewPaymentMessage(p);
+  sendTelegramHttps(OPEN_PAYMENT_GROUP_CHAT_ID, msg, `AffiliatePayment[${p.invoice}/${isPaid ? 'paid' : 'new'}]`);
 }
 
 // ── CRG Deals notifications ──
@@ -2544,35 +2488,58 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     }, 5000);
 
     let lastPollingRestart = 0;
+    let pollingBackoffMs = 5000;           // starts at 5 s, doubles each time
+    const POLLING_MAX_BACKOFF = 300000;    // caps at 5 min
     const POLLING_RESTART_COOLDOWN = 30000;
+    let pollingRestartTimer = null;
+
+    // Helper: stop → wait → start with backoff
+    function schedulePollingRestart(reason) {
+      if (pollingRestartTimer) return; // already scheduled
+      const delay = pollingBackoffMs;
+      pollingBackoffMs = Math.min(pollingBackoffMs * 2, POLLING_MAX_BACKOFF);
+      console.log(`⏳ Scheduling Telegram polling restart in ${delay / 1000}s (reason: ${reason})`);
+      pollingRestartTimer = setTimeout(() => {
+        pollingRestartTimer = null;
+        bot.stopPolling()
+          .catch(() => {})
+          .then(() => bot.startPolling())
+          .then(() => {
+            console.log("✅ Telegram polling restarted");
+            pollingErrorCount = 0;
+            pollingBackoffMs = 5000; // reset backoff on success
+            lastPollingRestart = Date.now();
+          })
+          .catch(e => {
+            console.error("❌ Polling restart failed:", e.message);
+            schedulePollingRestart("restart-failed");
+          });
+      }, delay);
+    }
 
     bot.on('polling_error', (error) => {
       pollingErrorCount++;
-      const now = Date.now();
-      console.log(`⚠️ Telegram polling error #${pollingErrorCount}: ${error.code || error.message}`);
+      const code = error.code || 'UNKNOWN';
+      const msg  = error.message || String(error);
 
-      if (error.code === 'ETELEGRAM' || error.message.includes('Forbidden')) {
-        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) return;
-        lastPollingRestart = now;
-        bot.stopPolling().then(() => {
-          console.log("⏹️ Polling stopped, restarting...");
-          return bot.startPolling();
-        }).then(() => console.log("✅ Telegram polling restarted"))
-          .catch(err => console.error("❌ Failed to restart polling:", err.message));
-        pollingErrorCount = 0;
+      // Suppress excessive log spam — only log first, then every 5th
+      if (pollingErrorCount === 1 || pollingErrorCount % 5 === 0) {
+        console.log(`⚠️ Telegram polling error #${pollingErrorCount}: ${code} — ${msg.slice(0, 120)}`);
+      }
+
+      // EFATAL = network-level failure (DNS, ECONNREFUSED, ETIMEDOUT, etc.)
+      // ETELEGRAM = Telegram API error (Forbidden, 409 Conflict, etc.)
+      // Both need a stop-and-restart with backoff, not an instant retry.
+      if (code === 'EFATAL' || code === 'ETELEGRAM' || msg.includes('Forbidden') || msg.includes('Conflict')) {
+        if (Date.now() - lastPollingRestart < POLLING_RESTART_COOLDOWN) return;
+        schedulePollingRestart(code);
         return;
       }
 
+      // Any other sustained error — restart after 10 consecutive hits
       if (pollingErrorCount >= 10) {
-        if (now - lastPollingRestart < POLLING_RESTART_COOLDOWN) { pollingErrorCount = 0; return; }
-        lastPollingRestart = now;
-        pollingErrorCount = 0;
-        bot.stopPolling().then(() => {
-          setTimeout(() => {
-            bot.startPolling().then(() => console.log("✅ Telegram polling restarted"))
-              .catch(e => console.error("❌ Polling restart failed:", e.message));
-          }, 5000);
-        }).catch(() => {});
+        if (Date.now() - lastPollingRestart < POLLING_RESTART_COOLDOWN) { pollingErrorCount = 0; return; }
+        schedulePollingRestart(`${code}×10`);
       }
     });
 
