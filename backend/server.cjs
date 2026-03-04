@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10";
+const VERSION = "10.1";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1093,15 +1093,22 @@ async function nightlyDedup() {
     const dc = readJSON("daily-cap.json", []);
     const seen = new Map();
     dc.forEach(r => {
-      // v10.0: Include agent in key — matches save-time dedup
-      const key = `${(r.date || '').trim()}|${(r.agent || '').trim().toLowerCase()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
-      const existing = seen.get(key);
-      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      // v10.1 FIX: Use record ID as primary dedup key
+      if (r.id && seen.has(r.id)) {
+        const existing = seen.get(r.id);
+        if (Object.keys(r).length > Object.keys(existing).length) seen.set(r.id, r);
+      } else if (r.id) {
+        seen.set(r.id, r);
+      } else {
+        // Legacy record without ID — use composite key
+        const fallbackKey = `noid|${(r.date || '').trim()}|${(r.agent || '').trim().toLowerCase()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+        if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
+      }
     });
     const deduped = Array.from(seen.values());
     if (deduped.length < dc.length) {
       const removed = dc.length - deduped.length;
-      await lockedWrite("daily-cap.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      await lockedWrite("daily-cap.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} exact duplicates` });
       totalRemoved += removed;
     }
   } catch (err) { console.error("⚠️ Dedup daily-cap error:", err.message); }
@@ -1111,14 +1118,22 @@ async function nightlyDedup() {
     const crg = readJSON("crg-deals.json", []);
     const seen = new Map();
     crg.forEach(r => {
-      const key = `${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
-      const existing = seen.get(key);
-      if (!existing || Object.keys(r).length > Object.keys(existing).length) seen.set(key, r);
+      // v10.1 FIX: Use record ID as primary dedup key — composite keys collapsed different legitimate deals
+      if (r.id && seen.has(r.id)) {
+        const existing = seen.get(r.id);
+        if (Object.keys(r).length > Object.keys(existing).length) seen.set(r.id, r);
+      } else if (r.id) {
+        seen.set(r.id, r);
+      } else {
+        // Legacy record without ID — use composite key
+        const fallbackKey = `noid|${(r.date || '').trim()}|${(r.affiliate || '').trim().toLowerCase()}|${(r.brokerCap || '').trim().toLowerCase()}`;
+        if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
+      }
     });
     const deduped = Array.from(seen.values());
     if (deduped.length < crg.length) {
       const removed = crg.length - deduped.length;
-      await lockedWrite("crg-deals.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} duplicates` });
+      await lockedWrite("crg-deals.json", deduped, { action: "auto-dedup", user: "system", details: `Nightly cleanup: removed ${removed} exact duplicates` });
       totalRemoved += removed;
     }
   } catch (err) { console.error("⚠️ Dedup crg-deals error:", err.message); }
@@ -1309,6 +1324,12 @@ function rateLimit(req, res, next) {
 }
 setInterval(() => { const now = Date.now(); for (const [ip, e] of rateLimitMap) { if (now - e.windowStart > RATE_LIMIT_WINDOW * 2) rateLimitMap.delete(ip); } }, 5 * 60 * 1000);
 
+// v10.1: Auto-ban IPs that hit blocked paths repeatedly
+const ipBanMap = new Map(); // ip → { count, firstSeen, banned }
+const IP_BAN_THRESHOLD = 15; // 15 blocked requests = auto-ban
+const IP_BAN_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+const IP_BAN_WINDOW = 60 * 60 * 1000; // Count within 1 hour
+
 // Security headers
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -1323,10 +1344,49 @@ app.use((req, res, next) => {
 app.use('/api/', rateLimit);
 
 // Block attack paths
+// v10.1: Rate-limit audit logging for repeated blocked requests (same IP+path)
+const blockedRequestLog = new Map(); // key="ip|path" → lastLoggedAt
+const BLOCKED_LOG_COOLDOWN = 3600000; // Only log same IP+path combo once per hour
+
 app.use((req, res, next) => {
-  const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc'];
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  
+  // v10.1: Check if IP is auto-banned
+  const banEntry = ipBanMap.get(ip);
+  if (banEntry && banEntry.banned) {
+    if (Date.now() - banEntry.bannedAt < IP_BAN_DURATION) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+    ipBanMap.delete(ip); // Ban expired
+  }
+  
+  const blocked = ['/wp-admin', '/wp-login', '/.env', '/phpinfo', '/admin.php', '/.git', '/config', '/xmlrpc', '/@fs/', '/../', '/..%2f', '/.htaccess', '/web.config', '/composer.json', '/package.json'];
   if (blocked.some(b => req.path.toLowerCase().includes(b))) {
-    writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${req.ip}`);
+    const logKey = `${ip}|${req.path}`;
+    const now = Date.now();
+    const lastLogged = blockedRequestLog.get(logKey) || 0;
+    if (now - lastLogged > BLOCKED_LOG_COOLDOWN) {
+      writeAuditLog("security", "blocked_request", "unknown", `Path: ${req.path} IP: ${ip}`);
+      blockedRequestLog.set(logKey, now);
+    }
+    // v10.1: Track and auto-ban aggressive scanners (not localhost)
+    if (ip !== '127.0.0.1' && ip !== '::1') {
+      const entry = ipBanMap.get(ip) || { count: 0, firstSeen: now };
+      if (now - entry.firstSeen > IP_BAN_WINDOW) { entry.count = 0; entry.firstSeen = now; }
+      entry.count++;
+      if (entry.count >= IP_BAN_THRESHOLD) {
+        entry.banned = true; entry.bannedAt = now;
+        writeAuditLog("security", "ip_auto_banned", "system", `IP ${ip} banned for 24h after ${entry.count} blocked requests`);
+        console.log(`🛡️ AUTO-BAN: ${ip} (${entry.count} blocked requests in ${Math.round((now - entry.firstSeen)/1000)}s)`);
+      }
+      ipBanMap.set(ip, entry);
+    }
+    // Cleanup old entries every so often
+    if (blockedRequestLog.size > 500) {
+      for (const [k, t] of blockedRequestLog) {
+        if (now - t > BLOCKED_LOG_COOLDOWN * 2) blockedRequestLog.delete(k);
+      }
+    }
     return res.status(403).json({ error: "Forbidden" });
   }
   next();
@@ -1668,7 +1728,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
   if (success) {
     broadcastUpdate("payments", merged, [...deleteSet]);
-    res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true });
+    res.json({ ok: true, count: merged.length, version: getVersion("payments"), merged: true, deletedAcknowledged: [...deleteSet] });
   } else {
     res.status(500).json({ error: "Write failed — data not saved" });
   }
@@ -1823,41 +1883,48 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     // including brokerCap, so different broker deals are preserved.
     let deduped = merged;
     if (ep === "daily-cap") {
+      // v10.1 FIX: Use record ID as primary dedup key — composite keys were too aggressive
       const seen = new Map();
       for (const r of merged) {
-        // v10.0: Include broker in key to avoid merging different broker entries
-        const key = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
-        if (seen.has(key)) {
-          // Keep the one with more data (higher cap values)
-          const existing = seen.get(key);
+        if (r.id && seen.has(r.id)) {
+          // Same ID appeared twice — keep the one with more data
+          const existing = seen.get(r.id);
           const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
           const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
-          if (newTotal > existTotal) { seen.set(key, r); }
+          if (newTotal > existTotal) { seen.set(r.id, r); }
+        } else if (r.id) {
+          seen.set(r.id, r);
         } else {
-          seen.set(key, r);
+          // Record has no ID — use composite key as fallback
+          const fallbackKey = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
+          if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
         }
       }
       deduped = Array.from(seen.values());
-      if (deduped.length < merged.length) console.log(`🧹 DEDUP [daily-cap]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} duplicates)`);
+      if (deduped.length < merged.length) console.log(`🧹 DEDUP [daily-cap]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} exact duplicates)`);
     }
     if (ep === "crg-deals") {
-      // v10.0 FIX: Include brokerCap in key — matches nightly dedup
-      // OLD BUG: key was `date__affiliate` which collapsed different broker deals into one
+      // v10.1 FIX: Use record ID as primary dedup key — composite keys were collapsing
+      // different legitimate deals (same affiliate+broker+date but different caps/funnels).
+      // Now: only dedup truly identical records (same ID), never merge different records.
       const seen = new Map();
       for (const r of merged) {
-        const key = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
-        if (seen.has(key)) {
-          // Keep the one with more data (has capReceived, started, etc.)
-          const existing = seen.get(key);
+        if (r.id && seen.has(r.id)) {
+          // Same ID appeared twice — keep the one with more data
+          const existing = seen.get(r.id);
           const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
           const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
-          if (newScore > existScore) { seen.set(key, r); }
+          if (newScore > existScore) { seen.set(r.id, r); }
+        } else if (r.id) {
+          seen.set(r.id, r);
         } else {
-          seen.set(key, r);
+          // Record has no ID — use composite key as fallback
+          const fallbackKey = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}|${(r.cap || "").toString().trim()}`;
+          if (!seen.has(fallbackKey)) seen.set(fallbackKey, r);
         }
       }
       deduped = Array.from(seen.values());
-      if (deduped.length < merged.length) console.log(`🧹 DEDUP [crg-deals]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} duplicates)`);
+      if (deduped.length < merged.length) console.log(`🧹 DEDUP [crg-deals]: ${merged.length} → ${deduped.length} (removed ${merged.length - deduped.length} exact duplicates)`);
     }
     
     // CRG DEALS NOTIFICATIONS: Detect new deals and send Telegram notification
@@ -1887,12 +1954,12 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 
     const success = await lockedWrite(file, deduped, {
       action: "update", user: userEmail || "unknown", 
-      details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted${clientResurrectionBlocked > 0 ? `, ${clientResurrectionBlocked} resurrection_blocked` : ''}) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length ? ' ⚠️SHRUNK' : ''}`
+      details: `[${ep}] ${deduped.length} records (merge: +${clientNew} new, ${serverOnly.length} preserved, ${deleteSet.size} deleted${clientResurrectionBlocked > 0 ? `, ${clientResurrectionBlocked} resurrection_blocked` : ''}) | before: server=${serverData.length} client=${records.length} → after: ${deduped.length}${deduped.length < serverData.length && deduped.length < serverData.length - deleteSet.size ? ' ⚠️SHRUNK' : ''}`
     });
 
     if (success) {
       broadcastUpdate(ep, deduped, [...deleteSet]);
-      res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true });
+      res.json({ ok: true, count: deduped.length, version: getVersion(ep), merged: true, deletedAcknowledged: [...deleteSet] });
     } else {
       res.status(500).json({ error: "Write failed" });
     }
@@ -3496,18 +3563,22 @@ app.post("/api/admin/backup", requireAdmin, async (req, res) => {
 app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   const results = {};
   
-  // Deduplicate daily-cap: one record per agent per affiliate per date per broker
+  // Deduplicate daily-cap: use record ID as primary key
   const dc = readJSON("daily-cap.json", []);
   const dcSeen = new Map();
   for (const r of dc) {
-    // v10.0 FIX: Include affiliate and brokerCap — matches save-time and nightly dedup
-    const key = `${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
-    if (dcSeen.has(key)) {
-      const existing = dcSeen.get(key);
+    // v10.1 FIX: Use record ID — composite keys were too aggressive
+    if (r.id && dcSeen.has(r.id)) {
+      const existing = dcSeen.get(r.id);
       const existTotal = (parseInt(existing.affiliates) || 0) + (parseInt(existing.brands) || 0);
       const newTotal = (parseInt(r.affiliates) || 0) + (parseInt(r.brands) || 0);
-      if (newTotal > existTotal) dcSeen.set(key, r);
-    } else { dcSeen.set(key, r); }
+      if (newTotal > existTotal) dcSeen.set(r.id, r);
+    } else if (r.id) {
+      dcSeen.set(r.id, r);
+    } else {
+      const fallbackKey = `noid|${(r.date || '').trim()}|${(r.agent || "").trim().toLowerCase()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
+      if (!dcSeen.has(fallbackKey)) dcSeen.set(fallbackKey, r);
+    }
   }
   const dcDeduped = Array.from(dcSeen.values());
   if (dcDeduped.length < dc.length) {
@@ -3516,18 +3587,22 @@ app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
   }
   results["daily-cap"] = { before: dc.length, after: dcDeduped.length, removed: dc.length - dcDeduped.length };
 
-  // Deduplicate crg-deals: one record per affiliate per date per broker
+  // Deduplicate crg-deals: use record ID as primary key
   const crg = readJSON("crg-deals.json", []);
   const crgSeen = new Map();
   for (const r of crg) {
-    // v10.0 FIX: Include brokerCap — same key as save-time and nightly dedup
-    const key = `${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
-    if (crgSeen.has(key)) {
-      const existing = crgSeen.get(key);
+    // v10.1 FIX: Use record ID — composite keys were collapsing different legitimate deals
+    if (r.id && crgSeen.has(r.id)) {
+      const existing = crgSeen.get(r.id);
       const existScore = (existing.started ? 1 : 0) + (parseInt(existing.capReceived) || 0) + (parseInt(existing.ftd) || 0);
       const newScore = (r.started ? 1 : 0) + (parseInt(r.capReceived) || 0) + (parseInt(r.ftd) || 0);
-      if (newScore > existScore) crgSeen.set(key, r);
-    } else { crgSeen.set(key, r); }
+      if (newScore > existScore) crgSeen.set(r.id, r);
+    } else if (r.id) {
+      crgSeen.set(r.id, r);
+    } else {
+      const fallbackKey = `noid|${(r.date || '').trim()}|${(r.affiliate || "").trim().toLowerCase()}|${(r.brokerCap || "").trim().toLowerCase()}`;
+      if (!crgSeen.has(fallbackKey)) crgSeen.set(fallbackKey, r);
+    }
   }
   const crgDeduped = Array.from(crgSeen.values());
   if (crgDeduped.length < crg.length) {
@@ -3644,6 +3719,7 @@ app.get("/api/admin/diagnostics", requireAdmin, (req, res) => {
     memory: snap, memoryHistory: memoryLog.slice(-30),
     connections: { webSocketClients: wsClients.size, activeSessions: activeSessions.size, rateLimitEntries: rateLimitMap.size, loginAttempts: loginAttempts.size },
     telegram: { botActive: !!bot, pollingErrors: typeof pollingErrorCount !== 'undefined' ? pollingErrorCount : 'N/A' },
+    security: { bannedIPs: [...ipBanMap.entries()].filter(([,v]) => v.banned).map(([ip, v]) => ({ ip, bannedAt: new Date(v.bannedAt).toISOString(), count: v.count })), blockedLogEntries: blockedRequestLog.size },
     backups: backupInfo,
     snapshots: snapshotInfo,
     data: { payments: readJSON("payments.json",[]).length, customerPayments: readJSON("customer-payments.json",[]).length, crgDeals: readJSON("crg-deals.json",[]).length, dailyCap: readJSON("daily-cap.json",[]).length, offers: readJSON("deals.json",[]).length, telegramOffers: readJSON("offers.json",[]).length, wallets: readJSON("wallets.json",[]).length },
@@ -3693,14 +3769,14 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n╔══════════════════════════════════════════════╗`);
-  console.log(`║  🚀 Blitz CRM Server v${VERSION}                  ║`);
+  console.log(`║  🚀 Blitz CRM Server v${VERSION}                ║`);
   console.log(`║  📡 HTTP + WebSocket on port ${PORT}            ║`);
   console.log(`║  💾 Data: ${DATA_DIR.slice(-30).padEnd(30)}    ║`);
   console.log(`║  📦 Hourly backups + daily snapshots (7-day)  ║`);
   console.log(`║  📋 Audit: 30-day rolling log                ║`);
   console.log(`║  🔒 WAL atomic writes + concurrency queue     ║`);
-  console.log(`║  🛡️  Input sanitization + XSS protection      ║`);
-  console.log(`║  🧹 Nightly auto-dedup at 03:00              ║`);
+  console.log(`║  🛡️  Auto-ban attackers + path traversal block ║`);
+  console.log(`║  🧹 ID-based dedup (no more record collapse)  ║`);
   console.log(`║  🪦 Tombstone system (7-day anti-resurrect)   ║`);
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
