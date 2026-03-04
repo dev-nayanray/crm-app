@@ -336,12 +336,9 @@ function extractCustomerName(messageText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v9.51: OFFER MESSAGE PARSER — handles all Telegram offer formats
-// Supports: compact ("NL nl Funnel 1500+15 gg"), multi-geo single-line
-// ("IN 700+4% GR 1250+10% ..."), labeled ("Geo: BEfr / Funnel: X")
-// v9.51 FIX: Deal Type awareness — CPA/CPL/CPS etc are NOT geo codes
-// v9.51 FIX: All CRM table fields populated (Deal Type, Funnels, Open By, Date)
+// v10.2: OFFER MESSAGE PARSER — Fixed price/CRG/source/funnel extraction
 // ═══════════════════════════════════════════════════════════════
+
 const OFFER_GEO_CODES = new Set([
   'NL','BE','DE','FR','UK','AU','MY','SI','HR','ES','IT','GR','RO','IN','CA','AE',
   'AT','CH','CZ','PL','PT','SE','NO','DK','FI','IE','IL','ZA','NZ','SG','HK','JP',
@@ -351,7 +348,6 @@ const OFFER_GEO_CODES = new Set([
 const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi','native']);
 const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic)/i;
 
-// v9.51: Deal type keywords — these are NOT geo codes
 const DEAL_TYPE_KEYWORDS = new Set([
   'CPA', 'CPL', 'CPS', 'CPC', 'CPM', 'CPI', 'CPO', 'CPR',
   'REVSHARE', 'REV', 'HYBRID', 'FLAT', 'FTD', 'SOI', 'DOI',
@@ -361,46 +357,127 @@ const DEAL_TYPE_KEYWORDS = new Set([
 function parseOfferMessageV2(messageText) {
   if (!messageText) return { affiliateId: null, offers: [] };
   const fullText = messageText.trim();
-  const headerMatch = fullText.match(/^offers?\s*:\s*(\d+)/i);
+  
+  // Match header: "Offer:" or "Offers:" followed by optional ID
+  const headerMatch = fullText.match(/^offers?\s*:\s*(\d+)?/i);
   if (!headerMatch) return { affiliateId: null, offers: [] };
-  const affiliateId = headerMatch[1];
+  
+  let affiliateId = headerMatch[1] || null;
   let remaining = fullText.slice(headerMatch[0].length).trim();
-  if (/(?:^|\n)\s*Geo\s*:/im.test(remaining)) return { affiliateId, offers: parseOfferLabeledFormat(remaining) };
+  
+  // Check if remaining contains labeled format (Country:/Geo:/Price: etc)
+  if (/(?:^|\n)\s*(?:geo|country)\s*:/im.test(remaining)) {
+    const result = parseOfferLabeledFormat(remaining);
+    if (result.affiliateId) affiliateId = affiliateId || result.affiliateId;
+    return { affiliateId, offers: result.offers };
+  }
+  
+  // Check for labeled format with Affiliate ID on separate line
+  const affLineMatch = remaining.match(/^(?:affiliate\s*(?:id)?)\s*:\s*(\d+)$/im);
+  if (affLineMatch && !affiliateId) {
+    affiliateId = affLineMatch[1];
+    remaining = remaining.replace(affLineMatch[0], '').trim();
+  }
+  
+  // Extract shared Source and Funnels if labeled
   let sharedFunnels = '', sharedSource = '';
   const sourceMatch = remaining.match(/\bSource\s*:\s*([^\n]+?)(?=\s{2,}Funnels?\s*:|$)/i) || remaining.match(/\bSource\s*:\s*(.+?)$/im);
   if (sourceMatch) { sharedSource = sourceMatch[1].trim(); remaining = remaining.replace(sourceMatch[0], ' ').trim(); }
   const funnelMatch = remaining.match(/\bFunnels?\s*:\s*(.+?)(?=\s{2,}Source\s*:|$)/i) || remaining.match(/\bFunnels?\s*:\s*(.+?)$/im);
   if (funnelMatch) { sharedFunnels = funnelMatch[1].trim().replace(/__/g, '').replace(/\s*\/\s*/g, ' / '); remaining = remaining.replace(funnelMatch[0], ' ').trim(); }
-  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source)\s*:/i.test(l));
+  
+  // Parse compact format
+  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|affiliate)\s*:/i.test(l));
   const offers = [];
   for (const line of lines) offers.push(...offerSplitLine(line));
+  
+  // Apply shared source/funnels to offers that don't have them
   for (const o of offers) {
     if (!o.funnel && sharedFunnels) o.funnel = sharedFunnels;
     if (!o.source && sharedSource) o.source = sharedSource;
   }
+  
   return { affiliateId, offers };
 }
 
 function parseOfferLabeledFormat(text) {
   const offers = [];
-  const blocks = text.split(/\n\s*\n/).map(b => b.trim()).filter(b => b);
-  for (const block of blocks) {
-    const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
-    const extra = [];
-    for (const line of block.split('\n').map(l => l.trim()).filter(l => l)) {
-      const gM = line.match(/^geo\s*:\s*(.+)$/i); if (gM) { o.country = offerExpandGeo(gM[1].trim()); continue; }
-      const fM = line.match(/^funnel\s*:\s*(.+)$/i); if (fM) { o.funnel = fM[1].trim().replace(/__/g,''); continue; }
-      const pM = line.match(/^price\s*:\s*(.+)$/i); if (pM) { o.price = pM[1].trim(); continue; }
-      const sM = line.match(/^source\s*:\s*(.+)$/i); if (sM) { o.source = sM[1].trim(); continue; }
-      const cM = line.match(/^cr\s*:?\s*(\d+%?)$/i); if (cM) { o.crRate = cM[1]; continue; }
-      const dtM = line.match(/^(?:deal\s*type|type)\s*:\s*(.+)$/i); if (dtM) { o.dealType = dtM[1].trim(); continue; }
-      const dM = line.match(/(\d+%)\s*deduct/i) || line.match(/deduct(?:ion)?\s*(\d+%?)/i); if (dM) { o.deduction = dM[1]; continue; }
-      extra.push(line);
+  let currentOffer = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
+  let affiliateId = null;
+  
+  for (const line of text.split('\n').map(l => l.trim()).filter(l => l)) {
+    // Affiliate ID - global, not per-offer
+    const affM = line.match(/^affiliate\s*(?:id)?\s*:\s*(\d+)$/i);
+    if (affM) { affiliateId = affM[1]; continue; }
+    
+    // Country/Geo - starts a new offer if we already have one
+    const gM = line.match(/^(?:geo|country)\s*:\s*(.+)$/i);
+    if (gM) {
+      if (currentOffer.country) {
+        offers.push(currentOffer);
+        currentOffer = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
+      }
+      currentOffer.country = offerExpandGeo(gM[1].trim());
+      continue;
     }
-    if (extra.length) o.notes = extra.join('; ');
-    if (o.country) offers.push(o);
+    
+    // Funnel(s)
+    const fM = line.match(/^funnels?\s*:\s*(.+)$/i);
+    if (fM) { 
+      currentOffer.funnel = fM[1].trim().replace(/__/g,''); 
+      continue; 
+    }
+    
+    // Price (might have CRG embedded like "Price:1400 CRG:15%")
+    const pM = line.match(/^price\s*:\s*(.+)$/i);
+    if (pM) {
+      const priceLine = pM[1].trim();
+      // Check for embedded CRG
+      const crgMatch = priceLine.match(/CRG\s*:?\s*(\d+%?)/i);
+      if (crgMatch) {
+        currentOffer.crRate = crgMatch[1];
+        if (!currentOffer.dealType) currentOffer.dealType = 'CRG';
+      }
+      // Extract just the price number (handle $, commas)
+      const priceMatch = priceLine.match(/^\$?([\d,]+)/);
+      if (priceMatch) {
+        currentOffer.price = priceMatch[1].replace(/,/g, '');
+      }
+      continue;
+    }
+    
+    // CRG rate
+    const crgM = line.match(/^crg\s*:?\s*(\d+%?)$/i);
+    if (crgM) { 
+      currentOffer.crRate = crgM[1]; 
+      if (!currentOffer.dealType) currentOffer.dealType = 'CRG'; 
+      continue; 
+    }
+    
+    // Source
+    const sM = line.match(/^source\s*:\s*(.+)$/i);
+    if (sM) { currentOffer.source = sM[1].trim(); continue; }
+    
+    // Deal Type
+    const dtM = line.match(/^(?:deal\s*type|type)\s*:\s*(.+)$/i);
+    if (dtM) { currentOffer.dealType = dtM[1].trim(); continue; }
+    
+    // Deductions
+    const dM = line.match(/^deductions?\s*:\s*(.+)$/i);
+    if (dM) { currentOffer.deduction = dM[1].trim(); continue; }
+    
+    // Notes - unrecognized lines
+    if (line && !line.match(/^[\s]*$/)) {
+      currentOffer.notes = currentOffer.notes ? currentOffer.notes + '; ' + line : line;
+    }
   }
-  return offers;
+  
+  // Push the last offer if it has a country
+  if (currentOffer.country) {
+    offers.push(currentOffer);
+  }
+  
+  return { offers, affiliateId };
 }
 
 function offerExpandGeo(t) {
@@ -413,7 +490,6 @@ function offerExpandGeo(t) {
   return t;
 }
 
-// v9.51 FIX: Deal type keywords are NOT geo boundaries
 function offerIsGeoBoundary(word) {
   if (!word || !/^[A-Z]/.test(word)) return false;
   const upper = word.toUpperCase();
@@ -428,7 +504,6 @@ function offerIsGeoBoundary(word) {
   return false;
 }
 
-// v9.51 FIX: Deal type keywords are NOT geo codes
 function offerExtractGeo(word) {
   if (!word) return null;
   const upper = word.toUpperCase();
@@ -443,20 +518,22 @@ function offerExtractGeo(word) {
   return null;
 }
 
-// v10.0: Strip commas from words and handle comma-separated geos like "NL, SE"
 function offerSplitLine(line) {
   if (!line.trim()) return [];
   
   const words = line.split(/\s+/).filter(w => w);
   if (words.length === 0) return [];
   
-  // Strip trailing commas from words for geo matching
   const cleanWords = words.map(w => w.replace(/,+$/, ''));
   
-  const offers = []; let currentTokens = []; let currentOrigTokens = [];
+  const offers = []; 
+  let currentTokens = []; 
+  let currentOrigTokens = [];
+  
   for (let wi = 0; wi < cleanWords.length; wi++) {
     const word = cleanWords[wi];
     const origWord = words[wi];
+    
     if (offerIsGeoBoundary(word) && currentTokens.length > 0) {
       const hasGeoInCurrent = currentTokens.some(t => offerExtractGeo(t) !== null);
       if (hasGeoInCurrent) {
@@ -467,13 +544,14 @@ function offerSplitLine(line) {
         currentTokens.push(word);
         currentOrigTokens.push(origWord);
       }
-    } else { currentTokens.push(word); currentOrigTokens.push(origWord); }
+    } else { 
+      currentTokens.push(word); 
+      currentOrigTokens.push(origWord); 
+    }
   }
   if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens, currentOrigTokens));
   
-  // v10.0: Handle comma-separated geos sharing one offer (e.g. "NL, SE eng funnels CRG 1200$")
-  // If an offer has country but no price/funnel/dealType, it's a bare geo from comma-split
-  // Duplicate the next offer for this bare geo
+  // Handle comma-separated geos sharing one offer
   const finalOffers = [];
   for (let i = 0; i < offers.length; i++) {
     const o = offers[i];
@@ -490,15 +568,12 @@ function offerSplitLine(line) {
   return finalOffers;
 }
 
-// v10.0: Rewritten token parser — properly extracts dealType (CRG/CPA/CPL), crRate, funnels, source
-// origTokens = original words with commas preserved (for funnel names like "Senvix, Btc Apex")
 function offerParseTokens(tokens, origTokens) {
   const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   if (!tokens || tokens.length === 0) return o;
   
-  // Use clean tokens for matching, origTokens for funnel name output
   const cleaned = tokens.map(t => t.replace(/^,+|,+$/g, ''));
-  const orig = origTokens || tokens; // fallback if no origTokens provided
+  const orig = origTokens || tokens;
   let idx = 0;
 
   // Phase 1: Collect deal type words BEFORE the geo code
@@ -506,9 +581,10 @@ function offerParseTokens(tokens, origTokens) {
   while (idx < cleaned.length) {
     const geoInfo = offerExtractGeo(cleaned[idx]);
     if (geoInfo) break;
-    // v10.1: Also break on $-prefixed prices
-    if (/^\d+/.test(cleaned[idx]) && !DEAL_TYPE_KEYWORDS.has(cleaned[idx].toUpperCase())) break;
-    if (/^\$\d+/.test(cleaned[idx])) break;
+    // v10.2: Check for price-like tokens ($N, N$, just N) - these end deal type
+    if (/^\$?\d/.test(cleaned[idx]) && !DEAL_TYPE_KEYWORDS.has(cleaned[idx].toUpperCase())) break;
+    // v10.2: Check for percentage - these are CRG rate, not deal type
+    if (/^\d+%$/.test(cleaned[idx])) break;
     dealTypeParts.push(cleaned[idx]);
     idx++;
   }
@@ -520,7 +596,7 @@ function offerParseTokens(tokens, origTokens) {
     if (geoInfo) {
       o.country = geoInfo.lang ? geoInfo.geo+' '+geoInfo.lang : geoInfo.geo;
       idx++;
-      // Check for language code after geo (e.g. "AT de", "BE fr", "GCC eng")
+      // Check for language code after geo
       if (idx < cleaned.length) {
         const nxt = cleaned[idx].toLowerCase();
         if (OFFER_LANG_CODES.has(nxt) && !/^\d/.test(cleaned[idx]) && !/^[A-Z]{2,3}$/.test(cleaned[idx])) {
@@ -532,32 +608,19 @@ function offerParseTokens(tokens, origTokens) {
     }
   }
 
-  // Phase 3: Parse remaining tokens — extract funnels, price, deal type (CRG/CPA after geo), source, crRate
+  // Phase 3: Parse remaining tokens — CRITICAL ORDER: percentage BEFORE price
   const funnelParts = [];
   let foundDealTypeAfterGeo = false;
   
-  // v10.1 HELPER: Normalize a token that might be a price (strip $ prefix/suffix, handle €)
-  function normalizePrice(t) {
-    // "$1450" → "1450", "1450$" → "1450", "€1450" → "1450"
-    return t.replace(/^[$€£]/, '').replace(/[$€£]$/, '');
-  }
-  function isPriceToken(t) {
-    // Matches: "$1450", "1450$", "1450", "€900", "$1,450", "1400+15%"
-    const n = normalizePrice(t);
-    return /^\d/.test(n);
-  }
-  
   for (let i = idx; i < cleaned.length; i++) {
     const t = cleaned[i], tl = t.toLowerCase(), tu = t.toUpperCase();
-    const origToken = orig[i]; // Use original (with commas) for funnel names
+    const origToken = orig[i];
     
-    // Deal type keyword (CRG, CPA, CPL etc) — can appear before or after price
-    // Pattern: "Crg 1200$+12%" or "1200$ CRG" or "CRG - 900$+8%"
+    // Deal type keyword (CRG, CPA, CPL etc)
     if (DEAL_TYPE_KEYWORDS.has(tu)) {
       if (!o.dealType) {
         o.dealType = tu;
       } else if (o.price && !foundDealTypeAfterGeo) {
-        // Second deal type after price = notes (e.g. "1250$ CPA 20 Leads Test after that 65$ CPL")
         const remaining = tokens.slice(i).join(' ');
         o.notes = o.notes ? o.notes + '; ' + remaining : remaining;
         break;
@@ -566,65 +629,49 @@ function offerParseTokens(tokens, origTokens) {
       continue;
     }
     
-    // Skip dashes (e.g. "CRG - 900$")
+    // Skip dashes
     if (t === '-' || t === '–') continue;
     
-    // v10.1 FIX: After price is set, a percentage token (N%) is ALWAYS crRate
-    // Example: "1450 14%" → price=1450, crRate=14%
-    // Example: "$1450 14% Taboola" → price=1450, crRate=14%, source=Taboola
-    if (o.price && /^\d+%$/.test(t) && !o.crRate) {
+    // v10.2: CRG rate - standalone percentage (e.g., "14%", "15%")
+    // MUST CHECK THIS BEFORE PRICE since percentage starts with digit
+    if (/^\d+%$/.test(t) && !o.crRate) {
       o.crRate = t;
+      if (!o.dealType) o.dealType = 'CRG';
       continue;
     }
     
-    // v10.0: After price is set, small numbers (<=30) are CRG rate if followed by deal type keyword
-    // Example: "1450 10 CRG" → price=1450, crRate=10, dealType=CRG
-    if (o.price && /^\d+$/.test(t) && !o.crRate) {
-      const numVal = parseInt(t);
-      if (numVal <= 30) {
-        // Check if next token is a deal type keyword
-        if (i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
-          o.crRate = t;
-          continue;
-        }
-      }
-    }
-    
-    // Price: number optionally with $/€ prefix and +percentage
-    // v10.1 FIX: Handle "$1450", "€900", "1450$" as price tokens
-    if (!o.price && isPriceToken(t)) {
-      const normalized = normalizePrice(t);
-      const numVal = parseInt(normalized);
-      // Look ahead — if next token is a deal type keyword, this small number is the CRG rate
-      if (numVal <= 30 && i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
-        o.crRate = t;
-        continue;
-      }
-      // Otherwise treat as price
-      let ps = normalized;
+    // v10.2: Price - $N or N (but NOT N%)
+    if (!o.price && /^\$?\d/.test(t)) {
+      // Remove $ prefix and commas for clean number
+      let ps = t.replace(/^\$/, '').replace(/,/g, '');
+      
+      // Continue collecting tokens if they're part of price
       while (i+1 < cleaned.length) {
         const nx = cleaned[i+1];
-        const nxn = normalizePrice(nx);
         if (/^[\+\*]$/.test(nx)) { ps += nx; i++; }
         else if (/^[\+\*]\d+/.test(nx)) { ps += nx; i++; }
-        else if (/^\d+%?$/.test(nxn) && /[\+\*]$/.test(ps)) { ps += nxn; i++; }
+        else if (/^\d+%?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
         else break;
       }
-      o.price = ps.replace(/\s+/g, '');
-      // Extract CRG rate from price if it has +N% pattern (e.g. "1200$+12%")
+      o.price = ps;
+      
+      // Extract CRG rate from price if it has +N% pattern (e.g., "1200+12%")
       const crgMatch = o.price.match(/\+(\d+%?)$/);
       if (crgMatch) {
         o.crRate = crgMatch[1];
+        if (!o.dealType) o.dealType = 'CRG';
       }
       continue;
     }
+    
+    // Price continuation with +N%
     if (/^\+\d+%?$/.test(t)) { 
       if (o.price) { 
         o.price += t; 
-        // Extract CRG rate
         const crgMatch = t.match(/^\+(\d+%?)$/);
         if (crgMatch) {
           o.crRate = crgMatch[1];
+          if (!o.dealType) o.dealType = 'CRG';
         }
       } else o.price = t; 
       continue; 
@@ -634,17 +681,21 @@ function offerParseTokens(tokens, origTokens) {
     if (/deduct/i.test(t)) { const nx = cleaned[i+1]; if (nx && /^\d+%?$/.test(nx)) { o.deduction = nx; i++; } continue; }
     if (/^\d+%$/.test(t) && i+1 < cleaned.length && /deduct/i.test(cleaned[i+1])) { o.deduction = t; i++; continue; }
     
-    // CR rate standalone
-    if (/^cr$/i.test(t) && i+1 < cleaned.length && /^\d/.test(cleaned[i+1])) { o.crRate = cleaned[i+1]; i++; continue; }
+    // CR rate standalone (format: "CR 10")
+    if (/^cr$/i.test(t) && i+1 < cleaned.length && /^\d/.test(cleaned[i+1])) { 
+      o.crRate = cleaned[i+1]; 
+      if (!o.dealType) o.dealType = 'CRG';
+      i++; 
+      continue; 
+    }
     
-    // "Funnel" or "Funnels" keyword as inline label — next tokens are funnel names
+    // "Funnel" or "Funnels" keyword as inline label
     if (/^funnels?$/i.test(t)) {
-      // Collect everything after "Funnel" keyword as funnel name (until next geo or end)
       const funnelRest = [];
       for (let j = i+1; j < cleaned.length; j++) {
         const ft = cleaned[j];
         if (offerIsGeoBoundary(ft)) break;
-        funnelRest.push(orig[j]); // Use original tokens to preserve commas
+        funnelRest.push(orig[j]);
       }
       if (funnelRest.length > 0) {
         const funnelStr = funnelRest.join(' ').replace(/__/g, '').trim();
@@ -654,10 +705,10 @@ function offerParseTokens(tokens, origTokens) {
       continue;
     }
     
-    // Source keywords (GG, FB, SEO, Taboola, etc.)
+    // Source keywords (GG, FB, SEO, Taboola, etc.) - case insensitive
     if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
     
-    // Everything else goes to funnels — use original token to preserve commas
+    // Everything else goes to funnels
     funnelParts.push(origToken);
   }
   
@@ -666,11 +717,12 @@ function offerParseTokens(tokens, origTokens) {
     o.funnel = o.funnel ? funnelStr + ', ' + o.funnel : funnelStr;
   }
   
-  // v10.1 FIX: Auto-detect CRG deal type whenever crRate% is present (not just from +N% price pattern)
-  if (!o.dealType && o.crRate) {
+  // v10.2: If we have a CRG rate but no deal type, set to CRG
+  if (o.crRate && !o.dealType) {
     o.dealType = 'CRG';
   }
-  // v10.0: Auto-detect CRG deal type from price pattern (e.g. "1000$+8%" implies CRG)
+  
+  // Auto-detect CRG deal type from price pattern (e.g., "1000+8%")
   if (!o.dealType && o.price && /\+\d+%/.test(o.price)) {
     o.dealType = 'CRG';
     const crgMatch = o.price.match(/\+(\d+%?)$/);
@@ -680,55 +732,80 @@ function offerParseTokens(tokens, origTokens) {
   return o;
 }
 
-// v9.51: Consolidated batch offer confirmation message
-function formatBatchOfferConfirmation(affiliateId, offers) {
-  const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-  let msg = `✅ Added ${offers.length} offer(s) for Affiliate #${affiliateId}:\n`;
-  offers.forEach((o, i) => {
-    const num = i < numEmojis.length ? numEmojis[i] : `${i+1}.`;
-    const parts = [];
-    if (o.dealType) parts.push(`Type: ${o.dealType}`);
-    parts.push(o.country || '?');
-    if (o.funnel) parts.push(o.funnel);
-    if (o.price) parts.push(o.price);
-    if (o.source) parts.push(o.source);
-    if (o.deduction) parts.push(`deduct ${o.deduction}`);
-    if (o.crRate) parts.push(`CR ${o.crRate}`);
-    if (o.notes) parts.push(o.notes);
-    msg += `${num} ${parts.join(' | ')}\n`;
-  });
-  return msg;
-}
+async function handleOfferMessage(bot, msg, messageText) {
+  try {
+    // Dedup by message ID
+    if (msg.message_id) {
+      if (isMessageProcessed(msg.message_id)) {
+        console.log("⏭️ Skipping duplicate offer message:", msg.message_id);
+        return;
+      }
+      markMessageProcessed(msg.message_id);
+    }
 
-// v9.51: Send batch offer confirmation to Telegram
-function sendBatchOfferNotification(affiliateId, offers) {
-  if (TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE" || !TELEGRAM_TOKEN) {
-    console.log("📱 Batch offer notification skipped (no token configured)");
-    return;
+    console.log("📝 [v10.2] Received offer message:", messageText);
+
+    // Parse using the v10.2 multi-format parser
+    const { affiliateId, offers: parsedOffers } = parseOfferMessageV2(messageText);
+
+    if (!affiliateId) {
+      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in the message.\nExpected format: Offer: <ID> <GEO> <Price> <CRG%> <Source> <Funnel>");
+      return;
+    }
+
+    console.log(`📦 Affiliate: ${affiliateId}, Offers parsed: ${parsedOffers.length}`);
+    parsedOffers.forEach((o, i) => console.log(`  ${i+1}. type=${o.dealType} country=${o.country} price=${o.price} crg=${o.crRate} source=${o.source} funnel=${o.funnel}`));
+
+    if (parsedOffers.length === 0) {
+      bot.sendMessage(msg.chat.id, `❌ Could not parse any offers from the message.\nAffiliate ID: ${affiliateId}`);
+      return;
+    }
+
+    // Save ALL offers to offers.json
+    let existingOffers = readJSON("offers.json", []);
+    existingOffers = existingOffers.filter(o => String(o.affiliateId) !== String(affiliateId));
+
+    const timestamp = new Date().toISOString().split("T")[0];
+    const senderName = msg.from ? (msg.from.first_name || msg.from.username || "Telegram") : "Telegram";
+
+    const newOfferRecords = parsedOffers.map(o => ({
+      id: crypto.randomBytes(4).toString('hex'),
+      affiliateId: affiliateId,
+      country: o.country || '',
+      price: o.price || '',
+      crg: o.crRate || '',
+      crRate: o.crRate || '',
+      dealType: o.dealType || (o.crRate ? 'CRG' : ''),
+      deduction: o.deduction || '',
+      funnel: o.funnel || '',
+      funnels: o.funnel || '',
+      source: o.source || '',
+      notes: o.notes || '',
+      status: "Open",
+      createdDate: timestamp,
+      openBy: senderName,
+      rawMessage: messageText
+    }));
+
+    existingOffers.push(...newOfferRecords);
+
+    await lockedWrite("offers.json", existingOffers, {
+      action: "create",
+      user: "telegram-bot",
+      details: `Added ${parsedOffers.length} offers for affiliate ${affiliateId} (by ${senderName})`
+    });
+    broadcastUpdate("offers", existingOffers);
+
+    console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
+
+    // Send consolidated confirmation
+    sendBatchOfferNotification(affiliateId, parsedOffers);
+
+  } catch (err) {
+    console.error("❌ Error handling offer message:", err.message, err.stack);
+    bot.sendMessage(msg.chat.id, `❌ Error processing offer: ${err.message}`);
   }
-  const message = formatBatchOfferConfirmation(affiliateId, offers);
-  const postData = JSON.stringify({ chat_id: OFFER_GROUP_CHAT_ID, text: message, parse_mode: "HTML" });
-  const options = { hostname: 'api.telegram.org', port: 443, path: `/bot${TELEGRAM_TOKEN}/sendMessage`, method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(postData) } };
-  const req = https.request(options, (res) => { let d = ''; res.on('data', c => d += c); res.on('end', () => { if (res.statusCode !== 200) console.log("❌ Batch offer notification error:", d); else console.log(`✅ Batch offer notification sent: ${offers.length} offers for affiliate ${affiliateId}`); }); });
-  req.on('error', err => console.error("❌ Batch offer notification error:", err.message));
-  req.write(postData); req.end();
 }
-
-function httpRequest(url, isHttps = true, timeoutMs = 15000) {
-  return new Promise((resolve, reject) => {
-    const protocol = isHttps ? https : http;
-    const req = protocol.get(url, (res) => {
-      let data = "";
-      res.on("data", (chunk) => data += chunk);
-      res.on("end", () => resolve(data));
-    });
-    req.on("error", reject);
-    req.setTimeout(timeoutMs, () => {
-      req.destroy(new Error(`HTTP request timed out after ${timeoutMs}ms: ${url}`));
-    });
-  });
-}
-
 // ═══════════════════════════════════════════════════════════════
 // 2. ATOMIC FILE OPERATIONS WITH VERSION TRACKING
 // ═══════════════════════════════════════════════════════════════
