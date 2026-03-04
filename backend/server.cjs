@@ -834,9 +834,12 @@ async function handleOfferMessage(bot, msg, messageText) {
     const timestamp = new Date().toISOString().split("T")[0];
     const senderName = msg.from ? (msg.from.first_name || msg.from.username || "Telegram") : "Telegram";
 
+    // Build records with ALL field name variants so both offers.json and deals.json tables work
     const newOfferRecords = parsedOffers.map(o => ({
       id: crypto.randomBytes(4).toString('hex'),
-      affiliateId: affiliateId,
+      // Affiliate ID stored under BOTH field names so every CRM table can find it
+      affiliate: affiliateId,        // deals.json / CRM main table field name
+      affiliateId: affiliateId,      // offers.json legacy field name
       country: o.country || '',
       price: o.price || '',
       crg: o.crRate || '',
@@ -850,11 +853,12 @@ async function handleOfferMessage(bot, msg, messageText) {
       status: "Open",
       createdDate: timestamp,
       openBy: senderName,
-      rawMessage: messageText
+      rawMessage: messageText,
+      updatedAt: Date.now(),
     }));
 
+    // Save to offers.json (Telegram offers view)
     existingOffers.push(...newOfferRecords);
-
     await lockedWrite("offers.json", existingOffers, {
       action: "create",
       user: "telegram-bot",
@@ -862,7 +866,22 @@ async function handleOfferMessage(bot, msg, messageText) {
     });
     broadcastUpdate("offers", existingOffers);
 
-    console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
+    // ALSO save to deals.json (CRM main table) — this is what the frontend reads
+    let existingDeals = readJSON("deals.json", []);
+    // Remove old Telegram offers from this affiliate to avoid stale duplicates
+    existingDeals = existingDeals.filter(d =>
+      !(String(d.affiliate) === String(affiliateId) && d._fromTelegram === true)
+    );
+    const dealsRecords = newOfferRecords.map(r => ({ ...r, _fromTelegram: true }));
+    existingDeals.push(...dealsRecords);
+    await lockedWrite("deals.json", existingDeals, {
+      action: "create",
+      user: "telegram-bot",
+      details: `Added ${parsedOffers.length} deals for affiliate ${affiliateId} from Telegram`
+    });
+    broadcastUpdate("deals", existingDeals);
+
+    console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId} → offers.json + deals.json`);
 
     sendBatchOfferNotification(affiliateId, parsedOffers);
 
