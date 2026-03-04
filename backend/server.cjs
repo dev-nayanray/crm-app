@@ -837,22 +837,39 @@ async function handleOfferMessage(bot, msg, messageText) {
     // Build records with ALL field name variants so both offers.json and deals.json tables work
     const newOfferRecords = parsedOffers.map(o => ({
       id: crypto.randomBytes(4).toString('hex'),
-      // Affiliate ID stored under BOTH field names so every CRM table can find it
-      affiliate: affiliateId,        // deals.json / CRM main table field name
-      affiliateId: affiliateId,      // offers.json legacy field name
+
+      // ── Affiliate ID — stored under BOTH names ──
+      affiliate:   affiliateId,   // deals.json / CRM main table field
+      affiliateId: affiliateId,   // offers.json legacy field
+
+      // ── GEO ──
       country: o.country || '',
-      price: o.price || '',
-      crg: o.crRate || '',
-      crRate: o.crRate || '',
+
+      // ── Pricing ──
+      price:    o.price   || '',
+      crg:      o.crRate  || '',   // deals table reads d.crg
+      crRate:   o.crRate  || '',   // offers table reads crRate
+
+      // ── Deal type ──
       dealType: o.dealType || (o.crRate ? 'CRG' : ''),
+
+      // ── Deduction — deals table reads d.deduction ──
       deduction: o.deduction || '',
-      funnel: o.funnel || '',
-      funnels: o.funnel || '',
+
+      // ── Funnels — deals table reads d.funnels ──
+      funnel:  o.funnel || '',    // offers table
+      funnels: o.funnel || '',    // deals table reads d.funnels
+
+      // ── Source — deals table reads d.source ──
       source: o.source || '',
-      notes: o.notes || '',
-      status: "Open",
+
+      // ── Date — deals table reads d.date ──
+      date:        timestamp,     // YYYY-MM-DD set above
       createdDate: timestamp,
-      openBy: senderName,
+
+      notes:   o.notes || '',
+      status:  "Open",
+      openBy:  senderName,
       rawMessage: messageText,
       updatedAt: Date.now(),
     }));
