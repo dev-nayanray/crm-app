@@ -506,7 +506,9 @@ function offerParseTokens(tokens, origTokens) {
   while (idx < cleaned.length) {
     const geoInfo = offerExtractGeo(cleaned[idx]);
     if (geoInfo) break;
+    // v10.1: Also break on $-prefixed prices
     if (/^\d+/.test(cleaned[idx]) && !DEAL_TYPE_KEYWORDS.has(cleaned[idx].toUpperCase())) break;
+    if (/^\$\d+/.test(cleaned[idx])) break;
     dealTypeParts.push(cleaned[idx]);
     idx++;
   }
@@ -534,6 +536,17 @@ function offerParseTokens(tokens, origTokens) {
   const funnelParts = [];
   let foundDealTypeAfterGeo = false;
   
+  // v10.1 HELPER: Normalize a token that might be a price (strip $ prefix/suffix, handle €)
+  function normalizePrice(t) {
+    // "$1450" → "1450", "1450$" → "1450", "€1450" → "1450"
+    return t.replace(/^[$€£]/, '').replace(/[$€£]$/, '');
+  }
+  function isPriceToken(t) {
+    // Matches: "$1450", "1450$", "1450", "€900", "$1,450", "1400+15%"
+    const n = normalizePrice(t);
+    return /^\d/.test(n);
+  }
+  
   for (let i = idx; i < cleaned.length; i++) {
     const t = cleaned[i], tl = t.toLowerCase(), tu = t.toUpperCase();
     const origToken = orig[i]; // Use original (with commas) for funnel names
@@ -556,46 +569,51 @@ function offerParseTokens(tokens, origTokens) {
     // Skip dashes (e.g. "CRG - 900$")
     if (t === '-' || t === '–') continue;
     
+    // v10.1 FIX: After price is set, a percentage token (N%) is ALWAYS crRate
+    // Example: "1450 14%" → price=1450, crRate=14%
+    // Example: "$1450 14% Taboola" → price=1450, crRate=14%, source=Taboola
+    if (o.price && /^\d+%$/.test(t) && !o.crRate) {
+      o.crRate = t;
+      continue;
+    }
+    
     // v10.0: After price is set, small numbers (<=30) are CRG rate if followed by deal type keyword
     // Example: "1450 10 CRG" → price=1450, crRate=10, dealType=CRG
-    if (o.price && /^\d+%?$/.test(t) && !o.crRate) {
+    if (o.price && /^\d+$/.test(t) && !o.crRate) {
       const numVal = parseInt(t);
-      if (numVal <= 30 || /^\d+%$/.test(t)) {
+      if (numVal <= 30) {
         // Check if next token is a deal type keyword
         if (i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
-          o.crRate = t;
-          continue;
-        }
-        // Or if it's a standalone percentage
-        if (/^\d+%$/.test(t)) {
           o.crRate = t;
           continue;
         }
       }
     }
     
-    // Price: number optionally with $ and +percentage
-    if (!o.price && /^\d/.test(t)) {
-      // Check if this is a small number that could be CRG rate (e.g. "10" after funnels)
-      const numVal = parseInt(t);
-      // Look ahead — if next token is a deal type keyword, this is the CRG rate
+    // Price: number optionally with $/€ prefix and +percentage
+    // v10.1 FIX: Handle "$1450", "€900", "1450$" as price tokens
+    if (!o.price && isPriceToken(t)) {
+      const normalized = normalizePrice(t);
+      const numVal = parseInt(normalized);
+      // Look ahead — if next token is a deal type keyword, this small number is the CRG rate
       if (numVal <= 30 && i + 1 < cleaned.length && DEAL_TYPE_KEYWORDS.has(cleaned[i+1].toUpperCase())) {
         o.crRate = t;
         continue;
       }
       // Otherwise treat as price
-      let ps = t;
+      let ps = normalized;
       while (i+1 < cleaned.length) {
         const nx = cleaned[i+1];
+        const nxn = normalizePrice(nx);
         if (/^[\+\*]$/.test(nx)) { ps += nx; i++; }
         else if (/^[\+\*]\d+/.test(nx)) { ps += nx; i++; }
-        else if (/^\d+%?$/.test(nx) && /[\+\*]$/.test(ps)) { ps += nx; i++; }
+        else if (/^\d+%?$/.test(nxn) && /[\+\*]$/.test(ps)) { ps += nxn; i++; }
         else break;
       }
       o.price = ps.replace(/\s+/g, '');
       // Extract CRG rate from price if it has +N% pattern (e.g. "1200$+12%")
       const crgMatch = o.price.match(/\+(\d+%?)$/);
-      if (crgMatch && o.dealType && o.dealType.toUpperCase() === 'CRG') {
+      if (crgMatch) {
         o.crRate = crgMatch[1];
       }
       continue;
@@ -605,7 +623,7 @@ function offerParseTokens(tokens, origTokens) {
         o.price += t; 
         // Extract CRG rate
         const crgMatch = t.match(/^\+(\d+%?)$/);
-        if (crgMatch && o.dealType && o.dealType.toUpperCase() === 'CRG') {
+        if (crgMatch) {
           o.crRate = crgMatch[1];
         }
       } else o.price = t; 
@@ -636,7 +654,7 @@ function offerParseTokens(tokens, origTokens) {
       continue;
     }
     
-    // Source keywords (GG, FB, SEO, etc.)
+    // Source keywords (GG, FB, SEO, Taboola, etc.)
     if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
     
     // Everything else goes to funnels — use original token to preserve commas
@@ -648,6 +666,10 @@ function offerParseTokens(tokens, origTokens) {
     o.funnel = o.funnel ? funnelStr + ', ' + o.funnel : funnelStr;
   }
   
+  // v10.1 FIX: Auto-detect CRG deal type whenever crRate% is present (not just from +N% price pattern)
+  if (!o.dealType && o.crRate) {
+    o.dealType = 'CRG';
+  }
   // v10.0: Auto-detect CRG deal type from price pattern (e.g. "1000$+8%" implies CRG)
   if (!o.dealType && o.price && /\+\d+%/.test(o.price)) {
     o.dealType = 'CRG';
