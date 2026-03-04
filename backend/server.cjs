@@ -310,8 +310,8 @@ function extractCustomerName(messageText) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// v10.3: OFFER MESSAGE PARSER — Full LatAm GEO support +
-//        CR rate normalization (2,5% / 3%+ / 2-3% / 2-4%+)
+// v10.4: OFFER MESSAGE PARSER — Enhanced with dedicated Funnel & Source extraction
+//        Full LatAm GEO support + CR rate normalization (2,5% / 3%+ / 2-3% / 2-4%+)
 // ═══════════════════════════════════════════════════════════════
 
 // FIX 1: Extended GEO codes — added LatAm countries missing in v10.2
@@ -325,7 +325,10 @@ const OFFER_GEO_CODES = new Set([
 ]);
 
 const OFFER_LANG_CODES = new Set(['nl','fr','en','eng','de','es','it','pt','ar','ru','zh','ja','ko','pl','tr','el','sv','da','no','fi','native']);
-const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic)/i;
+
+// v10.4: Enhanced source keywords — includes all known traffic sources
+const OFFER_SOURCE_KEYWORDS = /^(fb|gg|google|seo|taboola|msn|sms|nativ|native|push|tiktok|snap|bing|yahoo|dsp|programmatic|applovin|apple|asg|adwords|admob|criteo|outbrain)/i;
+const OFFER_SOURCE_LIST = ['FB', 'GG', 'Google', 'SEO', 'Taboola', 'MSN', 'SMS', 'Native', 'Push', 'TikTok', 'Snap', 'Bing', 'Yahoo', 'DSP', 'Programmatic', 'AppLovin', 'Apple', 'ASG', 'AdWords', 'AdMob', 'Criteo', 'Outbrain', 'search', 'ppc', 'cpc'];
 
 const DEAL_TYPE_KEYWORDS = new Set([
   'CPA', 'CPL', 'CPS', 'CPC', 'CPM', 'CPI', 'CPO', 'CPR',
@@ -353,22 +356,59 @@ function isCRRateToken(t) {
   return /^\d[\d,.-]*%\+?$/.test(t);
 }
 
+// v10.4: NEW - Extract source keyword from text
+// Looks for source keywords like GG, FB, Taboola, Google, etc.
+// Returns { source: 'GG', remaining: 'text without source' } or { source: '', remaining: text }
+function extractSourceFromText(text) {
+  if (!text) return { source: '', remaining: text };
+  
+  // Split by common separators: + - | /
+  const parts = text.split(/\s*[\+\-\|\/]\s*/).map(p => p.trim());
+  
+  // Check each part for source keywords (prioritize checking from the end)
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    if (!part) continue;
+    
+    // Check if this part matches any source keyword
+    if (OFFER_SOURCE_KEYWORDS.test(part)) {
+      // Found source, build remaining text without this part
+      const remaining = [...parts.slice(0, i), ...parts.slice(i+1)].join(' ').trim();
+      return { source: part, remaining };
+    }
+  }
+  
+  return { source: '', remaining: text };
+}
+
+// v10.4: NEW - Check if a word is a known source keyword
+function isSourceKeyword(word) {
+  if (!word) return false;
+  return OFFER_SOURCE_KEYWORDS.test(word);
+}
+
 function parseOfferMessageV2(messageText) {
   if (!messageText) return { affiliateId: null, offers: [] };
   const fullText = messageText.trim();
 
-  const headerMatch = fullText.match(/^offers?\s*:\s*(\d+)?/i);
+  // v10.4: Enhanced header matching to support multiple formats:
+  // "Offer: 123", "Offers: 123", "Offer:\n123", "Offers\n123", etc.
+  const headerMatch = fullText.match(/^offers?\s*:?\s*(\d+)?/i);
   if (!headerMatch) return { affiliateId: null, offers: [] };
 
   let affiliateId = headerMatch[1] || null;
   let remaining = fullText.slice(headerMatch[0].length).trim();
 
+  // If affiliate ID wasn't in header, look for it in first line(s)
   if (!affiliateId) {
     const lines = remaining.split('\n');
-    const firstLine = lines[0].trim();
-    if (/^\d+$/.test(firstLine)) {
-      affiliateId = firstLine;
-      remaining = lines.slice(1).join('\n').trim();
+    for (let i = 0; i < Math.min(2, lines.length); i++) {
+      const trimmed = lines[i].trim().replace(/[^\d]/g, ''); // Remove all non-digits
+      if (trimmed && /^\d+$/.test(trimmed)) {
+        affiliateId = trimmed;
+        remaining = lines.slice(i + 1).join('\n').trim();
+        break;
+      }
     }
   }
 
@@ -378,7 +418,7 @@ function parseOfferMessageV2(messageText) {
     return { affiliateId, offers: result.offers };
   }
 
-  const affLineMatch = remaining.match(/^(?:affiliate\s*(?:id)?)\s*:\s*(\d+)$/im);
+  const affLineMatch = remaining.match(/^(?:affiliate\s*(?:id)?)\s*:?\s*(\d+)$/im);
   if (affLineMatch && !affiliateId) {
     affiliateId = affLineMatch[1];
     remaining = remaining.replace(affLineMatch[0], '').trim();
@@ -433,19 +473,54 @@ function parseOfferMessageV2(messageText) {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
+  // v10.4: Clean up emoji flags and normalize whitespace
+  // Also handle "and same funnels" text that might appear
+  let cleanedText = remaining
+    .replace(/[\u{1F1E6}-\u{1F1FF}]{2}/gu, '') // Remove flag emojis
+    .replace(/and\s+same\s+funnels/gi, '') // Remove phrase "and same funnels"
+    .replace(/\n\n+/g, '\n') // Collapse multiple newlines
+    .trim();
+
   // Drop any leftover bare label lines (shouldn't be any, safety net)
-  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|deductions?|affiliate)\s*:/i.test(l));
+  const lines = cleanedText.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|deductions?|affiliate)\s*:/i.test(l));
 
   // hasExplicitLabels = true when Funnels:/Source:/Deductions: label lines were present.
-  // When true:
-  //   1. offerParseTokens will NOT auto-extract source keywords (Taboola, FB, etc.) from
-  //      the inline offer line — they stay in funnel tokens.
-  //   2. sharedFunnels/sharedSource/sharedDeduction OVERRIDE whatever inline parsing found,
-  //      because the explicit labels are the authoritative values.
   const hasExplicitLabels = !!(sharedFunnels || sharedSource || sharedDeduction);
 
+
+
   const offers = [];
-  for (const line of lines) offers.push(...offerSplitLine(line, hasExplicitLabels));
+  
+  // v10.4: NEW - Group multi-line offers before parsing
+  // Handles format where country, price, funnels are on separate lines
+  // Groups consecutive lines until next country code is found
+  const groupedOffers = [];
+  let currentGroup = [];
+  
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Check if line starts with country code (2-3 letter code, possibly with emoji before it)
+    const countryMatch = trimmed.match(/^[A-Z]{2,3}\s/);
+    
+    if (countryMatch && currentGroup.length > 0) {
+      // Start of new offer - save current group
+      groupedOffers.push(currentGroup.join(' '));
+      currentGroup = [trimmed];
+    } else {
+      // Continue current group
+      if (trimmed) currentGroup.push(trimmed);
+    }
+  }
+  
+  // Don't forget the last group
+  if (currentGroup.length > 0) {
+    groupedOffers.push(currentGroup.join(' '));
+  }
+  
+  // Parse each grouped offer
+  for (const offerLine of groupedOffers.length > 0 ? groupedOffers : lines) {
+    offers.push(...offerSplitLine(offerLine, hasExplicitLabels));
+  }
 
   for (const o of offers) {
     if (hasExplicitLabels) {
@@ -625,8 +700,31 @@ function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
   const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   if (!tokens || tokens.length === 0) return o;
 
-  const cleaned = tokens.map(t => t.replace(/^,+|,+$/g, ''));
-  const orig = origTokens || tokens;
+  // v10.4: Pre-process tokens to extract dash-prefixed items as funnels
+  // These will be handled specially and combined as funnels later
+  const dashItems = [];
+  const cleanedTokens = [];
+  const cleanedOrigTokens = [];
+  
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const orig = origTokens ? origTokens[i] : t;
+    
+    // Check if token starts with dash (- or –)
+    if (/^[-–]\s*/.test(t)) {
+      // Extract the text after the dash
+      const dashlessText = t.replace(/^[-–]\s*/, '').trim();
+      if (dashlessText) {
+        dashItems.push(dashlessText);
+      }
+    } else {
+      cleanedTokens.push(t);
+      cleanedOrigTokens.push(orig);
+    }
+  }
+
+  const cleaned = cleanedTokens.map(t => t.replace(/^,+|,+$/g, ''));
+  const origArray = cleanedOrigTokens || cleanedTokens;
   let idx = 0;
 
   // Phase 1: Collect deal type words BEFORE the geo code
@@ -665,14 +763,14 @@ function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
 
   for (let i = idx; i < cleaned.length; i++) {
     const t = cleaned[i], tl = t.toLowerCase(), tu = t.toUpperCase();
-    const origToken = orig[i];
+    const origToken = origArray[i];
 
     // Deal type keyword
     if (DEAL_TYPE_KEYWORDS.has(tu)) {
       if (!o.dealType) {
         o.dealType = tu;
       } else if (o.price && !foundDealTypeAfterGeo) {
-        const remaining = tokens.slice(i).join(' ');
+        const remaining = cleanedTokens.slice(i).join(' ');
         o.notes = o.notes ? o.notes + '; ' + remaining : remaining;
         break;
       }
@@ -755,7 +853,7 @@ function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
       for (let j = i+1; j < cleaned.length; j++) {
         const ft = cleaned[j];
         if (offerIsGeoBoundary(ft)) break;
-        funnelRest.push(orig[j]);
+        funnelRest.push(origArray[j]);
       }
       if (funnelRest.length > 0) {
         const funnelStr = funnelRest.join(' ').replace(/__/g, '').trim();
@@ -766,17 +864,35 @@ function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
     }
 
     // Source keywords (GG, FB, SEO, Taboola, etc.)
-    // Source is ONLY set via an explicit "Source: ..." label line.
-    // If source keywords appear inline on the offer line (e.g. "...MalpeVest Taboola"),
-    // they are part of the funnel — the user intentionally put them there.
-    // Do NOT auto-detect source from inline tokens.
+    // v10.4: Improved source handling — check if this token is a source keyword
+    if (isSourceKeyword(t) && !o.source && !hasExplicitLabels) {
+      o.source = t;
+      continue;
+    }
 
     // Everything else goes to funnels
     funnelParts.push(origToken);
   }
 
+  // v10.4: Add dash-prefixed items as funnels
+  if (dashItems.length > 0) {
+    const dashFunnels = dashItems.join(', ');
+    funnelParts.push(dashFunnels);
+  }
+
+  // v10.4: If no source was found via keywords, try to extract from funnel text
   if (funnelParts.length > 0) {
-    const funnelStr = funnelParts.join(' ').replace(/__/g, '').replace(/\s*,\s*/g, ', ').trim();
+    let funnelStr = funnelParts.join(' ').replace(/__/g, '').replace(/\s*,\s*/g, ', ').trim();
+    
+    // Try to extract source from the funnel string if no source was set
+    if (!o.source && !hasExplicitLabels && funnelStr) {
+      const { source: extracted, remaining } = extractSourceFromText(funnelStr);
+      if (extracted) {
+        o.source = extracted;
+        funnelStr = remaining;
+      }
+    }
+    
     o.funnel = o.funnel ? funnelStr + ', ' + o.funnel : funnelStr;
   }
 
@@ -801,20 +917,33 @@ function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
 
 function formatBatchOfferConfirmation(affiliateId, offers) {
   const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
-  let msg = `✅ Added ${offers.length} offer(s) for Affiliate #${affiliateId}:\n`;
+  let msg = `✅ <b>Added ${offers.length} offer(s) for Affiliate #${affiliateId}</b>\n\n`;
   offers.forEach((o, i) => {
     const num = i < numEmojis.length ? numEmojis[i] : `${i+1}.`;
-    const parts = [];
-    if (o.dealType) parts.push(`Type: ${o.dealType}`);
-    parts.push(o.country || '?');
-    if (o.funnel) parts.push(o.funnel);
-    if (o.price) parts.push(o.price);
-    if (o.source) parts.push(o.source);
-    if (o.deduction) parts.push(`deduct ${o.deduction}`);
-    if (o.crRate) parts.push(`CR ${o.crRate}`);
-    if (o.notes) parts.push(o.notes);
-    msg += `${num} ${parts.join(' | ')}\n`;
+    msg += `${num} <b>${o.country || '?'}</b>`;
+    
+    // Add pricing info
+    if (o.price) msg += ` | 💰 $${o.price}`;
+    if (o.crRate) msg += ` | 📊 ${o.crRate}`;
+    
+    // Add type
+    if (o.dealType) msg += ` | 🏷️ ${o.dealType}`;
+    
+    // Add funnel (funnel is the marketing name/strategy)
+    if (o.funnel) msg += `\n   🎯 Funnel: <code>${o.funnel}</code>`;
+    
+    // Add source (where traffic comes from)
+    if (o.source) msg += `\n   📡 Source: <b>${o.source}</b>`;
+    
+    // Add deduction
+    if (o.deduction) msg += ` | 💸 Deduct: ${o.deduction}`;
+    
+    msg += '\n';
   });
+  
+  if (offers.length > 1) {
+    msg += `\n✨ All offers synced to CRM`;
+  }
   return msg;
 }
 
@@ -876,20 +1005,22 @@ async function handleOfferMessage(bot, msg, messageText) {
       markMessageProcessed(msg.message_id);
     }
 
-    console.log("📝 [v10.3] Received offer message:", messageText);
+    console.log("📝 [v10.4] Received offer message:", messageText);
 
+    // v10.4: Support for multi-format offer messages
+    // Handles both single-line and multi-line formats
     const { affiliateId, offers: parsedOffers } = parseOfferMessageV2(messageText);
 
     if (!affiliateId) {
-      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in the message.\nExpected format: Offer: <ID> <GEO> <Price> <CRG%> <Source> <Funnel>");
+      bot.sendMessage(msg.chat.id, "❌ Could not find affiliate ID in the message.\n\nExpected formats:\n• <b>Single-line:</b> Offer: 183 ZA 950 6% InvestBTC Ai Taboola + GG\n• <b>Multi-line:</b>\nOffer:\n183\nZA 950 6% InvestBTC Ai Taboola\nSource: GG\nFunnel: InvestBTC Ai Taboola");
       return;
     }
 
     console.log(`📦 Affiliate: ${affiliateId}, Offers parsed: ${parsedOffers.length}`);
-    parsedOffers.forEach((o, i) => console.log(`  ${i+1}. type=${o.dealType} country=${o.country} price=${o.price} crg=${o.crRate} source=${o.source} funnel=${o.funnel}`));
+    parsedOffers.forEach((o, i) => console.log(`  ${i+1}. type=${o.dealType} country=${o.country} price=${o.price} crg=${o.crRate} funnel=${o.funnel} source=${o.source}`));
 
     if (parsedOffers.length === 0) {
-      bot.sendMessage(msg.chat.id, `❌ Could not parse any offers from the message.\nAffiliate ID: ${affiliateId}`);
+      bot.sendMessage(msg.chat.id, `❌ Could not parse any offers from the message.\nAffiliate ID: ${affiliateId}\n\nMake sure to include: Country, Price, and at least one of (CRG%, Funnel, or Source)`);
       return;
     }
 
@@ -899,7 +1030,8 @@ async function handleOfferMessage(bot, msg, messageText) {
     const timestamp = new Date().toISOString().split("T")[0];
     const senderName = msg.from ? (msg.from.first_name || msg.from.username || "Telegram") : "Telegram";
 
-    // Build records with ALL field name variants so both offers.json and deals.json tables work
+    // v10.4: Build records with ALL field name variants so both offers.json and deals.json tables work
+    // Ensures Funnel and Source are properly preserved in the database
     const newOfferRecords = parsedOffers.map(o => ({
       id: crypto.randomBytes(4).toString('hex'),
 
@@ -925,7 +1057,7 @@ async function handleOfferMessage(bot, msg, messageText) {
       funnel:  o.funnel || '',    // offers table
       funnels: o.funnel || '',    // deals table reads d.funnels
 
-      // ── Source — deals table reads d.source ──
+      // ── Source — deals table reads d.source — v10.4: Now properly extracted ──
       source: o.source || '',
 
       // ── Date + Time — CRM table reads both ──
@@ -965,6 +1097,7 @@ async function handleOfferMessage(bot, msg, messageText) {
     broadcastUpdate("deals", existingDeals);
 
     console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId} → offers.json + deals.json`);
+    console.log(`   Offers include: ${parsedOffers.map(o => `${o.country}(src:${o.source||'?'}/ fn:${o.funnel?.substring(0,20)||'?'})`).join(', ')}`);
 
     sendBatchOfferNotification(affiliateId, parsedOffers);
 
