@@ -365,6 +365,18 @@ function parseOfferMessageV2(messageText) {
   let affiliateId = headerMatch[1] || null;
   let remaining = fullText.slice(headerMatch[0].length).trim();
   
+  // v10.2 FIX: If ID not found on same line, check if first line of remaining is just a number
+  // Example: "Offer:\n211\nPL..."
+  if (!affiliateId) {
+    const lines = remaining.split('\n');
+    const firstLine = lines[0].trim();
+    // Check if first line is purely numeric (Affiliate ID)
+    if (/^\d+$/.test(firstLine)) {
+      affiliateId = firstLine;
+      remaining = lines.slice(1).join('\n').trim();
+    }
+  }
+  
   // Check if remaining contains labeled format (Country:/Geo:/Price: etc)
   if (/(?:^|\n)\s*(?:geo|country)\s*:/im.test(remaining)) {
     const result = parseOfferLabeledFormat(remaining);
@@ -372,7 +384,7 @@ function parseOfferMessageV2(messageText) {
     return { affiliateId, offers: result.offers };
   }
   
-  // Check for labeled format with Affiliate ID on separate line
+  // Check for labeled format with Affiliate ID on separate line (labeled as "Affiliate ID:")
   const affLineMatch = remaining.match(/^(?:affiliate\s*(?:id)?)\s*:\s*(\d+)$/im);
   if (affLineMatch && !affiliateId) {
     affiliateId = affLineMatch[1];
@@ -732,6 +744,79 @@ function offerParseTokens(tokens, origTokens) {
   return o;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TELEGRAM NOTIFICATION HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+function formatBatchOfferConfirmation(affiliateId, offers) {
+  const numEmojis = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+  let msg = `✅ Added ${offers.length} offer(s) for Affiliate #${affiliateId}:\n`;
+  offers.forEach((o, i) => {
+    const num = i < numEmojis.length ? numEmojis[i] : `${i+1}.`;
+    const parts = [];
+    if (o.dealType) parts.push(`Type: ${o.dealType}`);
+    parts.push(o.country || '?');
+    if (o.funnel) parts.push(o.funnel);
+    if (o.price) parts.push(o.price);
+    if (o.source) parts.push(o.source);
+    if (o.deduction) parts.push(`deduct ${o.deduction}`);
+    if (o.crRate) parts.push(`CR ${o.crRate}`);
+    if (o.notes) parts.push(o.notes);
+    msg += `${num} ${parts.join(' | ')}\n`;
+  });
+  return msg;
+}
+
+function sendBatchOfferNotification(affiliateId, offers) {
+  if (!TELEGRAM_TOKEN || TELEGRAM_TOKEN === "YOUR_BOT_TOKEN_HERE") {
+    console.log("📱 Batch offer notification skipped (no token configured)");
+    return;
+  }
+  
+  // Use bot instance if available, otherwise use HTTP API
+  if (typeof bot !== 'undefined' && bot && bot.sendMessage) {
+    const message = formatBatchOfferConfirmation(affiliateId, offers);
+    if (typeof OFFER_GROUP_CHAT_ID !== 'undefined') {
+      bot.sendMessage(OFFER_GROUP_CHAT_ID, message, { parse_mode: "HTML" })
+        .then(() => console.log(`✅ Batch offer notification sent to Telegram for affiliate ${affiliateId}`))
+        .catch(err => console.error("❌ Batch offer notification error:", err.message));
+    }
+  } else {
+    // Fallback to raw HTTP request if bot instance not available
+    const message = formatBatchOfferConfirmation(affiliateId, offers);
+    const postData = JSON.stringify({
+      chat_id: OFFER_GROUP_CHAT_ID,
+      text: message,
+      parse_mode: "HTML"
+    });
+    const options = {
+      hostname: 'api.telegram.org',
+      port: 443,
+      path: `/bot${TELEGRAM_TOKEN}/sendMessage`,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(postData)
+      }
+    };
+    const req = https.request(options, (res) => {
+      let d = '';
+      res.on('data', c => d += c);
+      res.on('end', () => {
+        if (res.statusCode !== 200) console.log("❌ Batch offer notification error:", d);
+        else console.log(`✅ Batch offer notification sent: ${offers.length} offers for affiliate ${affiliateId}`);
+      });
+    });
+    req.on('error', err => console.error("❌ Batch offer notification error:", err.message));
+    req.write(postData);
+    req.end();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MAIN HANDLER
+// ═══════════════════════════════════════════════════════════════
+
 async function handleOfferMessage(bot, msg, messageText) {
   try {
     // Dedup by message ID
@@ -798,7 +883,7 @@ async function handleOfferMessage(bot, msg, messageText) {
 
     console.log(`✅ Saved ${parsedOffers.length} offers for affiliate ${affiliateId}`);
 
-    // Send consolidated confirmation
+    // Send consolidated confirmation to Telegram
     sendBatchOfferNotification(affiliateId, parsedOffers);
 
   } catch (err) {
