@@ -384,19 +384,36 @@ function parseOfferMessageV2(messageText) {
     remaining = remaining.replace(affLineMatch[0], '').trim();
   }
 
-  let sharedFunnels = '', sharedSource = '';
-  const sourceMatch = remaining.match(/\bSource\s*:\s*([^\n]+?)(?=\s{2,}Funnels?\s*:|$)/i) || remaining.match(/\bSource\s*:\s*(.+?)$/im);
+  let sharedFunnels = '', sharedSource = '', sharedDeduction = '';
+
+  // Extract Deductions — stop at comma-then-label OR next label keyword OR end-of-line
+  // Handles: "Deductions:15%" / "Deductions: 15%" / "Deductions:15% ,Funnels:..."
+  const dedMatch = remaining.match(/\bDeductions?\s*:\s*([^,\n]+?)(?=\s*,\s*(?:Funnels?|Source|Geo|Country)\s*:|$)/i)
+                || remaining.match(/\bDeductions?\s*:\s*([^\n,]+?)(?:\s*,|\s*$)/im)
+                || remaining.match(/\bDeductions?\s*:\s*(.+?)$/im);
+  if (dedMatch) {
+    sharedDeduction = dedMatch[1].trim();
+    remaining = remaining.replace(dedMatch[0], ' ').trim();
+  }
+
+  // Extract Source — stop at next label or end-of-line
+  const sourceMatch = remaining.match(/\bSource\s*:\s*([^\n]+?)(?=\s{2,}Funnels?\s*:|$)/i)
+                   || remaining.match(/\bSource\s*:\s*(.+?)$/im);
   if (sourceMatch) { sharedSource = sourceMatch[1].trim(); remaining = remaining.replace(sourceMatch[0], ' ').trim(); }
-  const funnelMatch = remaining.match(/\bFunnels?\s*:\s*(.+?)(?=\s{2,}Source\s*:|$)/i) || remaining.match(/\bFunnels?\s*:\s*(.+?)$/im);
+
+  // Extract Funnels — stop at next label or end-of-line
+  const funnelMatch = remaining.match(/\bFunnels?\s*:\s*(.+?)(?=\s{2,}(?:Source|Deductions?)\s*:|$)/i)
+                   || remaining.match(/\bFunnels?\s*:\s*(.+?)$/im);
   if (funnelMatch) { sharedFunnels = funnelMatch[1].trim().replace(/__/g, '').replace(/\s*\/\s*/g, ' / '); remaining = remaining.replace(funnelMatch[0], ' ').trim(); }
 
-  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|affiliate)\s*:/i.test(l));
+  const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|deductions?|affiliate)\s*:/i.test(l));
   const offers = [];
   for (const line of lines) offers.push(...offerSplitLine(line));
 
   for (const o of offers) {
-    if (!o.funnel && sharedFunnels) o.funnel = sharedFunnels;
-    if (!o.source && sharedSource) o.source = sharedSource;
+    if (!o.funnel     && sharedFunnels)    o.funnel     = sharedFunnels;
+    if (!o.source     && sharedSource)     o.source     = sharedSource;
+    if (!o.deduction  && sharedDeduction)  o.deduction  = sharedDeduction;
   }
 
   return { affiliateId, offers };
@@ -450,7 +467,7 @@ function parseOfferLabeledFormat(text) {
     const dtM = line.match(/^(?:deal\s*type|type)\s*:\s*(.+)$/i);
     if (dtM) { currentOffer.dealType = dtM[1].trim(); continue; }
 
-    const dM = line.match(/^deductions?\s*:\s*(.+)$/i);
+    const dM = line.match(/^deductions?\s*:\s*([^,\n]+)/i);
     if (dM) { currentOffer.deduction = dM[1].trim(); continue; }
 
     if (line && !line.match(/^[\s]*$/)) {
@@ -863,9 +880,10 @@ async function handleOfferMessage(bot, msg, messageText) {
       // ── Source — deals table reads d.source ──
       source: o.source || '',
 
-      // ── Date — deals table reads d.date ──
-      date:        timestamp,     // YYYY-MM-DD set above
+      // ── Date + Time — CRM table reads both ──
+      date:        timestamp,     // YYYY-MM-DD
       createdDate: timestamp,
+      time:        new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }), // HH:MM
 
       notes:   o.notes || '',
       status:  "Open",
