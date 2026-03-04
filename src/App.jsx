@@ -246,16 +246,16 @@ const mobileCSS = `
   .blitz-modal-content { width: 95vw !important; max-width: 95vw !important; margin: 10px !important; padding: 20px 16px !important; }
   .blitz-modal-content .grid-2col { grid-template-columns: 1fr !important; }
   .blitz-form-grid { grid-template-columns: 1fr !important; }
-  /* v9.05: Better touch targets on mobile */
   button { min-height: 44px !important; }
-  table td, table th { padding: 8px 6px !important; }
-  /* v9.05: Hide overflow columns on mobile tables */
-  .blitz-table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  .blitz-table-responsive table { min-width: 600px; }
+  /* FIX 9.20: Enhanced mobile card layout styling */
+  .blitz-table-responsive table { display: none !important; }
+  .blitz-table-responsive .mobile-cards { display: flex !important; }
+}
+@media (min-width: 769px) {
+  .blitz-table-responsive .mobile-cards { display: none !important; }
 }
 @media (max-width: 480px) {
   .blitz-summary { grid-template-columns: 1fr !important; }
-  /* v9.05: Stack action buttons on very small screens */
   .blitz-main > div[style*="display: flex"][style*="gap"] { flex-direction: column !important; }
 }
 `;
@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.1";
+const VERSION = "10.05";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -544,29 +544,18 @@ async function apiGet(endpoint) {
     if (!res.ok) throw new Error('not ok');
     serverOnline = true;
     const json = await res.json();
-    const data = json.data || json;
+    let data = json.data || json;
     if (json.version) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
     }
-    // v10.0: Handle server tombstones — IDs that were deleted by other users
-    if (Array.isArray(json.tombstoned) && json.tombstoned.length > 0) {
-      json.tombstoned.forEach(id => {
-        if (!persistDeletedIDs[endpoint]) persistDeletedIDs[endpoint] = new Set();
-        persistDeletedIDs[endpoint].add(id);
-      });
-      // Remove tombstoned IDs from the data we're about to save locally
-      if (Array.isArray(data)) {
-        const tombSet = new Set(json.tombstoned);
-        const cleaned = data.filter(r => !r || !r.id || !tombSet.has(r.id));
-        if (cleaned.length < data.length) {
-          console.log(`🪦 [${endpoint}]: Removed ${data.length - cleaned.length} tombstoned records from server response`);
-        }
-        lsSave(endpoint, cleaned);
-        return cleaned;
-      }
+    // v10.05: Process tombstoned IDs from server GET response
+    if (json.tombstoned) {
+      processTombstoned(endpoint, json.tombstoned);
     }
+    // v10.05: Filter tombstoned records from response data
     if (Array.isArray(data)) {
+      data = filterTombstoned(endpoint, data);
       lsSave(endpoint, data); // Always save, even empty arrays (important after deletes)
     }
     return data;
@@ -630,11 +619,6 @@ async function flushPendingSaves() {
       if (res.ok) {
         const json = await res.json();
         if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
-        // v10.1: Clear acknowledged deletes from persistent tracking
-        if (Array.isArray(json.deletedAcknowledged) && json.deletedAcknowledged.length > 0) {
-          if (persistDeletedIDs[endpoint]) json.deletedAcknowledged.forEach(id => persistDeletedIDs[endpoint].delete(id));
-          if (deletedIDs[endpoint]) json.deletedAcknowledged.forEach(id => deletedIDs[endpoint].delete(id));
-        }
         pendingSaves.delete(endpoint);
         console.log(`✅ Flushed pending save: ${endpoint}`);
       } else if (res.status === 409) {
@@ -663,6 +647,9 @@ setInterval(flushPendingSaves, 30000);
 const deletedIDs = {}; // { 'payments': Set(['id1','id2']), ... }
 // v9.15: Persistent deleted IDs — survives merge cycles so Telegram offers don't re-add deleted deals
 const persistDeletedIDs = {};
+// v10.05: Track tombstoned IDs per table — records the server has permanently deleted
+const tombstonedIDs = {}; // { 'payments': Set(['id1','id2']), ... }
+
 function trackDelete(table, id) {
   if (!deletedIDs[table]) deletedIDs[table] = new Set();
   deletedIDs[table].add(id);
@@ -670,18 +657,50 @@ function trackDelete(table, id) {
   persistDeletedIDs[table].add(id);
 }
 function isDeleted(table, id) {
-  return persistDeletedIDs[table] && persistDeletedIDs[table].has(id);
+  return (persistDeletedIDs[table] && persistDeletedIDs[table].has(id)) ||
+         (tombstonedIDs[table] && tombstonedIDs[table].has(id));
 }
+
+// v10.05: Process tombstoned IDs from server response — purge from local state
+function processTombstoned(table, tombstoned) {
+  if (!Array.isArray(tombstoned) || tombstoned.length === 0) return;
+  if (!tombstonedIDs[table]) tombstonedIDs[table] = new Set();
+  tombstoned.forEach(id => tombstonedIDs[table].add(id));
+  // Also add to persistDeletedIDs so isDeleted() catches them
+  if (!persistDeletedIDs[table]) persistDeletedIDs[table] = new Set();
+  tombstoned.forEach(id => persistDeletedIDs[table].add(id));
+  // Remove from pending deletes — server already knows about these
+  if (deletedIDs[table]) {
+    tombstoned.forEach(id => deletedIDs[table].delete(id));
+  }
+  // Clean localStorage — remove tombstoned records
+  const local = lsGet(table, null);
+  if (Array.isArray(local)) {
+    const filtered = local.filter(r => !tombstonedIDs[table].has(r.id));
+    if (filtered.length < local.length) {
+      lsSave(table, filtered);
+      console.log(`🪦 [${table}]: Purged ${local.length - filtered.length} tombstoned records from localStorage`);
+    }
+  }
+}
+
+// v10.05: Filter tombstoned records from any data array
+function filterTombstoned(table, data) {
+  if (!Array.isArray(data)) return data;
+  if (!tombstonedIDs[table] || tombstonedIDs[table].size === 0) return data;
+  return data.filter(r => !tombstonedIDs[table].has(r.id));
+}
+
+// v10.05: Stamp updatedAt on records for last-write-wins merge
+function stampUpdatedAt(record) {
+  if (record && typeof record === 'object') record.updatedAt = Date.now();
+  return record;
+}
+
 function getAndClearDeletes(table) {
-  // v10.1: Collect from BOTH pending deletes AND persistent deletes
-  // Don't clear yet — server will confirm via deletedAcknowledged
-  const pending = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
-  const persistent = persistDeletedIDs[table] ? Array.from(persistDeletedIDs[table]) : [];
-  // Merge both sets — send ALL known deletes to server
-  const allDeletes = [...new Set([...pending, ...persistent])];
-  // Clear the immediate set (persistent stays until server acknowledges)
+  const ids = deletedIDs[table] ? Array.from(deletedIDs[table]) : [];
   if (deletedIDs[table]) deletedIDs[table].clear();
-  return allDeletes;
+  return ids;
 }
 
 // Track last known record counts per table to detect data loss
@@ -689,8 +708,8 @@ const lastKnownCounts = {};
 
 async function apiSave(endpoint, data, userEmail) {
   // SAFETY: Never save empty array to server unless there are explicit deletes
-  const hasPendingDeletes = (deletedIDs[endpoint] && deletedIDs[endpoint].size > 0) || (persistDeletedIDs[endpoint] && persistDeletedIDs[endpoint].size > 0);
-  const pendingDeleteCount = (deletedIDs[endpoint] ? deletedIDs[endpoint].size : 0) + (persistDeletedIDs[endpoint] ? persistDeletedIDs[endpoint].size : 0);
+  const hasPendingDeletes = deletedIDs[endpoint] && deletedIDs[endpoint].size > 0;
+  const pendingDeleteCount = hasPendingDeletes ? deletedIDs[endpoint].size : 0;
   if (Array.isArray(data) && data.length === 0 && !hasPendingDeletes) {
     console.warn(`⚠️ BLOCKED empty save to ${endpoint} — no pending deletes, likely a bug`);
     return false;
@@ -744,16 +763,6 @@ async function apiSave(endpoint, data, userEmail) {
   // Collect any explicit deletes for this table
   const deleted = getAndClearDeletes(endpoint);
 
-  // v10.0: Stamp updatedAt on all records so server LWW uses actual timestamps
-  const now_ts = Date.now();
-  if (Array.isArray(data)) {
-    data.forEach(r => {
-      if (r && r.id) {
-        if (!r.updatedAt) r.updatedAt = now_ts; // Only stamp if not already set
-      }
-    });
-  }
-
   // ALWAYS save to localStorage first — this is the safety net
   lsSave(endpoint, data);
   // Then push to server with version info + auth token + deleted IDs
@@ -795,17 +804,27 @@ async function apiSave(endpoint, data, userEmail) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
     }
-    // v10.1: Server confirms which deletes it processed — clear them from persistent tracking
-    // This stops the client from re-sending the same delete IDs on every future save
-    if (Array.isArray(json.deletedAcknowledged) && json.deletedAcknowledged.length > 0) {
-      if (persistDeletedIDs[endpoint]) {
-        json.deletedAcknowledged.forEach(id => persistDeletedIDs[endpoint].delete(id));
+    // v10.05: Process tombstoned IDs from server — purge zombie records locally
+    if (json.tombstoned) {
+      processTombstoned(endpoint, json.tombstoned);
+    }
+    // v10.05: Handle throttled response — server accepted but skipped actual write
+    if (json.throttled) {
+      serverOnline = true;
+      pendingSaves.delete(endpoint);
+      return true;
+    }
+    // FIX 9.20: If server returned merged data (with records from other users),
+    // sync it back into React state to prevent "disappearing rows"
+    if (json.data && Array.isArray(json.data) && json.data.length > data.length) {
+      const setter = conflictSetters[endpoint];
+      if (setter) {
+        console.log(`🔄 Post-save sync [${endpoint}]: server has ${json.data.length} records (we sent ${data.length}) — syncing`);
+        const filtered = filterTombstoned(endpoint, json.data);
+        setter(filtered);
+        lsSave(endpoint, filtered);
+        lastKnownCounts[endpoint] = filtered.length;
       }
-      // Also clear from the pending set in case any were re-queued
-      if (deletedIDs[endpoint]) {
-        json.deletedAcknowledged.forEach(id => deletedIDs[endpoint].delete(id));
-      }
-      console.log(`🗑️ [${endpoint}]: Server acknowledged ${json.deletedAcknowledged.length} deletes — cleared from local tracking`);
     }
     serverOnline = true;
     pendingSaves.delete(endpoint);
@@ -825,15 +844,6 @@ async function apiSave(endpoint, data, userEmail) {
         if (json.version) {
           dataVersions[endpoint] = json.version;
           savePersistedVersions(dataVersions);
-        }
-        // v10.1: Clear acknowledged deletes on retry success too
-        if (Array.isArray(json.deletedAcknowledged) && json.deletedAcknowledged.length > 0) {
-          if (persistDeletedIDs[endpoint]) {
-            json.deletedAcknowledged.forEach(id => persistDeletedIDs[endpoint].delete(id));
-          }
-          if (deletedIDs[endpoint]) {
-            json.deletedAcknowledged.forEach(id => deletedIDs[endpoint].delete(id));
-          }
         }
         serverOnline = true;
         pendingSaves.delete(endpoint);
@@ -873,22 +883,19 @@ function connectWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'update') {
           if (msg.version) dataVersions[msg.table] = msg.version;
-          // v10.0: Process tombstoned IDs from broadcast — add to persistDeletedIDs
-          if (Array.isArray(msg.tombstoned) && msg.tombstoned.length > 0) {
-            if (!persistDeletedIDs[msg.table]) persistDeletedIDs[msg.table] = new Set();
-            msg.tombstoned.forEach(id => persistDeletedIDs[msg.table].add(id));
+          // v10.05: Process deleted IDs from WS update (records deleted by other users)
+          if (Array.isArray(msg.deleted) && msg.deleted.length > 0) {
+            processTombstoned(msg.table, msg.deleted);
           }
           if (Array.isArray(msg.data)) {
-            // v10.0: Filter out tombstoned records before saving
-            const persistDeleted = persistDeletedIDs[msg.table] || new Set();
-            const cleanData = persistDeleted.size > 0 
-              ? msg.data.filter(r => !r || !r.id || !persistDeleted.has(r.id))
-              : msg.data;
-            lsSave(msg.table, cleanData);
-            // Update msg.data for listeners so they also get clean data
-            msg.data = cleanData;
+            // v10.05: Filter tombstoned records before saving
+            const filtered = filterTombstoned(msg.table, msg.data);
+            lsSave(msg.table, filtered);
+            // Pass filtered data to listeners
+            wsListeners.forEach(fn => fn({ ...msg, data: filtered }));
+          } else {
+            wsListeners.forEach(fn => fn(msg));
           }
-          wsListeners.forEach(fn => fn(msg));
         } else if (msg.type === 'versions') {
           Object.entries(msg.versions).forEach(([k, v]) => { dataVersions[k] = v; });
         } else if (msg.type === 'heartbeat' && msg.v && msg.v !== VERSION) {
@@ -974,6 +981,8 @@ const MONTHS = [
 ];
 
 const genId = () => Math.random().toString(36).substr(2, 9);
+// v10.05: Stamp new records with updatedAt for LWW merge
+const stampNew = (record) => ({ ...record, updatedAt: Date.now() });
 
 // Convert 2-letter country code to flag emoji (3-4 letter codes show text only)
 const countryFlag = code => {
@@ -2581,7 +2590,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
     <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 16 }}>{i + 1}.</span>
       <span style={{ fontSize: 11, fontWeight: 700, color: "#334155", minWidth: 70, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={name}>{name}</span>
-      <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+      <div style={{ flex: 1, height: 6, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
         <div style={{ height: "100%", width: (maxVal > 0 ? (val / maxVal) * 100 : 0) + "%", background: i === 0 ? color : "#CBD5E1", borderRadius: 5, transition: "width 0.4s" }} />
       </div>
       <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: "#334155", minWidth: 45, textAlign: "right" }}>{val.toLocaleString()}{unit ? " " + unit : ""}</span>
@@ -2750,6 +2759,61 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
             <PeriodSelector />
           </div>
         </div>
+
+        {/* ═══════════ FIX 9.20: PERFORMANCE OVERVIEW ═══════════ */}
+        {(() => {
+          const FTD_TARGET = 200;
+          const monthCrg = crgDeals.filter(d => {
+            if (!d.date) return false;
+            return d.date.startsWith(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`);
+          });
+          const monthFtd = monthCrg.reduce((s, d) => s + (parseInt(d.ftd) || 0), 0);
+          const ftdPct = Math.min(100, FTD_TARGET > 0 ? (monthFtd / FTD_TARGET) * 100 : 0);
+
+          const todayCrg = crgDeals.filter(d => d.date === today);
+          const todayCap = todayCrg.reduce((s, d) => s + (parseInt(d.cap) || 0), 0);
+          const todayCapReceived = todayCrg.reduce((s, d) => s + (parseInt(d.capReceived) || 0), 0);
+          const dailyLimit = todayCap || 1;
+          const capPct = Math.min(100, dailyLimit > 0 ? (todayCapReceived / dailyLimit) * 100 : 0);
+
+          const getColor = pct => pct < 30 ? "#EF4444" : pct < 75 ? "#F59E0B" : "#10B981";
+          const getColorBg = pct => pct < 30 ? "rgba(239,68,68,0.1)" : pct < 75 ? "rgba(245,158,11,0.1)" : "rgba(16,185,129,0.1)";
+
+          const RadialProgress = ({ pct, color, bg, label, value, total, size = 120 }) => {
+            const r = (size - 12) / 2;
+            const circ = 2 * Math.PI * r;
+            const offset = circ - (circ * Math.min(pct, 100)) / 100;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+                <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+                  <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={bg} strokeWidth={10} />
+                  <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={10}
+                    strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
+                    style={{ transition: "stroke-dashoffset 0.8s ease" }} />
+                </svg>
+                <div style={{ position: "relative", marginTop: -size + 10, height: size - 20, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color }}>{Math.round(pct)}%</div>
+                  <div style={{ fontSize: 10, color: "#64748B", marginTop: 2 }}>{value} / {total}</div>
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", textAlign: "center", marginTop: 4 }}>{label}</div>
+              </div>
+            );
+          };
+
+          return (
+            <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 16, padding: "20px 24px", marginBottom: 28, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+                <span style={{ fontSize: 18 }}>🎯</span>
+                <span style={{ fontSize: 15, fontWeight: 700, color: "#0F172A" }}>Performance Overview</span>
+                <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500, marginLeft: "auto" }}>March {now.getFullYear()}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "center", gap: 60, flexWrap: "wrap" }}>
+                <RadialProgress pct={ftdPct} color={getColor(ftdPct)} bg={getColorBg(ftdPct)} label="FTD Target (March)" value={monthFtd} total={FTD_TARGET} size={140} />
+                <RadialProgress pct={capPct} color={getColor(capPct)} bg={getColorBg(capPct)} label="Daily CAP Usage" value={todayCapReceived} total={todayCap || 0} size={140} />
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ═══════════ FINANCE ═══════════ */}
         {sectionTitle("💰", "Finance")}
@@ -3049,7 +3113,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                       <div key={name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? "#F59E0B" : "#64748B", width: 20 }}>#{i + 1}</span>
                         <span style={{ display: "inline-block", padding: "3px 0", background: getPersonColor(name), color: "#FFF", fontWeight: 700, fontSize: 11, textAlign: "center", width: 60, borderRadius: 4 }}>{name}</span>
-                        <div style={{ flex: 1, height: 10, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
+                        <div style={{ flex: 1, height: 6, background: "#F1F5F9", borderRadius: 5, overflow: "hidden" }}>
                           <div style={{ height: "100%", width: (topPartnerAgents[0][1] > 0 ? (count / topPartnerAgents[0][1]) * 100 : 0) + "%", background: i === 0 ? "linear-gradient(90deg, #EC4899, #F472B6)" : "#CBD5E1", borderRadius: 5 }} />
                         </div>
                         <span style={{ fontSize: 13, fontWeight: 800, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace", minWidth: 25, textAlign: "right" }}>{count}</span>
@@ -3360,7 +3424,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BLITZ REPORT PAGE — Fully editable monthly report (v9.10 — auto-EST, auto-save, dedup fix)
+// BLITZ REPORT PAGE — v9.20 rewrite: matches screenshot, auto-save, working-day EST
 // ═══════════════════════════════════════════════════════════════
 function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dcEntries: rawDc, cpPayments: rawCp, payments: rawPay, dealsData: rawDeals, partnersData: rawPartners, userAccess }) {
   const now = new Date();
@@ -3368,170 +3432,134 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
   const curMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const curLabel = `${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
-  // ── Work days helper: count business days (Mon–Fri) in a month ──
-  const getWorkDays = (year, month) => {
-    const totalDays = new Date(year, month + 1, 0).getDate();
-    let workDays = 0;
-    for (let d = 1; d <= totalDays; d++) {
-      const day = new Date(year, month, d).getDay();
-      if (day !== 0 && day !== 6) workDays++;
-    }
-    return workDays;
-  };
-  const getWorkDaysPassed = (year, month) => {
-    const todayDate = new Date();
-    const lastDay = todayDate.getFullYear() === year && todayDate.getMonth() === month
-      ? todayDate.getDate()
-      : new Date(year, month + 1, 0).getDate();
-    let passed = 0;
-    for (let d = 1; d <= lastDay; d++) {
-      const day = new Date(year, month, d).getDay();
-      if (day !== 0 && day !== 6) passed++;
-    }
-    return passed;
-  };
-
-  // Calculate EST: (monthlyFtds / workDaysPassed) * totalWorkDays
-  const calcEst = (monthlyVal, monthStr) => {
-    const [y, m] = monthStr.split("-").map(Number);
-    const total = getWorkDays(y, m - 1);
-    const passed = getWorkDaysPassed(y, m - 1);
-    const ftds = parseInt(monthlyVal) || 0;
-    if (!ftds || !passed) return { est: 0, passed, total };
-    return { est: Math.round((ftds / passed) * total), passed, total };
-  };
-
-  // ── All saved reports from localStorage + server ──
+  // ── All saved reports from localStorage ──
   const REPORTS_KEY = "blitz_reports_all";
   const loadAllReports = () => {
     try { return JSON.parse(localStorage.getItem(REPORTS_KEY) || '{}'); } catch { return {}; }
   };
   const [allReports, setAllReports] = useState(loadAllReports);
   const [activeMonth, setActiveMonth] = useState(curMonth);
-  const autoSaveTimer = useRef(null);
 
-  // Default empty report structure
   const emptyReport = () => ({
     date: today,
-    yFtds: "", monthlyFtds: "", monthlyEst: "",
+    yFtds: "", monthlyFtds: "", monthlyEst: "", monthlyEstOverride: false,
     salesTarget: "", superTarget: "",
-    yBrandFtds: "", monthlyBrandFtds: "", monthlyBrandEst: "",
+    yBrandFtds: "", monthlyBrandFtds: "", monthlyBrandEst: "", brandEstOverride: false,
     newAffiliates: "", newBrands: "",
     yCrgCap: "", highestDailyCap: "", highestDailyCapDate: "",
     refundAffiliates: "", refundBrands: "",
     dailyFtdsRecord: "", dailyFtdsDate: "",
+    dailyFtdsRecord2: "", dailyFtdsDate2: "",
     weekendFtdsRecord: "", weekendFtdsDate: "",
     weeklyFtdsRecord: "", weeklyFtdsDate: "",
     monthlyFtdsRecord: "", monthlyFtdsDate: "",
   });
 
-  // Get or create current month's report
   const getReport = (month) => allReports[month] || emptyReport();
   const [report, setReport] = useState(getReport(activeMonth));
 
-  // When switching months, load that report
   useEffect(() => { setReport(getReport(activeMonth)); }, [activeMonth]);
 
-  // ── Load reports from server on mount (merge with localStorage, server wins) ──
-  const serverLoaded = useRef(false);
-  useEffect(() => {
-    if (serverLoaded.current) return;
-    serverLoaded.current = true;
-    const BASE = window.__BLITZ_API || '';
-    fetch(`${BASE}/api/blitz-reports`, {
-      headers: { 'Authorization': `Bearer ${sessionStorage.getItem('blitz_token') || ''}` }
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(serverData => {
-        if (serverData && typeof serverData === 'object' && Object.keys(serverData).length > 0) {
-          const local = loadAllReports();
-          const merged = { ...local, ...serverData };
-          setAllReports(merged);
-          localStorage.setItem(REPORTS_KEY, JSON.stringify(merged));
-          setReport(merged[activeMonth] || emptyReport());
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // ── Auto-calculate Monthly EST whenever monthlyFtds or monthlyBrandFtds change ──
-  const estInfo = calcEst(report.monthlyFtds, activeMonth);
-  const brandEstInfo = calcEst(report.monthlyBrandFtds, activeMonth);
-
-  // Auto-save: persist to localStorage on every change + debounce server save
-  useEffect(() => {
-    const updated = { ...allReports, [activeMonth]: { ...report, lastSaved: new Date().toISOString() } };
-    // Only save if report has any non-empty values (skip blank reports)
-    const hasData = Object.entries(report).some(([k, v]) => k !== 'date' && k !== 'lastSaved' && v !== '');
-    if (!hasData) return;
+  // ── v9.20: Auto-save with debounce (1.5s after last edit) ──
+  const autoSaveTimer = useRef(null);
+  const persistReport = (rpt) => {
+    const updated = { ...allReports, [activeMonth]: { ...rpt, lastSaved: new Date().toISOString() } };
     setAllReports(updated);
     localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
-    // Debounced server save
+  };
+  // Auto-save on every report change (debounced)
+  useEffect(() => {
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => {
-      try {
-        const BASE = window.__BLITZ_API || '';
-        fetch(`${BASE}/api/blitz-reports`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reports: updated, email: user?.email })
-        }).catch(() => {});
-      } catch {}
-    }, 2000);
+    autoSaveTimer.current = setTimeout(() => { persistReport(report); }, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
   }, [report]);
 
-  // Save handler (manual — instant)
-  const saveReport = () => {
-    const updated = { ...allReports, [activeMonth]: { ...report, lastSaved: new Date().toISOString() } };
-    setAllReports(updated);
-    localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
-    try {
-      const BASE = window.__BLITZ_API || '';
-      fetch(`${BASE}/api/blitz-reports`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reports: updated, email: user?.email })
-      }).catch(() => {});
-    } catch {}
-    toast("✅ Report saved!");
-  };
+  // Manual save
+  const saveReport = () => { persistReport(report); toast("✅ Report saved!"); };
 
-  // Delete a report
   const deleteReport = (month) => {
     if (!confirm(`Delete report for ${month}?`)) return;
     const updated = { ...allReports };
     delete updated[month];
     setAllReports(updated);
     localStorage.setItem(REPORTS_KEY, JSON.stringify(updated));
-    try {
-      const BASE = window.__BLITZ_API || '';
-      fetch(`${BASE}/api/blitz-reports`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reports: updated, email: user?.email })
-      }).catch(() => {});
-    } catch {}
     if (activeMonth === month) { setActiveMonth(curMonth); setReport(getReport(curMonth)); }
   };
 
-  // Field update helper
   const set = (field, val) => setReport(p => ({ ...p, [field]: val }));
 
-  // Sorted months for "Old" section (exclude current month)
+  // ── v9.20: Monthly EST calculation based on working days remaining ──
+  const calcMonthlyEst = (monthlyVal) => {
+    const mFtds = parseInt(monthlyVal) || 0;
+    if (mFtds === 0) return "";
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const todayDate = new Date();
+    // Count working days (Mon-Fri) elapsed and total in the month
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    let workedDays = 0, totalWorkDays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { // Mon-Fri
+        totalWorkDays++;
+        if (dt <= todayDate) workedDays++;
+      }
+    }
+    if (workedDays === 0) return mFtds.toString();
+    const dailyAvg = mFtds / workedDays;
+    return Math.round(dailyAvg * totalWorkDays).toString();
+  };
+
+  const calcBrandEst = (monthlyVal) => {
+    const mFtds = parseInt(monthlyVal) || 0;
+    if (mFtds === 0) return "";
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const todayDate = new Date();
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    let workedDays = 0, totalWorkDays = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { totalWorkDays++; if (dt <= todayDate) workedDays++; }
+    }
+    if (workedDays === 0) return mFtds.toString();
+    return Math.round((mFtds / workedDays) * totalWorkDays).toString();
+  };
+
+  // Auto-compute EST when monthly FTDs change (unless manually overridden)
+  useEffect(() => {
+    if (report.monthlyFtds && !report.monthlyEstOverride) {
+      const est = calcMonthlyEst(report.monthlyFtds);
+      if (est !== report.monthlyEst) setReport(p => ({ ...p, monthlyEst: est }));
+    }
+  }, [report.monthlyFtds]);
+
+  useEffect(() => {
+    if (report.monthlyBrandFtds && !report.brandEstOverride) {
+      const est = calcBrandEst(report.monthlyBrandFtds);
+      if (est !== report.monthlyBrandEst) setReport(p => ({ ...p, monthlyBrandEst: est }));
+    }
+  }, [report.monthlyBrandFtds]);
+
   const oldMonths = Object.keys(allReports).filter(m => m !== curMonth).sort().reverse();
 
-  // ── Styles ──
-  const inp = (w) => ({ width: w || 70, padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF" });
-  const inp2 = (w) => ({ ...inp(w), fontSize: 10, fontWeight: 500, color: "#64748B" });
-  const cellS = { padding: "8px 12px", fontSize: 14, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", borderBottom: "1px solid #E2E8F0", verticalAlign: "middle" };
-  const hdrS = { ...cellS, fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, background: "#F8FAFC", padding: "6px 12px" };
-  const lblS = { ...cellS, textAlign: "left", fontWeight: 700, color: "#334155", fontSize: 13, background: "#F8FAFC", minWidth: 110 };
-  const valS = (bg) => ({ ...cellS, background: bg || "#FFF" });
-  const g = "rgba(16,185,129,0.08)";
-  const b = "rgba(56,189,248,0.08)";
-  const a = "rgba(245,158,11,0.08)";
-  const p = "rgba(236,72,153,0.08)";
-  const iB = "rgba(99,102,241,0.08)";
+  // ── Styles — matching screenshot exactly ──
+  const inputBase = { padding: "4px 6px", border: "1px solid #CBD5E1", borderRadius: 4, fontSize: 13, fontWeight: 700, textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#FFF", outline: "none" };
+  const inp = (w) => ({ ...inputBase, width: w || 64 });
+  const inp2 = (w) => ({ ...inputBase, width: w || 72, fontSize: 9, fontWeight: 500, color: "#64748B", marginTop: 2 });
+  const estInp = (w) => ({ ...inputBase, width: w || 64, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#16A34A" });
+
+  // Table cell styles — compact layout (v9.20: 20% smaller)
+  const cellBorder = "1px solid #E2E8F0";
+  const hdrCell = { padding: "7px 10px", fontSize: 10, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: 0.8, textAlign: "center", background: "#F8FAFC", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", fontFamily: "'Plus Jakarta Sans',sans-serif" };
+  const valCell = (bg) => ({ padding: "8px 10px", textAlign: "center", borderBottom: cellBorder, borderRight: cellBorder, verticalAlign: "middle", background: bg || "#FFF" });
+  const lblCell = { ...hdrCell, textAlign: "left", fontSize: 11, fontWeight: 800, color: "#1E293B", minWidth: 90, background: "#F8FAFC" };
+  
+  // Section backgrounds
+  const bBg = "rgba(56,189,248,0.06)";
+  const gBg = "rgba(16,185,129,0.06)";
+  const aBg = "rgba(245,158,11,0.06)";
+  const pBg = "rgba(236,72,153,0.06)";
 
   const isCurrentMonth = activeMonth === curMonth;
   const monthLabel = (() => {
@@ -3539,167 +3567,234 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
     return `${MONTHS[parseInt(m) - 1]} ${y}`;
   })();
 
+  // ── Working days info for display ──
+  const getWorkDayInfo = () => {
+    const [aY, aM] = activeMonth.split("-").map(Number);
+    const daysInMonth = new Date(aY, aM, 0).getDate();
+    const todayDate = new Date();
+    let worked = 0, total = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(aY, aM - 1, d);
+      const dow = dt.getDay();
+      if (dow >= 1 && dow <= 5) { total++; if (dt <= todayDate) worked++; }
+    }
+    return { worked, total, remaining: total - worked };
+  };
+  const wdInfo = getWorkDayInfo();
+
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
-      <main className="blitz-main" style={{ maxWidth: 950, margin: "0 auto", padding: "28px 32px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📊 Blitz Report</h2>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <main className="blitz-main" style={{ maxWidth: 960, margin: "0 auto", padding: "20px 24px" }}>
+        {/* ── Header bar ── */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 26 }}>📊</span> Blitz Report
+            <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500, marginLeft: 6 }}>auto-saves</span>
+          </h2>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <CurrencyBadges />
             {!isCurrentMonth && <button onClick={() => setActiveMonth(curMonth)} style={{ padding: "6px 14px", borderRadius: 8, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>← Current Month</button>}
             <button onClick={saveReport} style={{ padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>💾 Save Report</button>
           </div>
         </div>
 
-        {/* ═══ MAIN REPORT TABLE ═══ */}
-        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", marginBottom: 20 }}>
-          <div style={{ background: "linear-gradient(135deg,#334155,#475569)", color: "#FFF", padding: "12px 20px", fontSize: 16, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>Blitz Report — {monthLabel}</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* MAIN REPORT — Matching screenshot layout exactly          */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
+          {/* Dark header bar */}
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "10px 20px", fontSize: 15, fontWeight: 800, textAlign: "center", letterSpacing: 0.5 }}>
+            Blitz Report — {monthLabel}
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "15%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "17%" }} />
+            </colgroup>
             <tbody>
-              {/* ── Row 1: FTD header ── */}
+              {/* ═══ SECTION 1: FTDs ═══ */}
               <tr>
-                <td style={lblS}>
-                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(100), fontSize: 12 }} />
+                <td style={lblCell}>
+                  <input value={report.date || today} onChange={e => set("date", e.target.value)} style={{ ...inp(95), fontSize: 11 }} />
                 </td>
-                <td style={hdrS}>Y FTDs</td>
-                <td style={hdrS}>Monthly FTDs</td>
-                <td style={hdrS}>Monthly EST</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Sales Target</td>
+                <td style={hdrCell}>Y FTDS</td>
+                <td style={hdrCell}>MONTHLY FTDS</td>
+                <td style={hdrCell}>MONTHLY EST</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}>SALES TARGET</td>
               </tr>
-              {/* ── Row 2: FTD values ── */}
               <tr>
-                <td style={lblS}></td>
-                <td style={valS(b)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(b)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: estInfo.est ? "#10B981" : "#94A3B8" }}>{estInfo.est || "—"}</div>
-                  <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>{estInfo.passed}/{estInfo.total} work days</div>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.yFtds} onChange={e => set("yFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(bBg)}><input value={report.monthlyFtds} onChange={e => set("monthlyFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <input value={report.monthlyEst} onChange={e => set("monthlyEst", e.target.value) || set("monthlyEstOverride", true)} style={{ ...estInp(), border: report.monthlyEstOverride ? "1px solid #FBBF24" : "1px solid #BBF7D0" }} title={`Working days: ${wdInfo.worked}/${wdInfo.total} (${wdInfo.remaining} left)${report.monthlyEstOverride ? " — manual override" : ""}`} />
+                    {report.monthlyEstOverride && <button onClick={() => { const est = calcMonthlyEst(report.monthlyFtds); setReport(p => ({ ...p, monthlyEst: est, monthlyEstOverride: false })); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }} title="Recalculate from working days">🔄</button>}
+                  </div>
+                  <div style={{ fontSize: 8, color: "#94A3B8", marginTop: 2 }}>{wdInfo.worked}/{wdInfo.total} work days</div>
                 </td>
-                <td style={valS()}></td>
-                <td style={valS(a)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
-              </tr>
-              {/* ── Row 3: Super Target ── */}
-              <tr>
-                <td style={lblS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Super Target</td>
-              </tr>
-              <tr>
-                <td style={lblS}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(g)}><input value={report.superTarget} onChange={e => set("superTarget", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell(aBg)}><input value={report.salesTarget} onChange={e => set("salesTarget", e.target.value)} style={inp()} /></td>
               </tr>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
-
-              {/* ── Brand row (🐦 icon from screenshot) ── */}
+              {/* Super Target row */}
               <tr>
-                <td style={lblS}>🐦</td>
-                <td style={hdrS}>Yesterday 🐦</td>
-                <td style={hdrS}>Monthly 🐦</td>
-                <td style={hdrS}>Monthly EST 🐦</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={{ ...hdrCell, borderBottom: cellBorder }}>SUPER TARGET</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS(b)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(b)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: brandEstInfo.est ? "#10B981" : "#94A3B8" }}>{brandEstInfo.est || "—"}</div>
-                  <div style={{ fontSize: 9, color: "#94A3B8", marginTop: 2 }}>{brandEstInfo.passed}/{brandEstInfo.total} work days</div>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(gBg)}><input value={report.superTarget} onChange={e => set("superTarget", e.target.value)} style={inp()} /></td>
+              </tr>
+
+              {/* ═══ DIVIDER ═══ */}
+              <tr><td colSpan={6} style={{ height: 6, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
+
+              {/* ═══ SECTION 2: Brand FTDs (🐦) ═══ */}
+              <tr>
+                <td style={lblCell}></td>
+                <td style={hdrCell}>YESTERDAY 🐦</td>
+                <td style={hdrCell}>MONTHLY 🐦</td>
+                <td style={hdrCell}>MONTHLY EST 🐦</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}></td>
+              </tr>
+              <tr>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.yBrandFtds} onChange={e => set("yBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(bBg)}><input value={report.monthlyBrandFtds} onChange={e => set("monthlyBrandFtds", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                    <input value={report.monthlyBrandEst} onChange={e => set("monthlyBrandEst", e.target.value) || set("brandEstOverride", true)} style={{ ...estInp(), border: report.brandEstOverride ? "1px solid #FBBF24" : "1px solid #BBF7D0" }} title={`Working days: ${wdInfo.worked}/${wdInfo.total}${report.brandEstOverride ? " — manual override" : ""}`} />
+                    {report.brandEstOverride && <button onClick={() => { const est = calcBrandEst(report.monthlyBrandFtds); setReport(p => ({ ...p, monthlyBrandEst: est, brandEstOverride: false })); }} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: 14, lineHeight: 1 }} title="Recalculate">🔄</button>}
+                  </div>
+                  <div style={{ fontSize: 8, color: "#94A3B8", marginTop: 2 }}>{wdInfo.worked}/{wdInfo.total} work days</div>
                 </td>
-                <td style={hdrS}>New Affiliates</td>
-                <td style={hdrS}>New Brands</td>
+                <td style={hdrCell}>NEW AFFILIATES</td>
+                <td style={hdrCell}>NEW BRANDS</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(b)}><input value={report.newAffiliates} onChange={e => set("newAffiliates", e.target.value)} style={inp()} /></td>
-                <td style={valS(g)}><input value={report.newBrands} onChange={e => set("newBrands", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(bBg)}><input value={report.newAffiliates} onChange={e => set("newAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valCell(gBg)}><input value={report.newBrands} onChange={e => set("newBrands", e.target.value)} style={inp()} /></td>
               </tr>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
+              {/* ═══ DIVIDER ═══ */}
+              <tr><td colSpan={6} style={{ height: 6, background: "#F1F5F9", borderBottom: cellBorder }}></td></tr>
 
-              {/* ── CRG Cap row ── */}
+              {/* ═══ SECTION 3: CRG Cap ═══ */}
               <tr>
-                <td style={hdrS}>Y CRG Cap</td>
-                <td style={hdrS}>Highest Daily CRG Cap</td>
-                <td style={hdrS}></td>
-                <td style={hdrS}></td>
-                <td style={hdrS}>Refund Affiliates</td>
-                <td style={hdrS}>Refund Brands</td>
+                <td style={hdrCell}>Y CRG CAP</td>
+                <td style={hdrCell}>HIGHEST DAILY CRG CAP</td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}></td>
+                <td style={hdrCell}>REFUND AFFILIATES</td>
+                <td style={hdrCell}>REFUND BRANDS</td>
               </tr>
               <tr>
-                <td style={valS(b)}><input value={report.yCrgCap} onChange={e => set("yCrgCap", e.target.value)} style={inp()} /></td>
-                <td style={valS(a)}>
+                <td style={valCell(bBg)}><input value={report.yCrgCap} onChange={e => set("yCrgCap", e.target.value)} style={inp()} /></td>
+                <td style={valCell(aBg)}>
                   <input value={report.highestDailyCap} onChange={e => set("highestDailyCap", e.target.value)} style={inp()} />
-                  <div><input value={report.highestDailyCapDate} onChange={e => set("highestDailyCapDate", e.target.value)} style={inp2(90)} placeholder="dd/mm/yyyy" /></div>
+                  <div><input value={report.highestDailyCapDate} onChange={e => set("highestDailyCapDate", e.target.value)} style={inp2(100)} placeholder="dd/mm/yyyy" /></div>
                 </td>
-                <td style={valS()}></td>
-                <td style={valS()}></td>
-                <td style={valS(p)}><input value={report.refundAffiliates} onChange={e => set("refundAffiliates", e.target.value)} style={inp()} /></td>
-                <td style={valS(p)}><input value={report.refundBrands} onChange={e => set("refundBrands", e.target.value)} style={inp()} /></td>
+                <td style={valCell()}></td>
+                <td style={valCell()}></td>
+                <td style={valCell(pBg)}><input value={report.refundAffiliates} onChange={e => set("refundAffiliates", e.target.value)} style={inp()} /></td>
+                <td style={valCell(pBg)}><input value={report.refundBrands} onChange={e => set("refundBrands", e.target.value)} style={inp()} /></td>
               </tr>
+            </tbody>
+          </table>
+        </div>
 
-              {/* ── Spacer ── */}
-              <tr><td colSpan={6} style={{ height: 8, background: "#F8FAFC" }}></td></tr>
-
-              {/* ── Blitz Records row ── */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* BLITZ RECORDS — Separate card like screenshot              */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.05)", marginBottom: 24 }}>
+          <div style={{ background: "linear-gradient(135deg,#334155 0%,#475569 100%)", color: "#FFF", padding: "8px 20px", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ background: "#10B981", padding: "2px 12px", borderRadius: 6, fontSize: 13 }}>Blitz Records</span>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "20%" }} />
+            </colgroup>
+            <tbody>
               <tr>
-                <td style={lblS}>🏆 Records</td>
-                <td style={hdrS}>Daily FTDs</td>
-                <td style={hdrS}>Weekend FTDs</td>
-                <td style={hdrS}>Weekly FTDs</td>
-                <td style={hdrS} colSpan={2}>Monthly FTDs</td>
+                <td style={hdrCell}>DAILY FTDS</td>
+                <td style={hdrCell}>DAILY FTDS</td>
+                <td style={hdrCell}>WEEKEND FTDS</td>
+                <td style={hdrCell}>WEEKLY FTDS</td>
+                <td style={hdrCell}>MONTHLY FTDS</td>
               </tr>
               <tr>
-                <td style={lblS}></td>
-                <td style={valS(g)}>
-                  <input value={report.dailyFtdsRecord} onChange={e => set("dailyFtdsRecord", e.target.value)} style={inp()} placeholder="0" />
-                  <div><input value={report.dailyFtdsDate} onChange={e => set("dailyFtdsDate", e.target.value)} style={inp2(90)} placeholder="dd/mm/yyyy" /></div>
+                <td style={valCell(gBg)}>
+                  <input value={report.dailyFtdsRecord} onChange={e => set("dailyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.dailyFtdsDate} onChange={e => set("dailyFtdsDate", e.target.value)} style={inp2()} placeholder="date" /></div>
                 </td>
-                <td style={valS(g)}>
-                  <input value={report.weekendFtdsRecord} onChange={e => set("weekendFtdsRecord", e.target.value)} style={inp()} placeholder="0" />
-                  <div><input value={report.weekendFtdsDate} onChange={e => set("weekendFtdsDate", e.target.value)} style={inp2(90)} placeholder="dd-dd/mm" /></div>
+                <td style={valCell(gBg)}>
+                  <input value={report.dailyFtdsRecord2 || ""} onChange={e => set("dailyFtdsRecord2", e.target.value)} style={inp()} />
+                  <div><input value={report.dailyFtdsDate2 || ""} onChange={e => set("dailyFtdsDate2", e.target.value)} style={inp2()} placeholder="date" /></div>
                 </td>
-                <td style={valS(g)}>
-                  <input value={report.weeklyFtdsRecord} onChange={e => set("weeklyFtdsRecord", e.target.value)} style={inp()} placeholder="0" />
-                  <div><input value={report.weeklyFtdsDate} onChange={e => set("weeklyFtdsDate", e.target.value)} style={inp2(90)} placeholder="dd-dd/mm" /></div>
+                <td style={valCell(gBg)}>
+                  <input value={report.weekendFtdsRecord} onChange={e => set("weekendFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.weekendFtdsDate} onChange={e => set("weekendFtdsDate", e.target.value)} style={inp2()} placeholder="date range" /></div>
                 </td>
-                <td style={valS(g)} colSpan={2}>
-                  <input value={report.monthlyFtdsRecord} onChange={e => set("monthlyFtdsRecord", e.target.value)} style={inp()} placeholder="0" />
-                  <div><input value={report.monthlyFtdsDate} onChange={e => set("monthlyFtdsDate", e.target.value)} style={inp2(90)} placeholder="month" /></div>
+                <td style={valCell(gBg)}>
+                  <input value={report.weeklyFtdsRecord} onChange={e => set("weeklyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.weeklyFtdsDate} onChange={e => set("weeklyFtdsDate", e.target.value)} style={inp2()} placeholder="date range" /></div>
+                </td>
+                <td style={valCell(gBg)}>
+                  <input value={report.monthlyFtdsRecord} onChange={e => set("monthlyFtdsRecord", e.target.value)} style={inp()} />
+                  <div><input value={report.monthlyFtdsDate} onChange={e => set("monthlyFtdsDate", e.target.value)} style={inp2()} placeholder="month" /></div>
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {/* ── Target Progress (if targets filled) ── */}
+        {/* ── Working Days Info Bar ── */}
+        <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "7px 14px", fontSize: 11, fontWeight: 600, color: "#1E40AF", flex: 1, minWidth: 140, textAlign: "center" }}>
+            📅 Working days: <b>{wdInfo.worked}</b> / {wdInfo.total} <span style={{ color: "#64748B" }}>({wdInfo.remaining} remaining)</span>
+          </div>
+          {report.monthlyFtds && <div style={{ background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "7px 14px", fontSize: 11, fontWeight: 600, color: "#166534", flex: 1, minWidth: 140, textAlign: "center" }}>
+            📈 Daily avg: <b>{(parseInt(report.monthlyFtds) / Math.max(1, wdInfo.worked)).toFixed(1)}</b> FTDs/day → EST: <b>{report.monthlyEst}</b> by month end
+          </div>}
+        </div>
+
+        {/* ── Target Progress ── */}
         {(report.salesTarget || report.superTarget) && report.monthlyFtds && (
-          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 12 }}>🎯 Target Progress — {monthLabel}</div>
+          <div style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 18px", marginBottom: 16, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#334155", marginBottom: 10 }}>🎯 Target Progress — {monthLabel}</div>
             {[
               { label: "Sales Target", target: parseInt(report.salesTarget) || 0, color: "#F59E0B" },
               ...(report.superTarget ? [{ label: "Super Target", target: parseInt(report.superTarget) || 0, color: "#10B981" }] : []),
             ].filter(t => t.target > 0).map(t => {
               const actual = parseInt(report.monthlyFtds) || 0;
-              const est = estInfo.est;
+              const est = parseInt(report.monthlyEst) || 0;
               const pct = Math.min(100, Math.round((actual / t.target) * 100));
               const estPct = Math.min(100, Math.round((est / t.target) * 100));
               return (
@@ -3740,7 +3835,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, fontSize: 12, color: "#64748B", marginBottom: 10 }}>
                       <span>FTDs: <b style={{ color: "#10B981" }}>{r.monthlyFtds || "—"}</b></span>
-                      <span>EST: <b style={{ color: "#0EA5E9" }}>{(() => { const ci = calcEst(r.monthlyFtds, month); return ci.est || "—"; })()}</b></span>
+                      <span>EST: <b style={{ color: "#0EA5E9" }}>{r.monthlyEst || "—"}</b></span>
                       <span>Target: <b style={{ color: "#F59E0B" }}>{r.salesTarget || "—"}</b></span>
                       <span>CRG Cap: <b style={{ color: "#8B5CF6" }}>{r.yCrgCap || "—"}</b></span>
                     </div>
@@ -3976,10 +4071,9 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // Notification sent by server - removed duplicate from frontend
-      } else {
-        telegramNotify(`🔄 Payment (Aff ${p.invoice}) status → ${newStatus} by ${user.name}`);
+        // All notifications handled by server on save — no frontend telegramNotify needed
       }
+      // Removed: frontend telegramNotify for status changes — server sends notifications on save
       return updated;
     }));
   };
@@ -4003,26 +4097,19 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
 
   const handleSave = form => { 
     if (editPay) { 
-      const updated = { ...editPay, ...form, updatedAt: Date.now() }; 
-      // Send telegram notification when status changes to Paid
+      const updated = { ...editPay, ...form }; 
       if (form.status === "Paid" && editPay.status !== "Paid") { 
         updated.month = month; 
-        
         updated.year = year; 
         if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
-        // Send detailed payment notification
-        telegramNotify(`💰 PAYMENT Aff ${form.invoice} marked as PAID 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Paid by: ${user.name}\nPayment Hash: ${form.paymentHash || 'N/A'}`);
-      } else if (form.status !== "Paid") {
-        // Notify for other status changes
-        telegramNotify(`🔄 Payment (Aff ${form.invoice}) updated to ${form.status} by ${user.name}`);
       }
+      // All Telegram notifications handled server-side on save — no frontend duplicates
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
     } else { 
       // New payment added
-      const newPayment = { ...form, id: genId(), month, year, createdAt: Date.now(), updatedAt: Date.now() };
+      const newPayment = { ...form, id: genId(), month, year };
       setPayments(prev => [...prev, newPayment]);
-      // Send notification for new payment
-      telegramNotify(`🆕 NEW PAYMENT ADDED 💰\n\n📋 Affiliate ID: ${form.invoice}\n💵 Amount: $${parseFloat(form.amount).toLocaleString()}\n👤 Opened by: ${user.name}\nStatus: ${form.status}`);
+      // Server sends "NEW PAYMENT ADDED" notification on save — no frontend duplicate
     } 
     setModalOpen(false); 
     setEditPay(null); 
@@ -4754,7 +4841,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
 
   const handleSave = form => {
     if (editPay) {
-      const updated = { ...editPay, ...form, updatedAt: Date.now() };
+      const updated = { ...editPay, ...form };
       if (["Received", "Refund"].includes(form.status) && !["Received", "Refund"].includes(editPay.status)) {
         updated.month = month;
         updated.year = year;
@@ -4762,7 +4849,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
       }
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
-      setPayments(prev => [...prev, { ...form, id: genId(), month, year, createdAt: Date.now(), updatedAt: Date.now() }]);
+      setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
     }
     setModalOpen(false);
     setEditPay(null);
@@ -5105,7 +5192,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
       setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
       // New deals start as "pending" — need 3 confirmations before going live
-      setDeals(prev => [...prev, { ...form, id: genId(), status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false, rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now(), updatedAt: Date.now() }]);
+      setDeals(prev => [...prev, { ...form, id: genId(), status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false, rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -5947,7 +6034,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
     if (editDeal) {
       setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
-      setDeals(prev => [...prev, { ...form, id: genId(), createdAt: Date.now(), updatedAt: Date.now() }]);
+      setDeals(prev => [...prev, { ...form, id: genId() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -5985,12 +6072,12 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
   };
 
   const handleBulkArchive = (ids) => {
-    setDeals(prev => prev.map(d => ids.includes(d.id) ? { ...d, archived: true } : d));
+    setDeals(prev => prev.map(d => ids.includes(d.id) ? { ...d, archived: true, updatedAt: Date.now() } : d));
     clearSelection();
   };
 
   const handleInlineChange = (id, field, value) => {
-    setDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+    setDeals(prev => prev.map(d => d.id === id ? { ...d, [field]: value, updatedAt: Date.now() } : d));
   };
 
   const matchSearch = d => {
@@ -6585,7 +6672,6 @@ function AppInner() {
 
     // FIX: Respect locally deleted records — don't resurrect them from server data
     // v9.15: Also check persistDeletedIDs which survives clear cycles
-    // v10.0: persistDeletedIDs now also contains server-side tombstones from apiGet
     const localDeletedSet = deletedIDs[tableName] || new Set();
     const persistDeleted = persistDeletedIDs[tableName] || new Set();
 
@@ -6840,8 +6926,8 @@ function AppInner() {
     return () => { clearInterval(interval); clearInterval(reconnectFlush); unsub(); };
   }, [loaded]);
 
-  // ── Unified debounced auto-save (v8) ──
-  // Single system: debounce 2s, skip if unchanged from baseline, block during init
+  // ── Unified debounced auto-save (v10.05) ──
+  // Single system: debounce 3s (matches server throttle), skip if unchanged from baseline, block during init
   const saveBaselines = useRef({});
   const saveTimers = useRef({});
 
@@ -6858,7 +6944,7 @@ function AppInner() {
       if (currentJson === (saveBaselines.current[table] || '[]')) return;
       saveBaselines.current[table] = currentJson;
       apiSave(table, data, user?.email);
-    }, 2000);
+    }, 3000); // v10.05: 3s (was 2s) to match server-side throttle
   };
 
   useEffect(() => { debouncedSave('users', users); }, [users]);
