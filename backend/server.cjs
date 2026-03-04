@@ -1542,6 +1542,11 @@ const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily
 // v9.18: NOTIFICATION DEDUP — prevent looping Telegram messages
 // ═══════════════════════════════════════════════════════════════
 // When client saves ALL payments, server compares vs file on disk.
+// v10.1: Hash-based notification dedup — prevents duplicate messages when same payment hash
+// exists in both payments and customer-payments tables
+const notifiedHashes = new Set();
+setInterval(() => { if (notifiedHashes.size > 5000) notifiedHashes.clear(); }, 30 * 60 * 1000);
+
 // If server file was reset/restored, every old payment looks "new" → notification flood.
 // Fix: Track which payment IDs already got a "new" notification.
 const notifiedPaymentIds = new Set();
@@ -1629,6 +1634,9 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       // Guard: skip if already notified (prevents loop when client re-sends all payments)
       if (notifiedPaymentIds.has(p.id)) return;
       notifiedPaymentIds.add(p.id);
+      // v10.1: Hash-based dedup — skip if this payment hash already triggered a notification
+      if (p.paymentHash && notifiedHashes.has(p.paymentHash)) return;
+      if (p.paymentHash) notifiedHashes.add(p.paymentHash);
       
       if (p.status === "Paid") {
         sendAffiliatePaymentNotification(p, true);
@@ -1646,6 +1654,9 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       if (notifiedTransitions.has(transKey)) return;
       notifiedTransitions.add(transKey);
       setTimeout(() => notifiedTransitions.delete(transKey), 60000);
+      // v10.1: Hash-based dedup
+      if (p.paymentHash && notifiedHashes.has(p.paymentHash)) return;
+      if (p.paymentHash) notifiedHashes.add(p.paymentHash);
       
       if (p.status === "Paid") {
         sendAffiliatePaymentNotification(p, true);
@@ -1796,6 +1807,9 @@ app.post("/api/payments", requireAuth, async (req, res) => {
           // v9.18: Skip if already notified (prevents loop)
           if (notifiedPaymentIds.has(cp.id)) return;
           notifiedPaymentIds.add(cp.id);
+          // v10.1: Hash-based dedup — skip if this hash already sent a notification from payments table
+          if (cp.paymentHash && notifiedHashes.has(cp.paymentHash)) return;
+          if (cp.paymentHash) notifiedHashes.add(cp.paymentHash);
           
           if (cp.status === "Received") {
             sendBrandPaymentNotification(cp);
@@ -3003,7 +3017,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             let txResult = { success: false };
             if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
             else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
-            // BTC doesn't have verification yet, just record it
+            else if (type === 'BTC') txResult = await checkBTCTransaction(hash);
 
             // v9.19 FIX: Prefer blockchain amount when available and non-zero
             // Previously: (amounts[i] || txResult.amount || "0") — blockchain "0" was ignored
@@ -3023,6 +3037,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
               paymentHash: hash,
               trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
               ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+              btcAddress: type === 'BTC' ? (txResult.toAddress || "") : "",
               brand: extractedBrand || "",
               customerName: extractedCustomer || "",
               walletMatched: walletVerify.matched,
@@ -3058,7 +3073,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // v9.51: Extract customer name
       const extractedCustomerFinance = extractCustomerName(messageText);
       const hashes = extractAllUsdtHashes(messageText);
-      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20');
+      const txHashes = hashes.filter(h => h.type === 'TRC20' || h.type === 'ERC20' || h.type === 'BTC');
       if (txHashes.length === 0) return;
 
       const amounts = [];
@@ -3074,6 +3089,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         let txResult = { success: false };
         if (type === 'TRC20') txResult = await checkTRC20Transaction(hash);
         else if (type === 'ERC20') txResult = await checkERC20Transaction(hash);
+        else if (type === 'BTC') txResult = await checkBTCTransaction(hash);
 
         // v9.19 FIX: Prefer blockchain amount when available and non-zero
         const blockchainAmount = txResult.amount && txResult.amount !== "0" && parseFloat(txResult.amount) > 0 ? txResult.amount : null;
@@ -3090,6 +3106,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
           openBy: "Telegram Bot", paidDate: new Date().toISOString().split("T")[0],
           paymentHash: hash, trcAddress: type === 'TRC20' ? (txResult.toAddress || "") : "",
           ercAddress: type === 'ERC20' ? (txResult.toAddress || "") : "",
+          btcAddress: type === 'BTC' ? (txResult.toAddress || "") : "",
           customerName: extractedCustomerFinance || "",
           blockchainType: type,
           blockchainVerified: txResult.success,
@@ -3211,30 +3228,153 @@ function extractAllUsdtHashes(text) {
     if (ERC20_HASH_REGEX.test(t)) { hashes.push({ hash: t, type: 'ERC20' }); seenHashes.add(t); }
     else if (TRC20_HASH_REGEX.test(t)) { hashes.push({ hash: t, type: 'TRC20' }); seenHashes.add(t); }
   });
+  
+  // v10.1: Extract BTC transaction hashes from blockchain explorer URLs
+  const btcPatterns = [
+    /blockchain\.com\/(?:btc\/)?tx\/([a-fA-F0-9]{64})/gi,
+    /blockchair\.com\/bitcoin\/transaction\/([a-fA-F0-9]{64})/gi,
+    /btc\.com\/([a-fA-F0-9]{64})/gi,
+    /mempool\.space\/tx\/([a-fA-F0-9]{64})/gi,
+    /live\.blockcypher\.com\/btc\/tx\/([a-fA-F0-9]{64})/gi,
+  ];
+  for (const pattern of btcPatterns) {
+    for (const match of text.matchAll(pattern)) {
+      const h = match[1];
+      if (!seenHashes.has(h)) {
+        hashes.push({ hash: h, type: 'BTC' });
+        seenHashes.add(h);
+      }
+    }
+  }
+  
   return hashes;
 }
 
 async function checkTRC20Transaction(txHash) {
   try {
-    const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
-    const data = JSON.parse(await httpRequest(url));
-    // Method 1: tokenTransferInfo (most reliable for TRC20)
-    if (data && data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
-      const usdtTransfer = data.tokenTransferInfo.find(t => t.contract_address === TRC20_USDT_CONTRACT || (t.tokenInfo && t.tokenInfo.symbol === "USDT"));
-      if (usdtTransfer) {
-        const raw = usdtTransfer.amount_str || usdtTransfer.amount || "0";
-        const dec = usdtTransfer.tokenInfo && usdtTransfer.tokenInfo.decimals ? parseInt(usdtTransfer.tokenInfo.decimals) : 6;
-        return { success:true, amount:(parseInt(raw)/Math.pow(10,dec)).toString(), toAddress:usdtTransfer.to_address||data.to_address, fromAddress:usdtTransfer.from_address||data.from_address, confirmed:data.confirmed||(data.revert===0) };
+    console.log(`🔍 [TRC20] Checking transaction: ${txHash}`);
+    
+    // Known TRC20 stablecoin contracts
+    const TRC20_STABLECOINS = {
+      [TRC20_USDT_CONTRACT]: { symbol: "USDT", decimals: 6 },
+      "TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8": { symbol: "USDC", decimals: 6 },
+    };
+    
+    // ═══ METHOD 1: Tronscan API — transaction-info endpoint ═══
+    try {
+      const url = `${TRONSCAN_API}/api/transaction-info?hash=${txHash}`;
+      const raw = await httpRequest(url);
+      const data = JSON.parse(raw);
+      
+      if (!data || data.error || (!data.hash && !data.contractData)) {
+        console.log(`⚠️ [TRC20] Tronscan returned no data for ${txHash.slice(0,12)}...`);
+      } else {
+        console.log(`📋 [TRC20] Tronscan response keys: ${Object.keys(data).join(', ')}`);
+        
+        // Method 1a: trc20TransferInfo (newer Tronscan API field)
+        if (data.trc20TransferInfo && Array.isArray(data.trc20TransferInfo) && data.trc20TransferInfo.length > 0) {
+          const transfer = data.trc20TransferInfo.find(t => {
+            const addr = (t.contract_address || "").trim();
+            return TRC20_STABLECOINS[addr] || (t.icon_url && t.icon_url.includes("USDT")) || t.symbol === "USDT" || t.symbol === "USDC";
+          });
+          if (transfer) {
+            const contract = TRC20_STABLECOINS[transfer.contract_address] || { symbol: transfer.symbol || "USDT", decimals: parseInt(transfer.decimals || "6") };
+            const raw = transfer.amount_str || transfer.amount || "0";
+            const dec = parseInt(transfer.decimals || contract.decimals || "6");
+            const amount = (parseFloat(raw) / Math.pow(10, dec)).toString();
+            console.log(`✅ [TRC20] Found via trc20TransferInfo: $${amount} ${contract.symbol}`);
+            return { success: true, amount, toAddress: transfer.to_address || data.toAddress || "", fromAddress: transfer.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
+          }
+        }
+        
+        // Method 1b: tokenTransferInfo (original field)
+        if (data.tokenTransferInfo && Array.isArray(data.tokenTransferInfo) && data.tokenTransferInfo.length > 0) {
+          const transfer = data.tokenTransferInfo.find(t => {
+            const addr = (t.contract_address || "").trim();
+            return TRC20_STABLECOINS[addr] || (t.tokenInfo && (t.tokenInfo.symbol === "USDT" || t.tokenInfo.symbol === "USDC"));
+          });
+          if (transfer) {
+            const raw = transfer.amount_str || transfer.amount || "0";
+            const dec = transfer.tokenInfo && transfer.tokenInfo.decimals ? parseInt(transfer.tokenInfo.decimals) : 6;
+            const amount = (parseFloat(raw) / Math.pow(10, dec)).toString();
+            console.log(`✅ [TRC20] Found via tokenTransferInfo: $${amount}`);
+            return { success: true, amount, toAddress: transfer.to_address || data.toAddress || "", fromAddress: transfer.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
+          }
+        }
+        
+        // Method 1c: trigger_info (smart contract call data)
+        if (data.trigger_info && data.trigger_info.parameter) {
+          const param = data.trigger_info.parameter;
+          const contractAddr = data.trigger_info.contract_address || data.toAddress || "";
+          const stablecoin = TRC20_STABLECOINS[contractAddr];
+          if (stablecoin || data.trigger_info.methodName === "transfer") {
+            const rawValue = param._value || param.value || param.amount || "0";
+            const dec = stablecoin ? stablecoin.decimals : 6;
+            const amount = (parseFloat(rawValue) / Math.pow(10, dec)).toString();
+            const toAddr = param._to || param.to || "";
+            if (parseFloat(amount) > 0) {
+              console.log(`✅ [TRC20] Found via trigger_info: $${amount}`);
+              return { success: true, amount, toAddress: toAddr, fromAddress: data.ownerAddress || "", confirmed: data.confirmed !== false };
+            }
+          }
+        }
+        
+        // Method 1d: contractData (for TriggerSmartContract calls)
+        if (data.contractData && data.contractData.amount) {
+          const contractAddr = data.contractData.contract_address || data.toAddress || "";
+          const stablecoin = TRC20_STABLECOINS[contractAddr];
+          if (stablecoin) {
+            const rawAmount = data.contractData.amount;
+            const dec = stablecoin.decimals;
+            const amount = (parseFloat(rawAmount) / Math.pow(10, dec)).toString();
+            console.log(`✅ [TRC20] Found via contractData: $${amount}`);
+            return { success: true, amount, toAddress: data.contractData.owner_address || data.toAddress || "", fromAddress: data.ownerAddress || "", confirmed: data.confirmed !== false };
+          }
+        }
+        
+        // Method 1e: token_info fallback
+        if (data.token_info && (data.token_info.symbol === "USDT" || data.token_info.symbol === "USDC")) {
+          const raw = data.amount || data.token_info.amount || "0";
+          const dec = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
+          const amount = (parseFloat(raw) / Math.pow(10, dec)).toString();
+          console.log(`✅ [TRC20] Found via token_info: $${amount}`);
+          return { success: true, amount, toAddress: data.to_address || data.toAddress || "", fromAddress: data.from_address || data.ownerAddress || "", confirmed: data.confirmed !== false };
+        }
+        
+        console.log(`⚠️ [TRC20] No USDT/USDC transfer found in Tronscan response. contractType=${data.contractType}, contractRet=${data.contractRet}`);
       }
+    } catch (err) {
+      console.log(`⚠️ [TRC20] Tronscan API error: ${err.message}`);
     }
-    // Method 2: token_info fallback
-    if (data && data.token_info && data.token_info.symbol === "USDT") {
-      const raw = data.amount || data.token_info.amount || "0";
-      const dec = data.token_info.decimals ? parseInt(data.token_info.decimals) : 6;
-      return { success:true, amount:(parseInt(raw)/Math.pow(10,dec)).toString(), toAddress:data.to_address, fromAddress:data.from_address, confirmed:data.confirmed||(data.revert===0) };
+    
+    // ═══ METHOD 2: TronGrid API fallback ═══
+    try {
+      const tgUrl = `https://api.trongrid.io/v1/transactions/${txHash}/events`;
+      const tgRaw = await httpRequest(tgUrl);
+      const tgData = JSON.parse(tgRaw);
+      
+      if (tgData && tgData.data && Array.isArray(tgData.data)) {
+        const transferEvent = tgData.data.find(e => 
+          e.event_name === "Transfer" && TRC20_STABLECOINS[e.contract_address]
+        );
+        if (transferEvent && transferEvent.result) {
+          const contract = TRC20_STABLECOINS[transferEvent.contract_address];
+          const rawAmount = transferEvent.result.value || transferEvent.result._value || "0";
+          const amount = (parseFloat(rawAmount) / Math.pow(10, contract.decimals)).toString();
+          console.log(`✅ [TRC20] Found via TronGrid events: $${amount} ${contract.symbol}`);
+          return { success: true, amount, toAddress: transferEvent.result.to || transferEvent.result._to || "", fromAddress: transferEvent.result.from || transferEvent.result._from || "", confirmed: true };
+        }
+      }
+    } catch (err) {
+      console.log(`⚠️ [TRC20] TronGrid fallback error: ${err.message}`);
     }
-    return { success: false, error: "Not a USDT TRC20 transaction" };
-  } catch (err) { return { success: false, error: err.message }; }
+    
+    console.log(`❌ [TRC20] All methods failed for ${txHash.slice(0,12)}...`);
+    return { success: false, error: "Could not verify TRC20 transaction" };
+  } catch (err) { 
+    console.error(`❌ [TRC20] Fatal error: ${err.message}`);
+    return { success: false, error: err.message }; 
+  }
 }
 
 async function checkERC20Transaction(txHash) {
@@ -3363,6 +3503,82 @@ async function checkERC20Transaction(txHash) {
     return { success: amount !== "0", amount, toAddress, fromAddress, confirmed, hash: txHash };
   } catch (err) {
     console.error(`❌ [ERC20] checkERC20Transaction error for ${txHash}:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+// v10.1: BTC transaction verification via blockchain.com API
+async function checkBTCTransaction(txHash) {
+  try {
+    console.log(`🔍 [BTC] Checking transaction: ${txHash}`);
+    
+    // Method 1: blockchain.com API
+    try {
+      const url = `https://blockchain.info/rawtx/${txHash}`;
+      const raw = await httpRequest(url);
+      const data = JSON.parse(raw);
+      
+      if (data && data.hash) {
+        let toAddress = "";
+        let largestOutput = 0;
+        
+        if (data.out && Array.isArray(data.out)) {
+          for (const out of data.out) {
+            if ((out.value || 0) > largestOutput) {
+              largestOutput = out.value || 0;
+              toAddress = out.addr || "";
+            }
+          }
+        }
+        
+        let fromAddress = "";
+        if (data.inputs && Array.isArray(data.inputs) && data.inputs.length > 0) {
+          fromAddress = data.inputs[0].prev_out ? data.inputs[0].prev_out.addr || "" : "";
+        }
+        
+        const amountBTC = (largestOutput / 100000000).toFixed(8);
+        const confirmed = data.block_height > 0;
+        
+        console.log(`✅ [BTC] Found: ${amountBTC} BTC to ${toAddress} (confirmed: ${confirmed})`);
+        return { success: true, amount: `${amountBTC} BTC`, toAddress, fromAddress, confirmed, isBTC: true };
+      }
+    } catch (err) {
+      console.log(`⚠️ [BTC] blockchain.com API error: ${err.message}`);
+    }
+    
+    // Method 2: Blockchair API fallback
+    try {
+      const url = `https://api.blockchair.com/bitcoin/dashboards/transaction/${txHash}`;
+      const raw = await httpRequest(url);
+      const data = JSON.parse(raw);
+      
+      if (data && data.data && data.data[txHash]) {
+        const tx = data.data[txHash].transaction;
+        const outputs = data.data[txHash].outputs || [];
+        
+        let toAddress = "";
+        let largestOutput = 0;
+        for (const out of outputs) {
+          if ((out.value || 0) > largestOutput) {
+            largestOutput = out.value || 0;
+            toAddress = out.recipient || "";
+          }
+        }
+        
+        const amountBTC = (largestOutput / 100000000).toFixed(8);
+        const confirmed = tx.block_id > 0;
+        
+        console.log(`✅ [BTC] Found via Blockchair: ${amountBTC} BTC`);
+        return { success: true, amount: `${amountBTC} BTC`, toAddress, fromAddress: "", confirmed, isBTC: true };
+      }
+    } catch (err) {
+      console.log(`⚠️ [BTC] Blockchair API error: ${err.message}`);
+    }
+    
+    console.log(`❌ [BTC] All methods failed for ${txHash.slice(0,12)}...`);
+    return { success: false, error: "Could not verify BTC transaction" };
+  } catch (err) {
+    console.error(`❌ [BTC] Fatal error: ${err.message}`);
     return { success: false, error: err.message };
   }
 }
