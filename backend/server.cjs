@@ -435,13 +435,30 @@ function parseOfferMessageV2(messageText) {
 
   // Drop any leftover bare label lines (shouldn't be any, safety net)
   const lines = remaining.split('\n').map(l => l.trim()).filter(l => l && !/^(funnels?|source|deductions?|affiliate)\s*:/i.test(l));
+
+  // hasExplicitLabels = true when Funnels:/Source:/Deductions: label lines were present.
+  // When true:
+  //   1. offerParseTokens will NOT auto-extract source keywords (Taboola, FB, etc.) from
+  //      the inline offer line — they stay in funnel tokens.
+  //   2. sharedFunnels/sharedSource/sharedDeduction OVERRIDE whatever inline parsing found,
+  //      because the explicit labels are the authoritative values.
+  const hasExplicitLabels = !!(sharedFunnels || sharedSource || sharedDeduction);
+
   const offers = [];
-  for (const line of lines) offers.push(...offerSplitLine(line));
+  for (const line of lines) offers.push(...offerSplitLine(line, hasExplicitLabels));
 
   for (const o of offers) {
-    if (!o.funnel     && sharedFunnels)   o.funnel     = sharedFunnels;
-    if (!o.source     && sharedSource)    o.source     = sharedSource;
-    if (!o.deduction  && sharedDeduction) o.deduction  = sharedDeduction;
+    if (hasExplicitLabels) {
+      // Labels win — always overwrite what inline token parsing extracted
+      if (sharedFunnels)   o.funnel     = sharedFunnels;
+      if (sharedSource)    o.source     = sharedSource;
+      if (sharedDeduction) o.deduction  = sharedDeduction;
+    } else {
+      // No labels — only fill blanks (don't overwrite inline extraction)
+      if (!o.funnel     && sharedFunnels)   o.funnel     = sharedFunnels;
+      if (!o.source     && sharedSource)    o.source     = sharedSource;
+      if (!o.deduction  && sharedDeduction) o.deduction  = sharedDeduction;
+    }
   }
 
   return { affiliateId, offers };
@@ -554,7 +571,7 @@ function offerExtractGeo(word) {
   return null;
 }
 
-function offerSplitLine(line) {
+function offerSplitLine(line, hasExplicitLabels) {
   if (!line.trim()) return [];
 
   const words = line.split(/\s+/).filter(w => w);
@@ -573,7 +590,7 @@ function offerSplitLine(line) {
     if (offerIsGeoBoundary(word, cleanWords[wi + 1]) && currentTokens.length > 0) {
       const hasGeoInCurrent = currentTokens.some(t => offerExtractGeo(t) !== null);
       if (hasGeoInCurrent) {
-        offers.push(offerParseTokens(currentTokens, currentOrigTokens));
+        offers.push(offerParseTokens(currentTokens, currentOrigTokens, hasExplicitLabels));
         currentTokens = [word];
         currentOrigTokens = [origWord];
       } else {
@@ -585,7 +602,7 @@ function offerSplitLine(line) {
       currentOrigTokens.push(origWord);
     }
   }
-  if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens, currentOrigTokens));
+  if (currentTokens.length > 0) offers.push(offerParseTokens(currentTokens, currentOrigTokens, hasExplicitLabels));
 
   // Handle comma-separated geos sharing one offer
   const finalOffers = [];
@@ -604,7 +621,7 @@ function offerSplitLine(line) {
   return finalOffers;
 }
 
-function offerParseTokens(tokens, origTokens) {
+function offerParseTokens(tokens, origTokens, hasExplicitLabels) {
   const o = { country:'', dealType:'', funnel:'', price:'', source:'', deduction:'', crRate:'', notes:'' };
   if (!tokens || tokens.length === 0) return o;
 
@@ -749,7 +766,10 @@ function offerParseTokens(tokens, origTokens) {
     }
 
     // Source keywords (GG, FB, SEO, Taboola, etc.)
-    if (!o.source && OFFER_SOURCE_KEYWORDS.test(tl)) { o.source = t; continue; }
+    // Source is ONLY set via an explicit "Source: ..." label line.
+    // If source keywords appear inline on the offer line (e.g. "...MalpeVest Taboola"),
+    // they are part of the funnel — the user intentionally put them there.
+    // Do NOT auto-detect source from inline tokens.
 
     // Everything else goes to funnels
     funnelParts.push(origToken);
