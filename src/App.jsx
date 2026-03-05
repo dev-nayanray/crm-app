@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.05";
+const VERSION = "10.06";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -433,10 +433,19 @@ const PREV_VERSION_KEY = 'blitz_app_version';
 const prevVersion = localStorage.getItem(PREV_VERSION_KEY);
 if (prevVersion !== VERSION) {
   console.log(`🔄 Version upgrade: ${prevVersion || 'unknown'} → ${VERSION}`);
-  // IMPORTANT: Do NOT clear data tables — server fetch will merge/update them.
-  // Only clear version tracking so fresh versions are fetched from server.
+  // v10.06: PURGE all table data from localStorage on version upgrade
+  // This is the nuclear fix for zombie records — forces fresh fetch from server
+  // Server is the source of truth; stale localStorage is the source of zombies
   try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
+  const tablesToPurge = ['payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets', 'offers', 'ftd-entries', 'partners'];
+  tablesToPurge.forEach(t => {
+    const lsKey = LS_KEYS[t];
+    if (lsKey) {
+      try { localStorage.removeItem(lsKey); console.log(`🧹 Purged localStorage: ${t}`); } catch {}
+    }
+  });
   localStorage.setItem(PREV_VERSION_KEY, VERSION);
+  console.log('🧹 v10.06: All table data purged from localStorage — fresh server fetch will follow');
 }
 
 function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
@@ -804,12 +813,32 @@ async function apiSave(endpoint, data, userEmail) {
       dataVersions[endpoint] = json.version;
       savePersistedVersions(dataVersions);
     }
-    // v10.05: Process tombstoned IDs from server — purge zombie records locally
-    if (json.tombstoned) {
+    // v10.06: Process tombstoned IDs from server — purge zombie records locally
+    if (json.tombstoned && json.tombstoned.length > 0) {
       processTombstoned(endpoint, json.tombstoned);
+      // v10.06: Actively purge zombies from React state immediately
+      const setter = conflictSetters[endpoint];
+      if (setter && tombstonedIDs[endpoint] && tombstonedIDs[endpoint].size > 0) {
+        setter(prev => {
+          if (!Array.isArray(prev)) return prev;
+          const filtered = prev.filter(r => !tombstonedIDs[endpoint].has(r.id));
+          if (filtered.length < prev.length) {
+            console.log(`🪦 [${endpoint}]: Purged ${prev.length - filtered.length} zombies from React state`);
+            lsSave(endpoint, filtered);
+            lastKnownCounts[endpoint] = filtered.length;
+          }
+          return filtered;
+        });
+      }
     }
     // v10.05: Handle throttled response — server accepted but skipped actual write
     if (json.throttled) {
+      serverOnline = true;
+      pendingSaves.delete(endpoint);
+      return true;
+    }
+    // v10.06: Handle unchanged response — server had nothing new to write
+    if (json.unchanged) {
       serverOnline = true;
       pendingSaves.delete(endpoint);
       return true;
@@ -883,9 +912,12 @@ function connectWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === 'update') {
           if (msg.version) dataVersions[msg.table] = msg.version;
-          // v10.05: Process deleted IDs from WS update (records deleted by other users)
+          // v10.06: Process both deleted (current deletes) and tombstoned (full tombstone list) from WS
           if (Array.isArray(msg.deleted) && msg.deleted.length > 0) {
             processTombstoned(msg.table, msg.deleted);
+          }
+          if (Array.isArray(msg.tombstoned) && msg.tombstoned.length > 0) {
+            processTombstoned(msg.table, msg.tombstoned);
           }
           if (Array.isArray(msg.data)) {
             // v10.05: Filter tombstoned records before saving
@@ -6672,16 +6704,20 @@ function AppInner() {
 
     // FIX: Respect locally deleted records — don't resurrect them from server data
     // v9.15: Also check persistDeletedIDs which survives clear cycles
+    // v10.06: Also check tombstonedIDs — records permanently deleted on server
     const localDeletedSet = deletedIDs[tableName] || new Set();
     const persistDeleted = persistDeletedIDs[tableName] || new Set();
+    const tombstoned = tombstonedIDs[tableName] || new Set();
 
     const merged = new Map();
     serverArr.forEach(r => {
-      if (r && r.id && !localDeletedSet.has(r.id) && !persistDeleted.has(r.id)) merged.set(r.id, r);
+      if (r && r.id && !localDeletedSet.has(r.id) && !persistDeleted.has(r.id) && !tombstoned.has(r.id)) merged.set(r.id, r);
     });
     let added = 0, updated = 0;
     localArr.forEach(r => {
       if (!r || !r.id) return;
+      // v10.06: Skip tombstoned records from local data
+      if (tombstoned.has(r.id) || localDeletedSet.has(r.id) || persistDeleted.has(r.id)) return;
       const srv = merged.get(r.id);
       if (!srv) {
         // Local record not on server
