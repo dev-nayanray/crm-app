@@ -1869,7 +1869,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
     if (!editUser) return;
     setUsers(prev => prev.map(u => {
       if (u.email !== editUser.originalEmail) return u;
-      const updated = { email: editUser.email, name: editUser.name, pageAccess: editUser.pageAccess || ALL_PAGES.map(p => p.key) };
+      const updated = { email: editUser.email, name: editUser.name, pageAccess: editUser.pageAccess || ALL_PAGES.map(p => p.key), updatedAt: Date.now() }; // v10.07: stamp updatedAt so server knows this is admin change
       if (editUser.password && editUser.password.trim()) {
         updated.passwordHash = hashPassword(editUser.password);
       } else {
