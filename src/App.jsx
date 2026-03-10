@@ -425,7 +425,7 @@ const VERSION = "10.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
-const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers', 'partners': 'blitz_partners', 'ftd-entries': 'blitz_ftd' };
+const LS_KEYS = { users: 'blitz_users', payments: 'blitz_payments', 'customer-payments': 'blitz_cp', 'crg-deals': 'blitz_crg', 'daily-cap': 'blitz_dc', 'deals': 'blitz_deals', 'wallets': 'blitz_wallets', 'offers': 'blitz_offers', 'partners': 'blitz_partners', 'ftd-entries': 'blitz_ftd', 'daily-calcs-data': 'blitz_dailycalcs' };
 const LS_VERSIONS_KEY = 'blitz_data_versions';
 
 // ── Version change detection: clear stale localStorage on upgrade ──
@@ -1371,6 +1371,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     { key: "partners", label: "Partners", color: "#EC4899" },
     { key: "monthlystats", label: "Blitz Report", color: "#6366F1" },
     { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
+    { key: "dailycalcs", label: "Daily Calcs", color: "#EF4444" },
     { key: "settings", label: "Settings", color: "#64748B" },
   ];
   if (isAdmin(user.email)) allNavPages.push({ key: "admin", label: "⚙️ Admin", color: "#DC2626" });
@@ -1791,6 +1792,7 @@ const ALL_PAGES = [
   { key: "partners", label: "Partners", color: "#EC4899" },
   { key: "monthlystats", label: "Blitz Report", color: "#6366F1" },
   { key: "ftdsinfo", label: "FTDs Info", color: "#10B981" },
+  { key: "dailycalcs", label: "Daily Calcs", color: "#EF4444" },
   { key: "settings", label: "Settings", color: "#64748B" },
 ];
 
@@ -3881,6 +3883,369 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
             </div>
           </div>
         )}
+      </main>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DAILY CALCULATIONS RESULT PAGE — Side-by-side Affiliate + Brand tables
+// ═══════════════════════════════════════════════════════════════
+function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) {
+  const data = Array.isArray(calcs) ? calcs : [];
+  const [search, setSearch] = useState("");
+  const [editRow, setEditRow] = useState(null);
+  const [editSide, setEditSide] = useState(null); // 'affiliate' or 'brand'
+  const [sortAff, setSortAff] = useState("manual");
+  const [sortBrand, setSortBrand] = useState("manual");
+  const userName = user?.name || user?.email || "";
+
+  // Split data into affiliates and brands
+  const affiliates = data.filter(r => r.type === 'affiliate');
+  const brands = data.filter(r => r.type === 'brand');
+
+  const addRow = (type) => {
+    const base = { id: genId(), type, name: "", updatedAt: Date.now(), createdAt: Date.now() };
+    if (type === 'buy-affiliate' || type === 'buy-brand') {
+      setCalcs(prev => [...(prev || []), { ...base, ftdsCost: "", crgCost: "" }]);
+    } else {
+      setCalcs(prev => [...(prev || []), { ...base, balanceNoCrg: "", balanceWithCrg: "", sent: false, comment: "" }]);
+    }
+  };
+
+  const updateField = (id, field, value) => {
+    setCalcs(prev => (prev || []).map(r => r.id === id ? { ...r, [field]: value, updatedAt: Date.now() } : r));
+  };
+
+  const deleteRow = (id) => {
+    if (!confirm("Delete this row?")) return;
+    trackDelete('daily-calcs-data', id);
+    setCalcs(prev => (prev || []).filter(r => r.id !== id));
+  };
+
+  const duplicateRow = (id) => {
+    const orig = data.find(r => r.id === id);
+    if (orig) setCalcs(prev => [...(prev || []), { ...orig, id: genId(), updatedAt: Date.now(), createdAt: Date.now() }]);
+  };
+
+  const moveRow = (id, direction, type) => {
+    setCalcs(prev => {
+      const arr = [...(prev || [])];
+      const subset = arr.filter(r => r.type === type);
+      const others = arr.filter(r => r.type !== type);
+      const idx = subset.findIndex(r => r.id === id);
+      if (idx < 0) return prev;
+      if (direction === "up" && idx > 0) [subset[idx], subset[idx - 1]] = [subset[idx - 1], subset[idx]];
+      if (direction === "down" && idx < subset.length - 1) [subset[idx], subset[idx + 1]] = [subset[idx + 1], subset[idx]];
+      return [...others, ...subset];
+    });
+  };
+
+  const handleSort = (type) => {
+    const setter = type === 'affiliate' ? setSortAff : setSortBrand;
+    const current = type === 'affiliate' ? sortAff : sortBrand;
+    if (current === "alpha") { setter("manual"); return; }
+    setter("alpha");
+    setCalcs(prev => {
+      const arr = [...(prev || [])];
+      const subset = arr.filter(r => r.type === type);
+      const others = arr.filter(r => r.type !== type);
+      subset.sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true }));
+      return [...others, ...subset];
+    });
+  };
+
+  const matchSearch = r => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return [r.name, r.comment, r.balanceNoCrg, r.balanceWithCrg].some(v => (v || "").toString().toLowerCase().includes(q));
+  };
+
+  const filteredAff = affiliates.filter(matchSearch);
+  const filteredBrand = brands.filter(matchSearch);
+
+  const parseNum = v => { const n = parseFloat(String(v || "0").replace(/[,$]/g, "")); return isNaN(n) ? 0 : n; };
+  const affTotal = filteredAff.reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+  const brandTotal = filteredBrand.reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+  const fmtMoney = n => { const s = Math.abs(n).toLocaleString("en-US"); return n < 0 ? `-$${s}` : `$${s}`; };
+
+  const inp = { width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #E2E8F0", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC" };
+  const thStyle = { padding: "8px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748B", borderBottom: "2px solid #E2E8F0", background: "#F8FAFC", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap" };
+  const tdStyle = { padding: "6px 10px", borderBottom: "1px solid #F1F5F9", fontSize: 12, verticalAlign: "middle" };
+  const btnSm = { background: "none", border: "none", cursor: "pointer", padding: "2px 4px", fontSize: 13, borderRadius: 4, lineHeight: 1 };
+
+  const renderTable = (rows, type, sort) => {
+    const isBrand = type === 'brand';
+    return (
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: isBrand ? "#7C3AED" : "#DC2626" }}>
+              {isBrand ? "🏢 Brand / Network" : "👤 Affiliates"}
+            </h3>
+            <span style={{ padding: "2px 8px", borderRadius: 10, background: isBrand ? "#EDE9FE" : "#FEE2E2", color: isBrand ? "#7C3AED" : "#DC2626", fontSize: 11, fontWeight: 700 }}>{rows.length}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => handleSort(type)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E2E8F0", background: sort === "alpha" ? "#0EA5E9" : "#FFF", color: sort === "alpha" ? "#FFF" : "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>A→Z</button>
+            <button onClick={() => addRow(type)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: isBrand ? "#7C3AED" : "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+          </div>
+        </div>
+        <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: isBrand ? 520 : 460 }}>
+            <thead>
+              <tr>
+                <th style={{ ...thStyle, width: 30 }}>#</th>
+                <th style={thStyle}>{isBrand ? "Brand / Network" : "Affiliate"}</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Balance w/o CRG+CPL</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Balance w/ CRG+CPL</th>
+                <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Sent $</th>
+                {isBrand && <th style={thStyle}>Comment</th>}
+                <th style={{ ...thStyle, width: 80, textAlign: "center" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={isBrand ? 7 : 6} style={{ ...tdStyle, textAlign: "center", padding: 30, color: "#CBD5E1", fontSize: 13 }}>No entries yet — click "+ Add" above</td></tr>
+              )}
+              {rows.map((r, i) => {
+                const bal = parseNum(r.balanceWithCrg);
+                const balColor = bal > 0 ? "#16A34A" : bal < 0 ? "#DC2626" : "#64748B";
+                return (
+                  <tr key={r.id} style={{ transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background = ""}>
+                    <td style={{ ...tdStyle, color: "#94A3B8", fontSize: 11, textAlign: "center", fontWeight: 600 }}>{i + 1}</td>
+                    <td style={tdStyle}>
+                      <input value={r.name || ""} onChange={e => updateField(r.id, "name", e.target.value)} style={{ ...inp, fontWeight: 600, color: "#0F172A" }} placeholder={isBrand ? "Brand name..." : "AFF ID - Name"} />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                      <input value={r.balanceNoCrg || ""} onChange={e => updateField(r.id, "balanceNoCrg", e.target.value)} style={{ ...inp, textAlign: "right", width: 90 }} placeholder="$0" />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "right" }}>
+                      <input value={r.balanceWithCrg || ""} onChange={e => updateField(r.id, "balanceWithCrg", e.target.value)} style={{ ...inp, textAlign: "right", width: 90, color: balColor, fontWeight: 700 }} placeholder="$0" />
+                    </td>
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <input type="checkbox" checked={!!r.sent} onChange={e => updateField(r.id, "sent", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0EA5E9" }} />
+                    </td>
+                    {isBrand && (
+                      <td style={tdStyle}>
+                        <input value={r.comment || ""} onChange={e => updateField(r.id, "comment", e.target.value)} style={{ ...inp, fontSize: 11, color: "#64748B" }} placeholder="note..." />
+                      </td>
+                    )}
+                    <td style={{ ...tdStyle, textAlign: "center" }}>
+                      <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+                        <button onClick={() => moveRow(r.id, "up", type)} style={btnSm} title="Move up">▲</button>
+                        <button onClick={() => moveRow(r.id, "down", type)} style={btnSm} title="Move down">▼</button>
+                        <button onClick={() => duplicateRow(r.id)} style={{ ...btnSm, color: "#0EA5E9" }} title="Duplicate">⧉</button>
+                        <button onClick={() => deleteRow(r.id)} style={{ ...btnSm, color: "#EF4444" }} title="Delete">✕</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ background: "#F8FAFC" }}>
+                <td colSpan={2} style={{ ...tdStyle, fontWeight: 700, fontSize: 12, borderTop: "2px solid #E2E8F0" }}>Total ({rows.length})</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontSize: 12, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(rows.reduce((s, r) => s + parseNum(r.balanceNoCrg), 0))}</td>
+                <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, fontSize: 13, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: affTotal >= 0 ? "#16A34A" : "#DC2626" }}>{type === 'affiliate' ? fmtMoney(affTotal) : fmtMoney(brandTotal)}</td>
+                <td colSpan={isBrand ? 3 : 2} style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <BlitzHeader user={user} activePage="dailycalcs" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#EF4444" />
+      <main className="blitz-main" style={{ maxWidth: 1500, margin: "0 auto", padding: "24px 28px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>📊 Daily Calculations Result</h1>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ position: "relative" }}>
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ padding: "8px 14px 8px 34px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, width: 200, background: "#FFF" }} />
+              <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", fontSize: 14 }}>🔍</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Summary Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 24 }}>
+          {[
+            { label: "Affiliate Balance", value: fmtMoney(affTotal), color: affTotal >= 0 ? "#16A34A" : "#DC2626", bg: affTotal >= 0 ? "#F0FDF4" : "#FEF2F2", border: affTotal >= 0 ? "#BBF7D0" : "#FECACA" },
+            { label: "Brand Balance", value: fmtMoney(brandTotal), color: brandTotal >= 0 ? "#16A34A" : "#DC2626", bg: brandTotal >= 0 ? "#F0FDF4" : "#FEF2F2", border: brandTotal >= 0 ? "#BBF7D0" : "#FECACA" },
+            { label: "Affiliates", value: filteredAff.length, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+            { label: "Brands", value: filteredBrand.length, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
+          ].map((c, i) => (
+            <div key={i} style={{ padding: "14px 18px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748B", marginBottom: 4 }}>{c.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Two Tables Side by Side */}
+        <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+          {renderTable(filteredAff, 'affiliate', sortAff)}
+          {renderTable(filteredBrand, 'brand', sortBrand)}
+        </div>
+
+        {/* ═══ TOTAL BUYING YESTERDAY ═══ */}
+        <div style={{ marginTop: 36 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "#0F172A" }}>📦 Total Buying Yesterday</h2>
+          <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+            {/* Affiliate Buying Table */}
+            {(() => {
+              const buyAff = data.filter(r => r.type === 'buy-affiliate').filter(matchSearch);
+              const buyAffFtdTotal = buyAff.reduce((s, r) => s + parseNum(r.ftdsCost), 0);
+              const buyAffCrgTotal = buyAff.reduce((s, r) => s + parseNum(r.crgCost), 0);
+              const buyAffTotal = buyAff.reduce((s, r) => s + parseNum(r.ftdsCost) + parseNum(r.crgCost), 0);
+              return (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#DC2626" }}>👤 Affiliate</h3>
+                    <button onClick={() => addRow('buy-affiliate')} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+                  </div>
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+                      <thead><tr>
+                        <th style={thStyle}>Affiliate</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>FTDs Costs</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>~CRG Cost</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                        <th style={{ ...thStyle, width: 70, textAlign: "center" }}>Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {buyAff.length === 0 && <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>Click "+ Add"</td></tr>}
+                        {buyAff.map(r => (
+                          <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                            <td style={tdStyle}><input value={r.name||""} onChange={e => updateField(r.id,"name",e.target.value)} style={{ ...inp, fontWeight: 600 }} placeholder="Name" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.ftdsCost||""} onChange={e => updateField(r.id,"ftdsCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.crgCost||""} onChange={e => updateField(r.id,"crgCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{fmtMoney(parseNum(r.ftdsCost) + parseNum(r.crgCost))}</td>
+                            <td style={{ ...tdStyle, textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+                                <button onClick={() => duplicateRow(r.id)} style={{ ...btnSm, color: "#0EA5E9" }}>⧉</button>
+                                <button onClick={() => deleteRow(r.id)} style={{ ...btnSm, color: "#EF4444" }}>✕</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr style={{ background: "#F8FAFC" }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyAffFtdTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyAffCrgTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{fmtMoney(buyAffTotal)}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Brand Buying Table */}
+            {(() => {
+              const buyBrand = data.filter(r => r.type === 'buy-brand').filter(matchSearch);
+              const buyBrFtdTotal = buyBrand.reduce((s, r) => s + parseNum(r.ftdsCost), 0);
+              const buyBrCrgTotal = buyBrand.reduce((s, r) => s + parseNum(r.crgCost), 0);
+              const buyBrTotal = buyBrand.reduce((s, r) => s + parseNum(r.ftdsCost) + parseNum(r.crgCost), 0);
+              return (
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#7C3AED" }}>🏢 Brand / Network</h3>
+                    <button onClick={() => addRow('buy-brand')} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#7C3AED", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+                  </div>
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+                      <thead><tr>
+                        <th style={thStyle}>Brand / Network</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>FTDs Costs</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>~CRG Cost</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
+                        <th style={{ ...thStyle, width: 70, textAlign: "center" }}>Actions</th>
+                      </tr></thead>
+                      <tbody>
+                        {buyBrand.length === 0 && <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>Click "+ Add"</td></tr>}
+                        {buyBrand.map(r => (
+                          <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                            <td style={tdStyle}><input value={r.name||""} onChange={e => updateField(r.id,"name",e.target.value)} style={{ ...inp, fontWeight: 600 }} placeholder="Name" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.ftdsCost||""} onChange={e => updateField(r.id,"ftdsCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.crgCost||""} onChange={e => updateField(r.id,"crgCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
+                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{fmtMoney(parseNum(r.ftdsCost) + parseNum(r.crgCost))}</td>
+                            <td style={{ ...tdStyle, textAlign: "center" }}>
+                              <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
+                                <button onClick={() => duplicateRow(r.id)} style={{ ...btnSm, color: "#0EA5E9" }}>⧉</button>
+                                <button onClick={() => deleteRow(r.id)} style={{ ...btnSm, color: "#EF4444" }}>✕</button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr style={{ background: "#F8FAFC" }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyBrFtdTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyBrCrgTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{fmtMoney(buyBrTotal)}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* ═══ PROFIT SUMMARY BAR ═══ */}
+        {(() => {
+          const profitRow = data.find(r => r.type === 'profit-summary');
+          const ensureProfitRow = () => {
+            if (!profitRow) {
+              setCalcs(prev => [...(prev || []), { id: genId(), type: 'profit-summary', totalProfit: "", yesterdayProfit: "", gillette: "", dolphins: "", fee: "", updatedAt: Date.now() }]);
+            }
+          };
+          if (!profitRow) {
+            return (
+              <div style={{ marginTop: 32, textAlign: "center" }}>
+                <button onClick={ensureProfitRow} style={{ padding: "10px 24px", borderRadius: 8, border: "none", background: "#0F172A", color: "#FFF", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>+ Add Profit Summary</button>
+              </div>
+            );
+          }
+          const pf = (field) => profitRow[field] || "";
+          const upf = (field, val) => updateField(profitRow.id, field, val);
+          const profitInp = { ...inp, textAlign: "center", fontWeight: 700, fontSize: 14, padding: "10px 12px" };
+          return (
+            <div style={{ marginTop: 32 }}>
+              <div style={{ overflowX: "auto", borderRadius: 12, border: "2px solid #1E293B", background: "#FFF" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
+                  <thead><tr>
+                    {[
+                      { label: "Total Profit", icon: "💰", bg: "#1E293B", color: "#FFF" },
+                      { label: "Yesterday Profit", icon: "📅", bg: "#334155", color: "#FFF" },
+                      { label: "Gillette ✏️", bg: "#4682B4", color: "#FFF" },
+                      { label: "Dolphins 🐬", bg: "#5B9BD5", color: "#FFF" },
+                      { label: "Fee 🏠", bg: "#7FB3D8", color: "#FFF" },
+                    ].map((h, i) => (
+                      <th key={i} style={{ padding: "10px 14px", fontSize: 12, fontWeight: 700, color: h.color, background: h.bg, borderBottom: "2px solid #0F172A", textAlign: "center", whiteSpace: "nowrap" }}>{h.icon ? `${h.icon} ` : ""}{h.label}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody><tr>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("totalProfit")} onChange={e => upf("totalProfit", e.target.value)} style={{ ...profitInp, color: "#16A34A" }} placeholder="$0" /></td>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("yesterdayProfit")} onChange={e => upf("yesterdayProfit", e.target.value)} style={{ ...profitInp, color: "#0EA5E9" }} placeholder="$0" /></td>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("gillette")} onChange={e => upf("gillette", e.target.value)} style={profitInp} placeholder="$0" /></td>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("dolphins")} onChange={e => upf("dolphins", e.target.value)} style={profitInp} placeholder="$0" /></td>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("fee")} onChange={e => upf("fee", e.target.value)} style={profitInp} placeholder="$0" /></td>
+                  </tr></tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+
       </main>
     </div>
   );
@@ -6650,6 +7015,7 @@ function AppInner() {
   const [walletsData, setWalletsData] = useState(() => lsGet('wallets', null) || []);
   const [partnersData, setPartnersData] = useState(() => lsGet('partners', null) || []);
   const [ftdEntries, setFtdEntries] = useState(() => lsGet('ftd-entries', null) || []);
+  const [dailyCalcs, setDailyCalcs] = useState(() => lsGet('daily-calcs-data', null) || []);
   const [page, setPage] = useState("overview");
   const [loaded, setLoaded] = useState(false);
 
@@ -6750,6 +7116,7 @@ function AppInner() {
   registerConflictSetter('wallets', setWalletsData);
   registerConflictSetter('partners', setPartnersData);
   registerConflictSetter('ftd-entries', setFtdEntries);
+  registerConflictSetter('daily-calcs-data', setDailyCalcs);
 
   useEffect(() => {
     (async () => {
@@ -6779,9 +7146,9 @@ function AppInner() {
 
       // Step 2: Fetch server data + MERGE (if online + authenticated)
       if (hasToken && serverOnline) {
-        const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd] = await Promise.all([
+        const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd, sdcalc] = await Promise.all([
           apiGet('users'), apiGet('payments'), apiGet('customer-payments'),
-          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'),
+          apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'), apiGet('daily-calcs-data'),
         ]);
         if (sessionExpiredFlag) {
           sessionExpiredFlag = false; setUser(null); skipSave.current = false; serverFetchDone.current = false; setLoaded(true); return;
@@ -6821,6 +7188,7 @@ function AppInner() {
             { key: 'wallets', srv: swl, setter: setWalletsData, ref: 'wallets' },
             { key: 'partners', srv: spt, setter: setPartnersData, ref: 'partners' },
             { key: 'ftd-entries', srv: sftd, setter: setFtdEntries, ref: 'ftd-entries' },
+            { key: 'daily-calcs-data', srv: sdcalc, setter: setDailyCalcs, ref: 'daily-calcs-data' },
           ];
           for (const t of tables) {
             if (t.srv !== null) {
@@ -6912,8 +7280,8 @@ function AppInner() {
       // v9.09: If server is online but WS isn't connected, keep trying
       if (serverOnline && (!wsConnection || wsConnection.readyState !== WebSocket.OPEN)) { connectWebSocket(); }
       if (!serverOnline) return;
-      const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd] = await Promise.all([
-        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'),
+      const [su, sp, scp, scrg, sdc, sdl, swl, sof, spt, sftd, sdcalc2] = await Promise.all([
+        apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'), apiGet('daily-calcs-data'),
       ]);
       skipSave.current = true;
       const all = [
@@ -6922,6 +7290,7 @@ function AppInner() {
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
         { d: swl, s: setWalletsData, k: 'wallets' }, { d: spt, s: setPartnersData, k: 'partners' },
         { d: sftd, s: setFtdEntries, k: 'ftd-entries' },
+        { d: sdcalc2, s: setDailyCalcs, k: 'daily-calcs-data' },
       ];
       let anyChanged = false;
       for (const t of all) {
@@ -6988,6 +7357,7 @@ function AppInner() {
   useEffect(() => { debouncedSave('wallets', walletsData); }, [walletsData]);
   useEffect(() => { debouncedSave('partners', partnersData); }, [partnersData]);
   useEffect(() => { debouncedSave('ftd-entries', ftdEntries); }, [ftdEntries]);
+  useEffect(() => { debouncedSave('daily-calcs-data', dailyCalcs); }, [dailyCalcs]);
 
   const handleLogout = () => { clearSession(); setUser(null); setPage("overview"); };
 
@@ -7027,6 +7397,7 @@ function AppInner() {
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
   if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} ftdEntries={ftdEntries} setFtdEntries={setFtdEntries} userAccess={userAccess} /></>);
+  if (page === "dailycalcs" && canAccess("dailycalcs")) return (<><DailyCalcsPage user={user} onLogout={handleLogout} onNav={setPage} calcs={dailyCalcs} setCalcs={setDailyCalcs} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
