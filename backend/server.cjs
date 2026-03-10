@@ -944,7 +944,7 @@ function createBackup(label) {
   const backupPath = path.join(BACKUP_DIR, ts);
   if (!fs.existsSync(backupPath)) fs.mkdirSync(backupPath, { recursive: true });
 
-  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "daily-calcs-data"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
@@ -1009,7 +1009,7 @@ setTimeout(() => createBackup("startup-" + new Date().toISOString().replace(/[:.
 // Cascades: shutdown backups → hourly backups → daily snapshots
 (function startupIntegrityCheck() {
   try {
-    const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners", "ftd-entries"];
+    const endpoints = ["payments", "customer-payments", "crg-deals", "daily-cap", "deals", "offers", "partners", "ftd-entries", "daily-calcs-data"];
     
     // Collect ALL backup sources in priority order
     const backupSources = [];
@@ -1086,7 +1086,7 @@ function createDailySnapshot() {
   if (fs.existsSync(snapPath)) { console.log(`📸 Daily snapshot ${dateKey} already exists — skipping`); return; }
   fs.mkdirSync(snapPath, { recursive: true });
 
-  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "partners"];
+  const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "daily-calcs-data", "partners"];
   let count = 0;
   endpoints.forEach(ep => {
     const src = path.join(DATA_DIR, ep + ".json");
@@ -1566,7 +1566,7 @@ app.get("/api/session", requireAuth, (req, res) => {
 // 8. DATA ENDPOINTS — With Atomic Writes + Audit + Versioning
 // ═══════════════════════════════════════════════════════════════
 
-const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"];
+const endpoints = ["payments", "customer-payments", "users", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "daily-calcs-data", "partners"];
 
 // ═══════════════════════════════════════════════════════════════
 // v9.18: NOTIFICATION DEDUP — prevent looping Telegram messages
@@ -1821,7 +1821,7 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 });
 
 // Generic POST for other tables — SERVER-SIDE MERGE (never destructive replace)
-["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries"].forEach(ep => {
+["customer-payments", "crg-deals", "daily-cap", "deals", "wallets", "offers", "ftd-entries", "daily-calcs-data"].forEach(ep => {
   const file = ep + ".json";
   app.post(`/api/${ep}`, requireAuth, async (req, res) => {
     const { data: newData, version: clientVersion, user: userEmail, deleted: deletedIDs } = req.body;
