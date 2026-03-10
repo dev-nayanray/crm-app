@@ -277,6 +277,7 @@ function MobileNav({ pages, current, userAccess, onNav, onClose }) {
     { title: "Finance", items: [
       { key: "payments", label: "💳 Payments", color: "#0EA5E9" },
       { key: "customers", label: "👥 Customer Payments", color: "#0EA5E9" },
+      { key: "dailycalcs", label: "🧮 Daily Calcs", color: "#EF4444" },
     ]},
     { title: "Deals", items: [
       { key: "crg", label: "📋 CRG Deals", color: "#F59E0B" },
@@ -421,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.07";
+const VERSION = "10.08";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1346,6 +1347,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
     { label: "Finance", icon: "💰", type: "dropdown", color: "#0EA5E9", items: [
       { key: "payments", label: "Payments", color: "#0EA5E9" },
       { key: "customers", label: "Customer Payments", color: "#0EA5E9" },
+      { key: "dailycalcs", label: "Daily Calcs", color: "#EF4444" },
     ]},
     { label: "Deals", icon: "📋", type: "dropdown", color: "#F59E0B", items: [
       { key: "crg", label: "CRG Deals", color: "#F59E0B" },
