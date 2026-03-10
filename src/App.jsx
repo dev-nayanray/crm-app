@@ -422,7 +422,126 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.08";
+const VERSION = "10.14";
+
+// ═══════════════════════════════════════════════════════════════
+// v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
+// Used for dropdowns, name resolution, and Telegram bot mapping
+// ═══════════════════════════════════════════════════════════════
+const AFFILIATES = [
+  { id: "137", name: "Tokomedia" },
+  { id: "225", name: "ExTraffic" },
+  { id: "211", name: "ExTraffic" },
+  { id: "123", name: "MeeseeksMedia" },
+  { id: "165", name: "BUFU" },
+  { id: "168", name: "PLASH" },
+  { id: "83", name: "Leading Media" },
+  { id: "194", name: "Q16" },
+  { id: "226", name: "Affilihub" },
+  { id: "49", name: "Matar" },
+  { id: "60", name: "Traffic Lab" },
+  { id: "134", name: "Traffic Lab" },
+  { id: "183", name: "PandaAds" },
+  { id: "159", name: "Farah" },
+  { id: "171", name: "MediaPro" },
+  { id: "139", name: "20C" },
+  { id: "133", name: "Whitefly" },
+  { id: "64", name: "Punch" },
+  { id: "12", name: "Punch" },
+  { id: "51", name: "Liquid Group" },
+  { id: "28", name: "Bugle" },
+  { id: "131", name: "Bugle" },
+  { id: "33", name: "RVG" },
+  { id: "167", name: "RVG" },
+  { id: "103", name: "Affiliate 103" },
+  { id: "101", name: "Affiliate 101" },
+  { id: "202", name: "Affiliate 202" },
+  { id: "122", name: "Affiliate 122" },
+  { id: "222", name: "Affiliate 222" },
+  { id: "245", name: "Affiliate 245" },
+  { id: "196", name: "Affiliate 196" },
+  { id: "71", name: "Affiliate 71" },
+  { id: "117", name: "Affiliate 117" },
+  { id: "162", name: "Affiliate 162" },
+  { id: "164", name: "Affiliate 164" },
+  { id: "30", name: "Affiliate 30" },
+  { id: "130", name: "Affiliate 130" },
+  { id: "140", name: "Affiliate 140" },
+  { id: "191", name: "Affiliate 191" },
+  { id: "80", name: "Affiliate 80" },
+  { id: "17", name: "Affiliate 17" },
+  { id: "37", name: "Affiliate 37" },
+  { id: "111", name: "Affiliate 111" },
+  { id: "212", name: "Affiliate 212" },
+];
+
+const BRANDS_NETWORKS = [
+  { id: "152", altId: "162", name: "Helios" },
+  { id: "1761", altId: "1941", name: "PRX Ave" },
+  { id: "2992", name: "12Mark" },
+  { id: "2682", name: "May" },
+  { id: "182", name: "Kalipso" },
+  { id: "2031", name: "Photonics" },
+  { id: "3132", altId: "3122", name: "Fintrix" },
+  { id: "582", altId: "592", name: "Avelux / Serenity" },
+  { name: "Enthrone" },
+  { id: "1071", name: "Evest" },
+  { id: "1192", name: "Legion" },
+  { id: "2522", name: "UBP" },
+  { id: "452", name: "TenX" },
+  { name: "Banana" },
+  { id: "2642", name: "Crypto Galassia" },
+  { id: "1581", name: "DM partners" },
+  { name: "Techinvest" },
+  { id: "3162", name: "Imperius" },
+  { id: "3052", name: "Mi Tang" },
+  { name: "TMS" },
+  { id: "1971", name: "VenturyFX" },
+  { id: "472", name: "Pantheramedia" },
+  { id: "3322", name: "MW" },
+  { id: "632", name: "StoneWall" },
+  { id: "462", name: "GSI markets" },
+  { id: "192", name: "Unitraff" },
+  { id: "3273", name: "FX-Q" },
+  { id: "2722", name: "Theta Holding" },
+  { id: "352", altId: "2021", name: "ClickBait" },
+  { id: "1871", altId: "302", name: "Capex" },
+  { id: "802", name: "UNIT" },
+  { id: "642", name: "Miltonia" },
+  { id: "2051", name: "No limits" },
+  { id: "2171", name: "Michael" },
+  { id: "2251", altId: "2261", name: "Fugazi" },
+  { id: "1261", name: "Celestia" },
+  { id: "282", name: "Level markets" },
+  { id: "292", name: "X Brand" },
+  { id: "1001", name: "MediaNow" },
+  { id: "2952", name: "WhiteRhino" },
+  { id: "1601", name: "Fusion" },
+  { id: "312", name: "EMP313" },
+  { id: "2111", name: "Eurotrade / Z" },
+  { id: "252", name: "Monstrack" },
+  { id: "3283", name: "BB" },
+  { id: "3022", name: "TraderTok" },
+  { id: "212", altId: "222", name: "SM / Nexus" },
+  { id: "272", altId: "1961", name: "MN" },
+  { id: "652", name: "Capitan" },
+  { id: "2212", altId: "2232", name: "Swin" },
+];
+
+// Helper: resolve affiliate name from ID
+function getAffiliateName(id) {
+  if (!id) return "";
+  const found = AFFILIATES.find(a => a.id === String(id));
+  return found ? found.name : "";
+}
+
+// Helper: resolve brand/network name from ID
+function getBrandName(id) {
+  if (!id) return "";
+  const idStr = String(id);
+  const found = BRANDS_NETWORKS.find(b => b.id === idStr || b.altId === idStr);
+  return found ? found.name : "";
+}
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -1586,7 +1705,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
           <div key={p.id} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, padding: "14px 16px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>ID: {p.invoice}</span>
+                <span onClick={() => onEdit(p)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0EA5E9", cursor: "pointer" }}>{p.invoice}{getAffiliateName(p.invoice) ? ` - ${getAffiliateName(p.invoice)}` : ""}</span>
                 <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700, ...statusStyle(p.status) }}>{p.status}</span>
               </div>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 18, fontWeight: 800, color: "#0F172A" }}>{fmt(p.amount)}</span>
@@ -1677,11 +1796,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
                 <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
                   onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
-                >{p.invoice}</span>
-              </td>
-              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
-                <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Affiliate Payment") === "Brand Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Affiliate Payment") === "Brand Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Affiliate Payment"}</span>
+                >{p.invoice}{getAffiliateName(p.invoice) ? <span style={{ fontWeight: 400, color: "#64748B", fontSize: 11, marginLeft: 4 }}>- {getAffiliateName(p.invoice)}</span> : ""}</span>
               </td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {p.status !== "Paid" && statusOptions && onStatusChange ? (
@@ -3902,6 +4017,97 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
   const [sortBrand, setSortBrand] = useState("manual");
   const userName = user?.name || user?.email || "";
 
+  // v10.12: Load default affiliates & brands data
+  const loadDefaults = () => {
+    if (data.length > 15 && !confirm("This will REPLACE all current data with defaults. Are you sure?")) return;
+    const defaults = [];
+    // Affiliates with balances from 2026-03-10 table
+    const DEFAULT_AFFILIATES = [
+      { name: "AFF 137 - Tokomedia", noCrg: "16393", withCrg: "14293" },
+      { name: "AFF 225 / 211 - ExTraffic", noCrg: "10815", withCrg: "10115", sent: true },
+      { name: "AFF 123 - MeeseeksMedia", noCrg: "3107", withCrg: "3107" },
+      { name: "AFF 165 - BUFU", noCrg: "2335", withCrg: "2335" },
+      { name: "AFF 168 - PLASH", noCrg: "2048", withCrg: "2048" },
+      { name: "AFF 83 - Leading Media", noCrg: "1666", withCrg: "1666" },
+      { name: "AFF 194 - Q16", noCrg: "1000", withCrg: "1000" },
+      { name: "AFF 226 - Affilihub", noCrg: "768", withCrg: "768" },
+      { name: "AFF 49 - Matar", noCrg: "463", withCrg: "463" },
+      { name: "AFF 60 / 134 - Traffic Lab", noCrg: "0", withCrg: "-360" },
+      { name: "AFF 183 - PandaAds", noCrg: "-383", withCrg: "-383" },
+      { name: "AFF 159 - Farah", noCrg: "-1187", withCrg: "-1187" },
+      { name: "AFF 171 - MediaPro", noCrg: "0", withCrg: "-1650" },
+      { name: "AFF 139 - 20C", noCrg: "-1650", withCrg: "-1650", sent: true },
+      { name: "AFF 133 - Whitefly", noCrg: "-2400", withCrg: "-2400" },
+      { name: "AFF 64 / 12 - Punch", noCrg: "-3325", withCrg: "-3325" },
+      { name: "AFF 51 - Liquid Group", noCrg: "-7370", withCrg: "-7370" },
+      { name: "AFF 28 / 131 - Bugle", noCrg: "-12450", withCrg: "-12450" },
+      { name: "AFF 33 / 167 - RVG", noCrg: "-14454", withCrg: "-14529" },
+    ];
+    DEFAULT_AFFILIATES.forEach(a => {
+      defaults.push({ id: genId(), type: "affiliate", name: a.name, balanceNoCrg: a.noCrg, balanceWithCrg: a.withCrg, sent: !!a.sent, comment: "", updatedAt: Date.now(), createdAt: Date.now() });
+    });
+    // Brands/Networks with balances from 2026-03-10 table
+    const DEFAULT_BRANDS = [
+      { name: "Helios (ID 152 / 162)", noCrg: "10838", withCrg: "10838" },
+      { name: "PRX Ave (ID 1761 1941)", noCrg: "9138", withCrg: "9138" },
+      { name: "12Mark (ID 2992)", noCrg: "4757", withCrg: "4217" },
+      { name: "May (ID 2682)", noCrg: "3372", withCrg: "3372" },
+      { name: "Kalipso (ID 182)", noCrg: "2801", withCrg: "2801" },
+      { name: "Photonics (ID 2031)", noCrg: "2694", withCrg: "2694" },
+      { name: "Fintrix (ID 3132 3122)", noCrg: "2679", withCrg: "2679" },
+      { name: "Avelux / Serenity (ID 582 592)", noCrg: "2041", withCrg: "2041" },
+      { name: "Enthrone", noCrg: "1885", withCrg: "1885" },
+      { name: "Evest (ID 1071)", noCrg: "1879", withCrg: "1679" },
+      { name: "Legion (ID 1192)", noCrg: "1853", withCrg: "1853", sent: true },
+      { name: "UBP (ID 2522)", noCrg: "1632", withCrg: "1632" },
+      { name: "TenX (ID 452)", noCrg: "1500", withCrg: "1500" },
+      { name: "Banana", noCrg: "1400", withCrg: "1400" },
+      { name: "Crypto Galassia (ID 2642)", noCrg: "1319", withCrg: "1319" },
+      { name: "DM partners (ID 1581)", noCrg: "1163", withCrg: "1163" },
+      { name: "Techinvest", noCrg: "1150", withCrg: "1150" },
+      { name: "Imperius (ID 3162)", noCrg: "1062", withCrg: "1062" },
+      { name: "Mi Tang (ID 3052)", noCrg: "840", withCrg: "840" },
+      { name: "TMS", noCrg: "800", withCrg: "800" },
+      { name: "VenturyFX (ID 1971)", noCrg: "750", withCrg: "750" },
+      { name: "Pantheramedia (ID 472)", noCrg: "727", withCrg: "727" },
+      { name: "MW (ID 3322)", noCrg: "864", withCrg: "864" },
+      { name: "StoneWall (ID 632)", noCrg: "626", withCrg: "626" },
+      { name: "GSI markets (ID 462)", noCrg: "671", withCrg: "571" },
+      { name: "Unitraff (ID 192)", noCrg: "534", withCrg: "534" },
+      { name: "FX-Q (ID 3273)", noCrg: "524", withCrg: "524" },
+      { name: "Theta Holding (ID 2722)", noCrg: "489", withCrg: "489" },
+      { name: "ClickBait (ID 352 2021)", noCrg: "718", withCrg: "718" },
+      { name: "Capex (ID 1871 / 302)", noCrg: "437", withCrg: "437" },
+      { name: "UNIT (ID 802)", noCrg: "140", withCrg: "140" },
+      { name: "Miltonia (ID 642)", noCrg: "371", withCrg: "371" },
+      { name: "No limits (ID 2051)", noCrg: "434", withCrg: "434" },
+      { name: "Michael (ID 2171)", noCrg: "162", withCrg: "162" },
+      { name: "Fugazi (ID 2251 / 2261)", noCrg: "161", withCrg: "161" },
+      { name: "Celestia (ID 1261)", noCrg: "135", withCrg: "135" },
+      { name: "Level markets (ID 282)", noCrg: "100", withCrg: "100" },
+      { name: "X Brand (ID 292)", noCrg: "79", withCrg: "79", comment: "postpay" },
+      { name: "MediaNow (ID 1001)", noCrg: "-32", withCrg: "-32" },
+      { name: "WhiteRhino (ID 2952)", noCrg: "-280", withCrg: "-280" },
+      { name: "Fusion (ID 1601)", noCrg: "-1050", withCrg: "-1050", comment: "postpay - Wednesday" },
+      { name: "EMP313 (ID 312)", noCrg: "-2577", withCrg: "-2577" },
+      { name: "Eurotrade / Z (ID 2111)", noCrg: "-2700", withCrg: "-2700", comment: "postpay" },
+      { name: "Monstrack (ID 252)", noCrg: "-3300", withCrg: "-3300" },
+      { name: "BB (ID 3283)", noCrg: "-3900", withCrg: "-3900", comment: "postpay" },
+      { name: "TraderTok (ID 3022)", noCrg: "-5200", withCrg: "-5200" },
+      { name: "SM / Nexus (ID 212 / 222)", noCrg: "-7045", withCrg: "-7045", comment: "postpay" },
+      { name: "MN (ID 272 1961)", noCrg: "-10150", withCrg: "-10150", comment: "postpay" },
+      { name: "Capitan (ID 652)", noCrg: "0", withCrg: "-507", sent: true },
+      { name: "Swin (ID 2212 2232)", noCrg: "-25210", withCrg: "-28473" },
+    ];
+    DEFAULT_BRANDS.forEach(b => {
+      defaults.push({ id: genId(), type: "brand", name: b.name, balanceNoCrg: b.noCrg, balanceWithCrg: b.withCrg, sent: !!b.sent, comment: b.comment || "", updatedAt: Date.now(), createdAt: Date.now() });
+    });
+    setCalcs(defaults);
+  };
+
+  // v10.13: Auto-seed if less than 55 rows
+  useEffect(() => { if (data.length < 55) loadDefaults(); }, []);
+
   // Split data into affiliates and brands
   const affiliates = data.filter(r => r.type === 'affiliate');
   const brands = data.filter(r => r.type === 'brand');
@@ -4478,7 +4684,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return [p.invoice, p.openBy, p.status, p.trcAddress, p.ercAddress, p.usdcAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
+    return [p.invoice, getAffiliateName(p.invoice), p.openBy, p.status, p.trcAddress, p.ercAddress, p.usdcAddress, p.instructions, p.paymentHash].some(v => (v || "").toLowerCase().includes(q));
   };
 
   // Open payments: any payment NOT "Paid"
