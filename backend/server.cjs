@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.06";
+const VERSION = "10.07";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1758,13 +1758,36 @@ app.post("/api/payments", requireAuth, async (req, res) => {
       mergedMap.set(r.id, r);
       clientNew++;
     } else {
-      const clientTime = r.updatedAt || 0;
-      const serverTime = srv.updatedAt || 0;
-      if (clientTime >= serverTime) {
-        r.updatedAt = r.updatedAt || Date.now();
-        mergedMap.set(r.id, r);
+      // v10.07: STATUS-AWARE MERGE for payments
+      // Prevent status regression: if server has "Paid"/"Archived" and client has "Open",
+      // server wins on status regardless of timestamps. This prevents stale clients
+      // from reverting confirmed payments back to Open.
+      const STATUS_PRIORITY = { 'Open': 0, 'Pending': 1, 'Processing': 2, 'Paid': 3, 'Archived': 4 };
+      const srvPriority = STATUS_PRIORITY[srv.status] ?? 0;
+      const clientPriority = STATUS_PRIORITY[r.status] ?? 0;
+      
+      if (clientPriority < srvPriority) {
+        // Client is trying to regress status (e.g. Paid → Open) — BLOCK
+        // Keep server version entirely, but merge non-status fields if client is newer
+        const clientTime = r.updatedAt || 0;
+        const serverTime = srv.updatedAt || 0;
+        if (clientTime > serverTime) {
+          // Client has other edits — merge them but preserve server status
+          mergedMap.set(r.id, { ...r, status: srv.status, updatedAt: srv.updatedAt || Date.now() });
+        }
+        // else: server version is newer overall, keep it entirely
+        clientUpdated++;
+      } else {
+        // Normal LWW merge — client status is same or higher priority
+        const clientTime = r.updatedAt || 0;
+        const serverTime = srv.updatedAt || 0;
+        if (clientTime >= serverTime) {
+          r.updatedAt = r.updatedAt || Date.now();
+          mergedMap.set(r.id, r);
+        }
+        // else: server version is newer, keep it
+        clientUpdated++;
       }
-      clientUpdated++;
     }
   });
   
@@ -1926,14 +1949,31 @@ app.post("/api/payments", requireAuth, async (req, res) => {
         mergedMap.set(r.id, r);
         clientNew++;
       } else {
-        // Both have it — use updatedAt for true last-write-wins
+        // v10.07: Status-aware merge — prevent status regression on tables with status field
+        // Applies to: payments, customer-payments, deals (any table with a status field)
+        const STATUS_PRIORITY = { 'Open': 0, 'Pending': 1, 'Processing': 2, 'Confirmed': 3, 'Received': 3, 'Paid': 3, 'Archived': 4 };
+        const srvStatus = srv.status;
+        const clientStatus = r.status;
+        const srvPri = STATUS_PRIORITY[srvStatus] ?? -1;
+        const clientPri = STATUS_PRIORITY[clientStatus] ?? -1;
+        
         const clientTime = r.updatedAt || 0;
         const serverTime = srv.updatedAt || 0;
-        if (clientTime >= serverTime) {
-          r.updatedAt = r.updatedAt || Date.now();
-          mergedMap.set(r.id, r);
+        
+        if (srvPri >= 0 && clientPri >= 0 && clientPri < srvPri) {
+          // Client is regressing status — protect server status
+          if (clientTime > serverTime) {
+            // Client has other field edits — merge them but keep server status
+            mergedMap.set(r.id, { ...r, status: srvStatus, updatedAt: srv.updatedAt || Date.now() });
+          }
+          // else: server is newer overall, keep it entirely
+        } else {
+          // Normal LWW merge
+          if (clientTime >= serverTime) {
+            r.updatedAt = r.updatedAt || Date.now();
+            mergedMap.set(r.id, r);
+          }
         }
-        // else: server version is newer, keep it
         clientUpdated++;
       }
     });
