@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.21";
+const VERSION = "10.22";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -4437,6 +4437,114 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
                     <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("fee")} onChange={e => upf("fee", e.target.value)} style={profitInp} placeholder="$0" /></td>
                   </tr></tbody>
                 </table>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══ DAILY SUMMARY TABLE ═══ */}
+        {(() => {
+          const profitRow = data.find(r => r.type === 'profit-summary');
+          const pf = (field) => (profitRow && profitRow[field]) || "";
+          const upf = (field, val) => { if (profitRow) updateField(profitRow.id, field, val); };
+          const sumInp = { width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid #E2E8F0", fontSize: 13, fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC", textAlign: "right", fontWeight: 700 };
+
+          // Auto-calc from tables above
+          const affDebt = filteredAff.filter(r => parseNum(r.balanceWithCrg) < 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+          const affPP = filteredAff.filter(r => parseNum(r.balanceWithCrg) > 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+          const brandDebt = filteredBrand.filter(r => parseNum(r.balanceWithCrg) < 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+          const brandPP = filteredBrand.filter(r => parseNum(r.balanceWithCrg) > 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+
+          const balance = parseNum(pf("ds_balance"));
+          const tBalance = parseNum(pf("ds_tbalance"));
+
+          const monthlyProfit = parseNum(pf("ds_monthlyProfit_reports"));
+          const dailyProfit = parseNum(pf("ds_dailyProfit_reports"));
+          const monthlyProfitCam = parseNum(pf("ds_monthlyProfit_cameron"));
+          const dailyProfitCam = parseNum(pf("ds_dailyProfit_cameron"));
+          const diffMonthly = monthlyProfit - monthlyProfitCam;
+          const diffDaily = dailyProfit - dailyProfitCam;
+
+          const expense = parseNum(pf("ds_expense"));
+          const wallets = parseNum(pf("ds_wallets"));
+          const b2 = parseNum(pf("ds_b2"));
+
+          const today = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+          const hdrCell = { padding: "8px 12px", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", textAlign: "center", borderBottom: "2px solid #CBD5E1" };
+          const valCell = { padding: "6px 8px", borderBottom: "1px solid #F1F5F9", textAlign: "center", verticalAlign: "middle" };
+          const autoVal = (v, color) => <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 13, color }}>{fmtMoney(v)}</span>;
+
+          return (
+            <div style={{ marginTop: 28 }}>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                {/* LEFT: Affiliates & Brands summary */}
+                <div style={{ flex: 1, minWidth: 300 }}>
+                  <div style={{ borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF", overflow: "hidden" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        <th colSpan={2} style={{ ...hdrCell, background: "#DBEAFE", color: "#1E40AF" }}>Affiliates</th>
+                        <th colSpan={2} style={{ ...hdrCell, background: "#FEF3C7", color: "#92400E" }}>Brands</th>
+                        <th style={{ ...hdrCell, width: 30 }}></th>
+                        <th style={{ ...hdrCell, background: "#D1FAE5", color: "#065F46" }}>Balance</th>
+                        <th style={{ ...hdrCell, background: "#D1FAE5", color: "#065F46" }}>T Balance</th>
+                      </tr></thead>
+                      <tbody>
+                        <tr>
+                          <td style={valCell}>{autoVal(affDebt, "#DC2626")}</td>
+                          <td style={valCell}>{autoVal(affPP, "#16A34A")}</td>
+                          <td style={valCell}>{autoVal(brandDebt, "#DC2626")}</td>
+                          <td style={valCell}>{autoVal(brandPP, "#16A34A")}</td>
+                          <td style={valCell}></td>
+                          <td style={valCell}><input value={pf("ds_balance")} onChange={e => upf("ds_balance", e.target.value)} style={{ ...sumInp, color: balance >= 0 ? "#16A34A" : "#DC2626" }} placeholder="$0" /></td>
+                          <td style={valCell}><input value={pf("ds_tbalance")} onChange={e => upf("ds_tbalance", e.target.value)} style={{ ...sumInp, color: tBalance >= 0 ? "#16A34A" : "#DC2626" }} placeholder="$0" /></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Monthly/Daily Profit */}
+                  <div style={{ borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF", overflow: "hidden", marginTop: 12 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        <th style={{ ...hdrCell, background: "#F8FAFC" }}></th>
+                        <th style={{ ...hdrCell, background: "#DBEAFE", color: "#1E40AF" }}>Monthly Profit</th>
+                        <th style={{ ...hdrCell, background: "#FEF3C7", color: "#92400E" }}>Daily Profit</th>
+                        <th style={{ ...hdrCell, width: 30 }}></th>
+                        <th style={{ ...hdrCell, background: "#FDE8E8", color: "#991B1B" }}>Expense</th>
+                        <th style={{ ...hdrCell, background: "#DBEAFE", color: "#1E40AF" }}>Wallets</th>
+                        <th style={{ ...hdrCell, background: "#E0E7FF", color: "#3730A3" }}>B2</th>
+                      </tr></thead>
+                      <tbody>
+                        <tr>
+                          <td style={{ ...valCell, fontWeight: 700, fontSize: 12, color: "#334155" }}>Reports</td>
+                          <td style={valCell}><input value={pf("ds_monthlyProfit_reports")} onChange={e => upf("ds_monthlyProfit_reports", e.target.value)} style={{ ...sumInp, color: "#16A34A" }} placeholder="$0" /></td>
+                          <td style={valCell}><input value={pf("ds_dailyProfit_reports")} onChange={e => upf("ds_dailyProfit_reports", e.target.value)} style={{ ...sumInp, color: "#16A34A" }} placeholder="$0" /></td>
+                          <td style={valCell}></td>
+                          <td style={valCell}><input value={pf("ds_expense")} onChange={e => upf("ds_expense", e.target.value)} style={{ ...sumInp, color: "#DC2626" }} placeholder="$0" /></td>
+                          <td style={valCell}><input value={pf("ds_wallets")} onChange={e => upf("ds_wallets", e.target.value)} style={{ ...sumInp, color: "#1E40AF" }} placeholder="$0" /></td>
+                          <td style={valCell}><input value={pf("ds_b2")} onChange={e => upf("ds_b2", e.target.value)} style={sumInp} placeholder="$0" /></td>
+                        </tr>
+                        <tr>
+                          <td style={{ ...valCell, fontWeight: 700, fontSize: 12, color: "#334155" }}>Cameron</td>
+                          <td style={valCell}><input value={pf("ds_monthlyProfit_cameron")} onChange={e => upf("ds_monthlyProfit_cameron", e.target.value)} style={sumInp} placeholder="$0" /></td>
+                          <td style={valCell}><input value={pf("ds_dailyProfit_cameron")} onChange={e => upf("ds_dailyProfit_cameron", e.target.value)} style={sumInp} placeholder="$0" /></td>
+                          <td style={valCell}></td>
+                          <td style={valCell}></td>
+                          <td style={valCell}></td>
+                          <td style={{ ...valCell, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600, fontSize: 11, color: "#64748B" }}>{autoVal(parseNum(pf("ds_b2")), "#3730A3")}</td>
+                        </tr>
+                        <tr style={{ background: "#FEF3C7" }}>
+                          <td style={{ ...valCell, fontWeight: 800, fontSize: 12, color: "#92400E" }}>Difference</td>
+                          <td style={valCell}>{autoVal(diffMonthly, diffMonthly >= 0 ? "#16A34A" : "#DC2626")}</td>
+                          <td style={valCell}>{autoVal(diffDaily, diffDaily >= 0 ? "#16A34A" : "#DC2626")}</td>
+                          <td style={valCell}></td>
+                          <td colSpan={3} style={{ ...valCell, fontWeight: 700, fontSize: 13, color: "#64748B", fontFamily: "'JetBrains Mono',monospace" }}>{today}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             </div>
           );
