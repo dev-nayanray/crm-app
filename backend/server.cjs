@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.08";
+const VERSION = "10.14";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -340,6 +340,17 @@ function extractCustomerName(messageText) {
 // Supports: compact ("NL nl Funnel 1500+15 gg"), multi-geo single-line
 // ("IN 700+4% GR 1250+10% ..."), labeled ("Geo: BEfr / Funnel: X")
 // v9.51 FIX: Deal Type awareness — CPA/CPL/CPS etc are NOT geo codes
+// v10.09: Affiliate & Brand name resolution for Telegram bot
+const AFFILIATE_NAMES = {
+  "137": "Tokomedia", "225": "ExTraffic", "211": "ExTraffic", "123": "MeeseeksMedia",
+  "165": "BUFU", "168": "PLASH", "83": "Leading Media", "194": "Q16",
+  "226": "Affilihub", "49": "Matar", "60": "Traffic Lab", "134": "Traffic Lab",
+  "183": "PandaAds", "159": "Farah", "171": "MediaPro", "139": "20C",
+  "133": "Whitefly", "64": "Punch", "12": "Punch", "51": "Liquid Group",
+  "28": "Bugle", "131": "Bugle", "33": "RVG", "167": "RVG",
+};
+function getAffiliateName(id) { return AFFILIATE_NAMES[String(id)] || ""; }
+
 // v9.51 FIX: All CRM table fields populated (Deal Type, Funnels, Open By, Date)
 // ═══════════════════════════════════════════════════════════════
 const OFFER_GEO_CODES = new Set([
