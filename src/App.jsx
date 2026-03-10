@@ -421,7 +421,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.06";
+const VERSION = "10.07";
 
 // ── Storage Layer ──
 // Priority: API (shared between all users) > localStorage (offline backup)
@@ -4098,14 +4098,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   const handleStatusChange = (id, newStatus) => {
     setPayments(prev => prev.map(p => {
       if (p.id !== id) return p;
-      const updated = { ...p, status: newStatus };
+      const updated = { ...p, status: newStatus, updatedAt: Date.now() }; // v10.07: stamp updatedAt on status change
       if (newStatus === "Paid") {
         updated.month = month;
         updated.year = year;
         if (!updated.paidDate) updated.paidDate = new Date().toISOString().split("T")[0];
-        // All notifications handled by server on save — no frontend telegramNotify needed
       }
-      // Removed: frontend telegramNotify for status changes — server sends notifications on save
       return updated;
     }));
   };
@@ -4129,19 +4127,17 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
 
   const handleSave = form => { 
     if (editPay) { 
-      const updated = { ...editPay, ...form }; 
+      const updated = { ...editPay, ...form, updatedAt: Date.now() }; // v10.07: always stamp updatedAt on edit
       if (form.status === "Paid" && editPay.status !== "Paid") { 
         updated.month = month; 
         updated.year = year; 
         if (!updated.paidDate) { updated.paidDate = new Date().toISOString().split("T")[0]; } 
       }
-      // All Telegram notifications handled server-side on save — no frontend duplicates
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p)); 
     } else { 
       // New payment added
-      const newPayment = { ...form, id: genId(), month, year };
+      const newPayment = { ...form, id: genId(), month, year, updatedAt: Date.now(), createdAt: Date.now() }; // v10.07: stamp both
       setPayments(prev => [...prev, newPayment]);
-      // Server sends "NEW PAYMENT ADDED" notification on save — no frontend duplicate
     } 
     setModalOpen(false); 
     setEditPay(null); 
@@ -4873,7 +4869,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
 
   const handleSave = form => {
     if (editPay) {
-      const updated = { ...editPay, ...form };
+      const updated = { ...editPay, ...form, updatedAt: Date.now() }; // v10.07: stamp updatedAt
       if (["Received", "Refund"].includes(form.status) && !["Received", "Refund"].includes(editPay.status)) {
         updated.month = month;
         updated.year = year;
@@ -4881,7 +4877,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
       }
       setPayments(prev => prev.map(p => p.id === editPay.id ? updated : p));
     } else {
-      setPayments(prev => [...prev, { ...form, id: genId(), month, year }]);
+      setPayments(prev => [...prev, { ...form, id: genId(), month, year, updatedAt: Date.now(), createdAt: Date.now() }]); // v10.07
     }
     setModalOpen(false);
     setEditPay(null);
@@ -4908,7 +4904,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
   const handleCpStatusChange = (id, newStatus) => {
     setPayments(prev => prev.map(p => {
       if (p.id !== id) return p;
-      const updated = { ...p, status: newStatus };
+      const updated = { ...p, status: newStatus, updatedAt: Date.now() }; // v10.07: stamp updatedAt
       if (["Received", "Refund"].includes(newStatus)) {
         updated.month = month;
         updated.year = year;
