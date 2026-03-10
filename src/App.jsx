@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.14";
+const VERSION = "10.21";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1970,8 +1970,8 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
   const [editingWallet, setEditingWallet] = useState(null); // null or wallet id being edited
   const [walletForm, setWalletForm] = useState({ date: "", trc: "", erc: "", btc: "" });
 
-  // Cache last valid users list — prevents "Loading..." flicker during sync
-  const usersCache = useRef(users && users.length > 0 ? users : []);
+  // v10.15: Cache last valid users list — fall back to INITIAL_USERS instead of empty "Loading..."
+  const usersCache = useRef(users && users.length > 0 ? users : INITIAL_USERS);
   if (users && users.length > 0) usersCache.current = users;
   const displayUsers = usersCache.current;
 
@@ -4106,7 +4106,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
   };
 
   // v10.13: Auto-seed if less than 55 rows
-  useEffect(() => { if (data.length < 55) loadDefaults(); }, []);
+  useEffect(() => { if (data.length === 0) loadDefaults(); }, []);
 
   // Split data into affiliates and brands
   const affiliates = data.filter(r => r.type === 'affiliate');
@@ -4204,9 +4204,9 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
               <tr>
                 <th style={{ ...thStyle, width: 30 }}>#</th>
                 <th style={thStyle}>{isBrand ? "Brand / Network" : "Affiliate"}</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Balance w/o CRG+CPL</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Balance w/ CRG+CPL</th>
-                <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Sent $</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Balance Yesterday</th>
+                <th style={{ ...thStyle, textAlign: "right" }}>Balance Today</th>
+                <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Active</th>
                 {isBrand && <th style={thStyle}>Comment</th>}
                 <th style={{ ...thStyle, width: 80, textAlign: "center" }}>Actions</th>
               </tr>
@@ -4231,7 +4231,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
                       <input value={r.balanceWithCrg || ""} onChange={e => updateField(r.id, "balanceWithCrg", e.target.value)} style={{ ...inp, textAlign: "right", width: 90, color: balColor, fontWeight: 700 }} placeholder="$0" />
                     </td>
                     <td style={{ ...tdStyle, textAlign: "center" }}>
-                      <input type="checkbox" checked={!!r.sent} onChange={e => updateField(r.id, "sent", e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0EA5E9" }} />
+                      {(() => { const y = parseNum(r.balanceNoCrg); const t = parseNum(r.balanceWithCrg); const active = y !== t; return active ? <span style={{ color: "#16A34A", fontSize: 16, fontWeight: 800 }}>✓</span> : <span style={{ color: "#CBD5E1", fontSize: 14 }}>—</span>; })()}
                     </td>
                     {isBrand && (
                       <td style={tdStyle}>
@@ -4281,12 +4281,18 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
 
         {/* Summary Cards */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 24 }}>
-          {[
-            { label: "Affiliate Balance", value: fmtMoney(affTotal), color: affTotal >= 0 ? "#16A34A" : "#DC2626", bg: affTotal >= 0 ? "#F0FDF4" : "#FEF2F2", border: affTotal >= 0 ? "#BBF7D0" : "#FECACA" },
-            { label: "Brand Balance", value: fmtMoney(brandTotal), color: brandTotal >= 0 ? "#16A34A" : "#DC2626", bg: brandTotal >= 0 ? "#F0FDF4" : "#FEF2F2", border: brandTotal >= 0 ? "#BBF7D0" : "#FECACA" },
-            { label: "Affiliates", value: filteredAff.length, color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
-            { label: "Brands", value: filteredBrand.length, color: "#7C3AED", bg: "#F5F3FF", border: "#DDD6FE" },
-          ].map((c, i) => (
+          {(() => {
+            const affDebt = filteredAff.filter(r => parseNum(r.balanceWithCrg) < 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+            const affPP = filteredAff.filter(r => parseNum(r.balanceWithCrg) > 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+            const brandDebt = filteredBrand.filter(r => parseNum(r.balanceWithCrg) < 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+            const brandPP = filteredBrand.filter(r => parseNum(r.balanceWithCrg) > 0).reduce((s, r) => s + parseNum(r.balanceWithCrg), 0);
+            return [
+              { label: "Affiliate Debt", value: fmtMoney(affDebt), color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+              { label: "Affiliate PP", value: fmtMoney(affPP), color: "#059669", bg: "#ECFDF5", border: "#A7F3D0" },
+              { label: "Brands Debt", value: fmtMoney(brandDebt), color: "#DC2626", bg: "#FEF2F2", border: "#FECACA" },
+              { label: "Brands PP", value: fmtMoney(brandPP), color: "#059669", bg: "#ECFDF5", border: "#A7F3D0" },
+            ];
+          })().map((c, i) => (
             <div key={i} style={{ padding: "14px 18px", borderRadius: 12, background: c.bg, border: `1px solid ${c.border}` }}>
               <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748B", marginBottom: 4 }}>{c.label}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
@@ -4302,52 +4308,40 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
 
         {/* ═══ TOTAL BUYING YESTERDAY ═══ */}
         <div style={{ marginTop: 36 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "#0F172A" }}>📦 Total Buying Yesterday</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "#0F172A" }}>📊 PNL Daily</h2>
           <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-            {/* Affiliate Buying Table */}
+            {/* Affiliate PNL — auto-calculated from Balance Yesterday vs Balance Today */}
             {(() => {
-              const buyAff = data.filter(r => r.type === 'buy-affiliate').filter(matchSearch);
-              const buyAffFtdTotal = buyAff.reduce((s, r) => s + parseNum(r.ftdsCost), 0);
-              const buyAffCrgTotal = buyAff.reduce((s, r) => s + parseNum(r.crgCost), 0);
-              const buyAffTotal = buyAff.reduce((s, r) => s + parseNum(r.ftdsCost) + parseNum(r.crgCost), 0);
+              const activeAff = affiliates.filter(r => parseNum(r.balanceNoCrg) !== parseNum(r.balanceWithCrg));
+              const affPnlTotal = activeAff.reduce((s, r) => s + (parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg)), 0);
               return (
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#DC2626" }}>👤 Affiliate</h3>
-                    <button onClick={() => addRow('buy-affiliate')} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#DC2626" }}>
+                      👤 Affiliate PNL <span style={{ fontSize: 11, fontWeight: 500, color: "#64748B" }}>({activeAff.length} active)</span>
+                    </h3>
                   </div>
                   <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 350 }}>
                       <thead><tr>
                         <th style={thStyle}>Affiliate</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>FTDs Costs</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>~CRG Cost</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
-                        <th style={{ ...thStyle, width: 70, textAlign: "center" }}>Actions</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>PNL Daily</th>
                       </tr></thead>
                       <tbody>
-                        {buyAff.length === 0 && <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>Click "+ Add"</td></tr>}
-                        {buyAff.map(r => (
-                          <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
-                            <td style={tdStyle}><input value={r.name||""} onChange={e => updateField(r.id,"name",e.target.value)} style={{ ...inp, fontWeight: 600 }} placeholder="Name" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.ftdsCost||""} onChange={e => updateField(r.id,"ftdsCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.crgCost||""} onChange={e => updateField(r.id,"crgCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{fmtMoney(parseNum(r.ftdsCost) + parseNum(r.crgCost))}</td>
-                            <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
-                                <button onClick={() => duplicateRow(r.id)} style={{ ...btnSm, color: "#0EA5E9" }}>⧉</button>
-                                <button onClick={() => deleteRow(r.id)} style={{ ...btnSm, color: "#EF4444" }}>✕</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                        {activeAff.length === 0 && <tr><td colSpan={2} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>No active affiliates — update balances above</td></tr>}
+                        {activeAff.map(r => {
+                          const pnl = parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg);
+                          return (
+                            <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                              <td style={{ ...tdStyle, fontWeight: 600, fontSize: 12 }}>{r.name}</td>
+                              <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: pnl >= 0 ? "#16A34A" : "#DC2626" }}>{fmtMoney(pnl)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot><tr style={{ background: "#F8FAFC" }}>
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyAffFtdTotal)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyAffCrgTotal)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{fmtMoney(buyAffTotal)}</td>
-                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: affPnlTotal >= 0 ? "#16A34A" : "#DC2626" }}>{fmtMoney(affPnlTotal)}</td>
                       </tr></tfoot>
                     </table>
                   </div>
@@ -4355,50 +4349,38 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
               );
             })()}
 
-            {/* Brand Buying Table */}
+            {/* Brand PNL — auto-calculated */}
             {(() => {
-              const buyBrand = data.filter(r => r.type === 'buy-brand').filter(matchSearch);
-              const buyBrFtdTotal = buyBrand.reduce((s, r) => s + parseNum(r.ftdsCost), 0);
-              const buyBrCrgTotal = buyBrand.reduce((s, r) => s + parseNum(r.crgCost), 0);
-              const buyBrTotal = buyBrand.reduce((s, r) => s + parseNum(r.ftdsCost) + parseNum(r.crgCost), 0);
+              const activeBr = brands.filter(r => parseNum(r.balanceNoCrg) !== parseNum(r.balanceWithCrg));
+              const brPnlTotal = activeBr.reduce((s, r) => s + (parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg)), 0);
               return (
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
-                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#7C3AED" }}>🏢 Brand / Network</h3>
-                    <button onClick={() => addRow('buy-brand')} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#7C3AED", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+                    <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#7C3AED" }}>
+                      🏢 Brand / Network PNL <span style={{ fontSize: 11, fontWeight: 500, color: "#64748B" }}>({activeBr.length} active)</span>
+                    </h3>
                   </div>
                   <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 380 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 350 }}>
                       <thead><tr>
                         <th style={thStyle}>Brand / Network</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>FTDs Costs</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>~CRG Cost</th>
-                        <th style={{ ...thStyle, textAlign: "right" }}>Total</th>
-                        <th style={{ ...thStyle, width: 70, textAlign: "center" }}>Actions</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>PNL Daily</th>
                       </tr></thead>
                       <tbody>
-                        {buyBrand.length === 0 && <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>Click "+ Add"</td></tr>}
-                        {buyBrand.map(r => (
-                          <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
-                            <td style={tdStyle}><input value={r.name||""} onChange={e => updateField(r.id,"name",e.target.value)} style={{ ...inp, fontWeight: 600 }} placeholder="Name" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.ftdsCost||""} onChange={e => updateField(r.id,"ftdsCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right" }}><input value={r.crgCost||""} onChange={e => updateField(r.id,"crgCost",e.target.value)} style={{ ...inp, textAlign: "right", width: 80 }} placeholder="$0" /></td>
-                            <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{fmtMoney(parseNum(r.ftdsCost) + parseNum(r.crgCost))}</td>
-                            <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <div style={{ display: "flex", gap: 2, justifyContent: "center" }}>
-                                <button onClick={() => duplicateRow(r.id)} style={{ ...btnSm, color: "#0EA5E9" }}>⧉</button>
-                                <button onClick={() => deleteRow(r.id)} style={{ ...btnSm, color: "#EF4444" }}>✕</button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                        {activeBr.length === 0 && <tr><td colSpan={2} style={{ ...tdStyle, textAlign: "center", padding: 24, color: "#CBD5E1", fontSize: 13 }}>No active brands — update balances above</td></tr>}
+                        {activeBr.map(r => {
+                          const pnl = parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg);
+                          return (
+                            <tr key={r.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                              <td style={{ ...tdStyle, fontWeight: 600, fontSize: 12 }}>{r.name}</td>
+                              <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: pnl >= 0 ? "#16A34A" : "#DC2626" }}>{fmtMoney(pnl)}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot><tr style={{ background: "#F8FAFC" }}>
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyBrFtdTotal)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(buyBrCrgTotal)}</td>
-                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 13 }}>{fmtMoney(buyBrTotal)}</td>
-                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", fontSize: 14, color: brPnlTotal >= 0 ? "#16A34A" : "#DC2626" }}>{fmtMoney(brPnlTotal)}</td>
                       </tr></tfoot>
                     </table>
                   </div>
@@ -4426,6 +4408,12 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
           const pf = (field) => profitRow[field] || "";
           const upf = (field, val) => updateField(profitRow.id, field, val);
           const profitInp = { ...inp, textAlign: "center", fontWeight: 700, fontSize: 14, padding: "10px 12px" };
+          // v10.20: Auto-calculate Yesterday Profit = Brand PNL - Affiliate PNL
+          const activeBrands = brands.filter(r => parseNum(r.balanceNoCrg) !== parseNum(r.balanceWithCrg));
+          const brandPnl = activeBrands.reduce((s, r) => s + (parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg)), 0);
+          const activeAffs = affiliates.filter(r => parseNum(r.balanceNoCrg) !== parseNum(r.balanceWithCrg));
+          const affPnl = activeAffs.reduce((s, r) => s + (parseNum(r.balanceWithCrg) - parseNum(r.balanceNoCrg)), 0);
+          const yesterdayProfitCalc = brandPnl - affPnl;
           return (
             <div style={{ marginTop: 32 }}>
               <div style={{ overflowX: "auto", borderRadius: 12, border: "2px solid #1E293B", background: "#FFF" }}>
@@ -4443,7 +4431,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
                   </tr></thead>
                   <tbody><tr>
                     <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("totalProfit")} onChange={e => upf("totalProfit", e.target.value)} style={{ ...profitInp, color: "#16A34A" }} placeholder="$0" /></td>
-                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("yesterdayProfit")} onChange={e => upf("yesterdayProfit", e.target.value)} style={{ ...profitInp, color: "#0EA5E9" }} placeholder="$0" /></td>
+                    <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><span style={{ ...profitInp, color: yesterdayProfitCalc >= 0 ? "#16A34A" : "#DC2626", display: "inline-block" }}>{fmtMoney(yesterdayProfitCalc)}</span></td>
                     <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("gillette")} onChange={e => upf("gillette", e.target.value)} style={profitInp} placeholder="$0" /></td>
                     <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("dolphins")} onChange={e => upf("dolphins", e.target.value)} style={profitInp} placeholder="$0" /></td>
                     <td style={{ ...tdStyle, textAlign: "center", background: "#F8FAFC" }}><input value={pf("fee")} onChange={e => upf("fee", e.target.value)} style={profitInp} placeholder="$0" /></td>
@@ -7370,20 +7358,20 @@ function AppInner() {
         if (anySuccess) {
           const pushTasks = [];
 
-          // USERS \u2014 merge + ensure INITIAL_USERS present + restore hashes
+          // USERS — v10.16: Server is source of truth for pageAccess
           if (su !== null) {
-            const usersMerged = mergeByID(local.users || INITIAL_USERS, su, 'users');
+            const serverMap = new Map((Array.isArray(su) ? su : []).map(u => [u.email, u]));
             const seedMap = new Map(INITIAL_USERS.map(x => [x.email, x]));
-            const mergedEmails = new Set(usersMerged.map(x => x.email));
-            const missing = INITIAL_USERS.filter(x => !mergedEmails.has(x.email));
-            const withSeed = [...usersMerged, ...missing];
-            const usersFinal = withSeed.map(u => {
+            INITIAL_USERS.forEach(seed => {
+              if (!serverMap.has(seed.email)) serverMap.set(seed.email, seed);
+            });
+            const usersFinal = Array.from(serverMap.values()).map(u => {
               if (!u.passwordHash) { const seed = seedMap.get(u.email); if (seed) return { ...u, passwordHash: seed.passwordHash }; }
               return u;
             });
             setUsers(usersFinal);
             saveBaselines.current['users'] = JSON.stringify(usersFinal);
-            if (JSON.stringify(usersFinal) !== JSON.stringify(su)) pushTasks.push(apiSave('users', usersFinal, user?.email));
+            // DON'T push users to server on load — server owns pageAccess
           }
 
           // DATA TABLES \u2014 merge by ID
