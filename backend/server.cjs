@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.14";
+const VERSION = "10.21";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -2144,25 +2144,26 @@ app.post("/api/users", requireAuth, async (req, res) => {
       // New user from client
       mergedMap.set(u.email, u);
     } else {
-      // Existing user — v10.07: Protect pageAccess from non-admin overwrites
-      // pageAccess should only change when explicitly set (by admin via handleUpdateUser)
-      // If client sends a user with different pageAccess but no updatedAt, server wins
+      // v10.16: ALWAYS preserve server pageAccess unless client has explicit newer updatedAt
+      // This is the #1 rule: pageAccess can ONLY change via admin edit (which stamps updatedAt)
       const clientTime = u.updatedAt || 0;
       const serverTime = ex.updatedAt || 0;
       
-      // Preserve lastLogin from server — client doesn't track this
+      // Preserve lastLogin from server
       if (ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
       
       if (clientTime > serverTime) {
-        // Client has newer data (admin just edited) — use client version
+        // Client is explicitly newer (admin just clicked Save) — accept ALL fields including pageAccess
         mergedMap.set(u.email, u);
-      } else if (clientTime === serverTime || clientTime === 0) {
-        // Same timestamp or client has no timestamp — preserve server's pageAccess
-        // This prevents stale clients from reverting admin changes
-        const merged = { ...u, pageAccess: ex.pageAccess || u.pageAccess };
+      } else {
+        // Server wins on pageAccess — ALWAYS. Client can update name/email but NOT permissions.
+        const merged = { ...u, 
+          pageAccess: ex.pageAccess || u.pageAccess,
+          updatedAt: ex.updatedAt || u.updatedAt,
+          lastLogin: ex.lastLogin || u.lastLogin,
+        };
         mergedMap.set(u.email, merged);
       }
-      // else: server is newer, keep server version
     }
   } });
   const mergedUsers = Array.from(mergedMap.values());
