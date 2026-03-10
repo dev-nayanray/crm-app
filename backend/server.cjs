@@ -2124,14 +2124,35 @@ app.post("/api/users", requireAuth, async (req, res) => {
     return u;
   });
 
-  // SERVER-SIDE MERGE for users — preserve users from other clients
+  // SERVER-SIDE MERGE for users — v10.07: Protect admin-managed fields
   const mergedMap = new Map();
   existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
   users.forEach(u => { if (u && u.email) {
     const ex = mergedMap.get(u.email);
-    // Preserve lastLogin from server — client doesn't track this
-    if (ex && ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
-    mergedMap.set(u.email, u);
+    if (!ex) {
+      // New user from client
+      mergedMap.set(u.email, u);
+    } else {
+      // Existing user — v10.07: Protect pageAccess from non-admin overwrites
+      // pageAccess should only change when explicitly set (by admin via handleUpdateUser)
+      // If client sends a user with different pageAccess but no updatedAt, server wins
+      const clientTime = u.updatedAt || 0;
+      const serverTime = ex.updatedAt || 0;
+      
+      // Preserve lastLogin from server — client doesn't track this
+      if (ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
+      
+      if (clientTime > serverTime) {
+        // Client has newer data (admin just edited) — use client version
+        mergedMap.set(u.email, u);
+      } else if (clientTime === serverTime || clientTime === 0) {
+        // Same timestamp or client has no timestamp — preserve server's pageAccess
+        // This prevents stale clients from reverting admin changes
+        const merged = { ...u, pageAccess: ex.pageAccess || u.pageAccess };
+        mergedMap.set(u.email, merged);
+      }
+      // else: server is newer, keep server version
+    }
   } });
   const mergedUsers = Array.from(mergedMap.values());
 
