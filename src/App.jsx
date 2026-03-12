@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.25";
+const VERSION = "10.27";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -553,19 +553,12 @@ const PREV_VERSION_KEY = 'blitz_app_version';
 const prevVersion = localStorage.getItem(PREV_VERSION_KEY);
 if (prevVersion !== VERSION) {
   console.log(`🔄 Version upgrade: ${prevVersion || 'unknown'} → ${VERSION}`);
-  // v10.06: PURGE all table data from localStorage on version upgrade
-  // This is the nuclear fix for zombie records — forces fresh fetch from server
-  // Server is the source of truth; stale localStorage is the source of zombies
+  // v10.25: Only clear version tracking — do NOT purge table data
+  // Server is the source of truth. On next fetch, server data will be loaded.
+  // Purging localStorage was causing data loss when server fetch failed or raced with autosave.
   try { localStorage.removeItem(LS_VERSIONS_KEY); } catch {}
-  const tablesToPurge = ['payments', 'customer-payments', 'crg-deals', 'daily-cap', 'deals', 'wallets', 'offers', 'ftd-entries', 'partners'];
-  tablesToPurge.forEach(t => {
-    const lsKey = LS_KEYS[t];
-    if (lsKey) {
-      try { localStorage.removeItem(lsKey); console.log(`🧹 Purged localStorage: ${t}`); } catch {}
-    }
-  });
   localStorage.setItem(PREV_VERSION_KEY, VERSION);
-  console.log('🧹 v10.06: All table data purged from localStorage — fresh server fetch will follow');
+  console.log(`✅ Version updated to ${VERSION} — server data will be fetched on next load`);
 }
 
 function lsGet(key, fallback) { try { const r = localStorage.getItem(LS_KEYS[key]); return r ? JSON.parse(r) : fallback; } catch(e) { return fallback; } }
@@ -4005,7 +3998,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
 // ═══════════════════════════════════════════════════════════════
 // DAILY CALCULATIONS RESULT PAGE — Side-by-side Affiliate + Brand tables
 // ═══════════════════════════════════════════════════════════════
-function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) {
+function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setPayments, cpPayments, setCpPayments, userAccess }) {
   const data = Array.isArray(calcs) ? calcs : [];
   const [search, setSearch] = useState("");
   const [editRow, setEditRow] = useState(null);
@@ -4103,7 +4096,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
   };
 
   // v10.13: Auto-seed if less than 55 rows
-  useEffect(() => { if (data.length === 0) loadDefaults(); }, []);
+  // v10.25: Auto-seed REMOVED — data is preserved across versions. Use "Load Defaults" button if needed.
 
   // Split data into affiliates and brands
   const affiliates = data.filter(r => r.type === 'affiliate');
@@ -4269,6 +4262,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>📊 Daily Calculations Result</h1>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {data.length === 0 && <button onClick={loadDefaults} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#0F172A", color: "#FFF", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📥 Load Default Data</button>}
             <div style={{ position: "relative" }}>
               <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ padding: "8px 14px 8px 34px", borderRadius: 8, border: "1px solid #E2E8F0", fontSize: 13, width: 200, background: "#FFF" }} />
               <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8", fontSize: 14 }}>🔍</span>
@@ -4302,6 +4296,128 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, userAccess }) 
           {renderTable(filteredAff, 'affiliate', sortAff)}
           {renderTable(filteredBrand, 'brand', sortBrand)}
         </div>
+
+        {/* ═══ YESTERDAY PAYMENTS — Auto from CRM data ═══ */}
+        {(() => {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yStr = yesterday.toISOString().split("T")[0];
+          const today = new Date().toISOString().split("T")[0];
+          // Get payments from yesterday or today that are open/pending
+          const recentAffPay = (payments || []).filter(p => {
+            const d = p.paidDate || "";
+            return (d === yStr || d === today) && p.type !== "Brand Refund";
+          });
+          const recentCpPay = (cpPayments || []).filter(p => {
+            const d = p.paidDate || "";
+            return (d === yStr || d === today);
+          });
+          const affPayTotal = recentAffPay.reduce((s, p) => s + parseNum(p.amount), 0);
+          const affFeeTotal = recentAffPay.reduce((s, p) => { const f = String(p.fee || "0"); if (f.includes("%")) return s; return s + parseNum(f); }, 0);
+          const cpPayTotal = recentCpPay.reduce((s, p) => s + parseNum(p.amount), 0);
+          const cpFeeTotal = recentCpPay.reduce((s, p) => { const f = String(p.fee || "0"); if (f.includes("%")) return s; return s + parseNum(f); }, 0);
+
+          const handlePayField = (id, field, value) => {
+            setPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
+          };
+          const handleCpField = (id, field, value) => {
+            setCpPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
+          };
+
+          const miniInp = { padding: "3px 6px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 11, fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC", width: "100%" };
+
+          return (
+            <div style={{ marginTop: 36 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "#0F172A" }}>💳 Yesterday Payments</h2>
+              <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
+                {/* Affiliate Payments */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#DC2626" }}>
+                    👤 Affiliate Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentAffPay.length})</span>
+                  </h3>
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
+                      <thead><tr>
+                        <th style={thStyle}>Affiliate</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {recentAffPay.length === 0 && <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>No affiliate payments yesterday/today</td></tr>}
+                        {recentAffPay.map(p => (
+                          <tr key={p.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                            <td style={tdStyle}>
+                              <input value={p.invoice || ""} onChange={e => handlePayField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#0EA5E9" }} />
+                              {getAffiliateName(p.invoice) && <div style={{ fontSize: 9, color: "#64748B", marginTop: 1 }}>{getAffiliateName(p.invoice)}</div>}
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}>
+                              <input value={p.amount || ""} onChange={e => handlePayField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}>
+                              <input value={p.fee || ""} onChange={e => handlePayField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "center" }}>
+                              <span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: p.status === "Paid" ? "#D1FAE5" : p.status === "Open" ? "#FEF3C7" : "#DBEAFE", color: p.status === "Paid" ? "#065F46" : p.status === "Open" ? "#92400E" : "#1E40AF" }}>{p.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr style={{ background: "#F8FAFC" }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentAffPay.length})</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(affPayTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(affFeeTotal)}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Brand/Customer Payments */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#7C3AED" }}>
+                    🏢 Brand Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentCpPay.length})</span>
+                  </h3>
+                  <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
+                      <thead><tr>
+                        <th style={thStyle}>Brand Name</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
+                        <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Status</th>
+                      </tr></thead>
+                      <tbody>
+                        {recentCpPay.length === 0 && <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>No brand payments yesterday/today</td></tr>}
+                        {recentCpPay.map(p => (
+                          <tr key={p.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
+                            <td style={tdStyle}>
+                              <input value={p.invoice || ""} onChange={e => handleCpField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#7C3AED" }} />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}>
+                              <input value={p.amount || ""} onChange={e => handleCpField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "right" }}>
+                              <input value={p.fee || ""} onChange={e => handleCpField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} />
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "center" }}>
+                              <span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: p.status === "Received" ? "#D1FAE5" : p.status === "Open" ? "#FEF3C7" : "#DBEAFE", color: p.status === "Received" ? "#065F46" : p.status === "Open" ? "#92400E" : "#1E40AF" }}>{p.status}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot><tr style={{ background: "#F8FAFC" }}>
+                        <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentCpPay.length})</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(cpPayTotal)}</td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(cpFeeTotal)}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                      </tr></tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ═══ TOTAL BUYING YESTERDAY ═══ */}
         <div style={{ marginTop: 36 }}>
@@ -7745,7 +7861,7 @@ function AppInner() {
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
   if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} ftdEntries={ftdEntries} setFtdEntries={setFtdEntries} userAccess={userAccess} /></>);
-  if (page === "dailycalcs" && canAccess("dailycalcs")) return (<><DailyCalcsPage user={user} onLogout={handleLogout} onNav={setPage} calcs={dailyCalcs} setCalcs={setDailyCalcs} userAccess={userAccess} /></>);
+  if (page === "dailycalcs" && canAccess("dailycalcs")) return (<><DailyCalcsPage user={user} onLogout={handleLogout} onNav={setPage} calcs={dailyCalcs} setCalcs={setDailyCalcs} payments={payments} setPayments={setPayments} cpPayments={cpPayments} setCpPayments={setCpPayments} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
 }
