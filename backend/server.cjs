@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "11.00";
+const VERSION = "11.02";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -883,6 +883,7 @@ async function lockedWrite(filename, data, meta) {
 // ═══════════════════════════════════════════════════════════════
 
 function writeAuditLog(table, action, user, details) {
+  // v11.02 M5: wrapped in try/catch — disk full or permission errors should not crash the server
   try {
     const now = new Date();
     const dateKey = now.toISOString().split('T')[0]; // 2026-02-23
@@ -2136,10 +2137,18 @@ app.post("/api/payments", requireAuth, async (req, res) => {
 });
 
 // Users — separate endpoint to preserve full data + audit
-app.post("/api/users", requireAuth, async (req, res) => {
+app.post("/api/users", requireAdmin, async (req, res) => { // v11.02 H2: admin-only
   const { data: newUsers, user: userEmail } = req.body;
   let users = Array.isArray(req.body) ? req.body : newUsers;
   if (!Array.isArray(users)) return res.status(400).json({ error: "Invalid data" });
+
+  // v11.02 H2: Validate pageAccess is always an array of strings (never a string/object)
+  for (const u of users) {
+    if (u.pageAccess !== undefined && !Array.isArray(u.pageAccess)) {
+      console.warn(`⚠️ Rejected malformed pageAccess for ${u.email}: ${JSON.stringify(u.pageAccess)}`);
+      return res.status(400).json({ error: `pageAccess must be an array (got ${typeof u.pageAccess} for ${u.email})` });
+    }
+  }
 
   if (users.length === 0) {
     const existing = readJSON("users.json", []);
@@ -3946,7 +3955,7 @@ app.get("/api/sync/status", (req, res) => {
 });
 
 // ── Telegram test endpoint
-app.post("/api/telegram/notify", (req, res) => {
+app.post("/api/telegram/notify", requireAuth, (req, res) => { // v11.02 H4: auth required
   const { message } = req.body;
   if (!message) return res.status(400).json({ error: "Message required" });
   sendTelegramNotification(message);
@@ -4176,9 +4185,11 @@ app.post("/api/admin/dedup", requireAdmin, async (req, res) => {
 
 // DATA RECONCILIATION — recover orphaned local records
 // ═══════════════════════════════════════════════════════════════
-app.post("/api/reconcile", requireAuth, async (req, res) => {
+app.post("/api/reconcile", requireAdmin, async (req, res) => { // v11.02 H3: admin-only
   const { table, localData } = req.body;
   if (!table || !Array.isArray(localData)) return res.status(400).json({ error: "Need table name and localData array" });
+  // v11.02 H3: Limit size to prevent abuse
+  if (localData.length > 5000) return res.status(400).json({ error: "localData too large (max 5000 records)" });
   const file = table + ".json";
   const serverData = readJSON(file, []);
   const serverIDs = new Set(serverData.map(r => r.id).filter(Boolean));
@@ -4309,7 +4320,10 @@ app.get("/api/admin/logs/download", requireAdmin, (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 // GRACEFUL SHUTDOWN — flush data before dying
 // ═══════════════════════════════════════════════════════════════
+let shutdownInProgress = false; // v11.02 M3: prevent double-shutdown on SIGTERM+SIGINT
 function gracefulShutdown(signal) {
+  if (shutdownInProgress) return;
+  shutdownInProgress = true;
   console.log(`\n🛑 ${signal} — graceful shutdown...`);
   server.close(() => console.log("✅ HTTP closed"));
   wsClients.forEach(ws => { try { ws.close(1001, "Server shutting down"); } catch {} });
