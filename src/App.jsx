@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.23";
+const VERSION = "10.25";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1752,17 +1752,14 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
         <colgroup>
           <col style={{ width: "3%" }} />{/* Checkbox */}
-          <col style={{ width: "6%" }} />{/* Invoice */}
-          <col style={{ width: "7%" }} />{/* Paid Date */}
-          <col style={{ width: "8%" }} />{/* Type */}
+          <col style={{ width: "18%" }} />{/* Affiliate ID + Name */}
+          <col style={{ width: "12%" }} />{/* Date */}
           <col style={{ width: "10%" }} />{/* Status */}
-          <col style={{ width: "8%" }} />{/* Amount */}
-          <col style={{ width: "5%" }} />{/* Fee */}
-          <col style={{ width: "7%" }} />{/* Open By */}
-          <col style={{ width: "14%" }} />{/* TRC */}
-          <col style={{ width: "14%" }} />{/* ERC */}
-          <col style={{ width: "10%" }} />{/* Hash */}
-          <col style={{ width: "8%" }} />{/* Actions */}
+          <col style={{ width: "12%" }} />{/* Amount */}
+          <col style={{ width: "8%" }} />{/* Fee */}
+          <col style={{ width: "10%" }} />{/* Open By */}
+          <col style={{ width: "15%" }} />{/* Hash */}
+          <col style={{ width: "12%" }} />{/* Actions */}
         </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
@@ -1799,7 +1796,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
                 >{p.invoice}{getAffiliateName(p.invoice) ? <span style={{ fontWeight: 400, color: "#64748B", fontSize: 11, marginLeft: 4 }}>- {getAffiliateName(p.invoice)}</span> : ""}</span>
               </td>
               <td style={{ padding: "4px 4px", borderRight: "1px solid #CBD5E1" }}>
-                <input type="date" value={p.paidDate || ""} onChange={e => { const updated = { ...p, paidDate: e.target.value, updatedAt: Date.now() }; onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value); }} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: 100 }} />
+                <input type="date" value={p.paidDate || ""} onChange={e => { const updated = { ...p, paidDate: e.target.value, updatedAt: Date.now() }; onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value); }} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: "100%", maxWidth: 120 }} />
               </td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {p.status !== "Paid" && statusOptions && onStatusChange ? (
@@ -4621,6 +4618,50 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
               } catch (e) { alert("❌ " + e.message); }
             }} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>📸 Send All Screenshots</button>}
           </div>
+
+          {/* v10.23: Download Full Backup & Restore */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 12, paddingTop: 10, borderTop: "1px solid #E2E8F0" }}>
+            <button onClick={async () => {
+              try {
+                const res = await fetch(`${API_BASE}/backup/download`, { headers: authHeaders() });
+                if (!res.ok) throw new Error("Download failed");
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a"); a.href = url; a.download = `blitz-backup-${new Date().toISOString().split("T")[0]}.json`; a.click();
+                URL.revokeObjectURL(url);
+                setBackupStatus("✅ Full backup downloaded!");
+              } catch (e) { setBackupStatus("❌ Download failed: " + e.message); }
+            }} style={btnStyle("linear-gradient(135deg,#0F172A,#334155)")}>📥 Download Full Backup</button>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, background: "linear-gradient(135deg,#DC2626,#EF4444)", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 2px 8px rgba(220,38,38,0.3)" }}>
+              📤 Restore from Backup
+              <input type="file" accept=".json" style={{ display: "none" }} onChange={async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                if (!confirm(`Restore from "${file.name}"? This will REPLACE all current data (except users). Are you sure?`)) { e.target.value = ""; return; }
+                try {
+                  const text = await file.text();
+                  const backup = JSON.parse(text);
+                  if (!backup.tables) { alert("❌ Invalid backup file — missing 'tables' field"); return; }
+                  const res = await fetch(`${API_BASE}/backup/restore`, {
+                    method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify(backup),
+                  });
+                  const result = await res.json();
+                  if (result.ok) {
+                    const summary = result.restored.map(r => `${r.table}: ${r.count}`).join(", ");
+                    setBackupStatus(`✅ Restored! ${summary}`);
+                    alert(`✅ Restore complete!\n\n${summary}\n\nRefresh the page to see updated data.`);
+                  } else { setBackupStatus("❌ Restore failed: " + (result.error || "unknown")); }
+                } catch (err) { setBackupStatus("❌ " + err.message); }
+                e.target.value = "";
+              }} />
+            </label>
+          </div>
+          <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4, marginBottom: 8 }}>
+            💡 <b>Download</b> saves all tables to a single .json file. <b>Restore</b> uploads that file to replace all data (users/permissions are preserved). Use this to transfer data between production and local servers.
+          </div>
+
           {backupStatus && <div style={{ fontSize: 12, color: "#64748B", padding: "6px 10px", background: "#F8FAFC", borderRadius: 6 }}>Backup: {backupStatus}</div>}
           <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 8 }}>Backups run hourly + daily snapshots at 02:00 (7-day retention). Auto-dedup runs nightly at 03:00. Always create a manual backup before deploying a new version.</div>
 
@@ -5404,17 +5445,14 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, onFi
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
         <colgroup>
           <col style={{ width: "3%" }} />
-          <col style={{ width: "6%" }} />
-          <col style={{ width: "7%" }} />
+          <col style={{ width: "18%" }} />
+          <col style={{ width: "12%" }} />
+          <col style={{ width: "10%" }} />
+          <col style={{ width: "12%" }} />
           <col style={{ width: "8%" }} />
           <col style={{ width: "10%" }} />
-          <col style={{ width: "8%" }} />
-          <col style={{ width: "5%" }} />
-          <col style={{ width: "7%" }} />
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "14%" }} />
-          <col style={{ width: "10%" }} />
-          <col style={{ width: "8%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "12%" }} />
         </colgroup>
         <thead>
           <tr style={{ background: "#F8FAFC" }}>
@@ -5431,7 +5469,6 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, onFi
             const isSel = selected.has(p.id);
             return (
             <tr key={p.id} style={{ borderBottom: "1px solid #CBD5E1", transition: "background 0.15s", background: isSel ? "rgba(14,165,233,0.1)" : "transparent", borderLeft: isSel ? "3px solid #0EA5E9" : "3px solid transparent" }}
-              onMouseEnter={e => e.currentTarget.style.background = "#F8FAFC"}
               onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = "#F8FAFC"; }}
               onMouseLeave={e => e.currentTarget.style.background = isSel ? "rgba(14,165,233,0.1)" : "transparent"}
             >
@@ -5442,7 +5479,7 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, onFi
                 <input value={p.invoice || ""} onChange={e => onFieldUpdate && onFieldUpdate(p.id, "invoice", e.target.value)} onClick={e => e.stopPropagation()} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 12, fontWeight: 700, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC" }} />
               </td>
               <td style={{ padding: "4px 4px", borderRight: "1px solid #CBD5E1" }}>
-                <input type="date" value={p.paidDate || ""} onChange={e => onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: 100 }} />
+                <input type="date" value={p.paidDate || ""} onChange={e => onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: "100%", maxWidth: 120 }} />
               </td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange ? (
