@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.28";
+const VERSION = "11.00";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -199,18 +199,29 @@ function seedUsers() {
   const existingMap = new Map(existing.map(u => [u.email, u]));
   let changed = false;
 
+  const ALL_PAGES_KEYS = ["overview","payments","customer-payments","crg-deals","daily-cap","offers","partners","blitz-report","ftd-info","daily-calcs","admin"];
   for (const iu of INITIAL_USERS) {
     const eu = existingMap.get(iu.email);
     if (!eu) {
-      // Missing user — add it
-      existing.push(iu);
+      // Missing user — add it with full pageAccess (v11.01)
+      existing.push({ ...iu, pageAccess: ALL_PAGES_KEYS });
       changed = true;
       console.log(`👤 Added user: ${iu.email}`);
-    } else if (!eu.passwordHash) {
-      // User exists but passwordHash was stripped — restore it
-      eu.passwordHash = iu.passwordHash;
-      changed = true;
-      console.log(`🔑 Restored passwordHash for: ${iu.email}`);
+    } else {
+      let userChanged = false;
+      if (!eu.passwordHash) {
+        // User exists but passwordHash was stripped — restore it
+        eu.passwordHash = iu.passwordHash;
+        userChanged = true;
+        console.log(`🔑 Restored passwordHash for: ${iu.email}`);
+      }
+      // v11.01: If user has no pageAccess at all, give them full access
+      if (!Array.isArray(eu.pageAccess)) {
+        eu.pageAccess = ALL_PAGES_KEYS;
+        userChanged = true;
+        console.log(`🔓 Restored pageAccess for: ${iu.email}`);
+      }
+      if (userChanged) changed = true;
     }
   }
 
@@ -1617,8 +1628,16 @@ endpoints.forEach(ep => {
   app.get(`/api/${ep}`, requireAuth, (req, res) => {
     let data = readJSON(file, []);
     // FIX C2: Strip password hashes from user data — NEVER expose to client
+    // v11.01: Always include pageAccess + lastLogin; never return undefined pageAccess (would wipe permissions on client)
     if (ep === "users") {
-      data = data.map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess }));
+      const ALL_PAGES_KEYS = ["overview","payments","customer-payments","crg-deals","daily-cap","offers","partners","blitz-report","ftd-info","daily-calcs","admin"];
+      data = data.map(u => ({
+        email: u.email,
+        name: u.name,
+        pageAccess: Array.isArray(u.pageAccess) ? u.pageAccess : ALL_PAGES_KEYS,
+        lastLogin: u.lastLogin || null,
+        updatedAt: u.updatedAt || null,
+      }));
     }
     // v9.16: Detect and log if a table went empty unexpectedly
     const prevCount = lastKnownServerCounts[ep] || 0;
