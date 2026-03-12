@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.22";
+const VERSION = "10.23";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1549,7 +1549,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 }
 
 function PaymentForm({ payment, onSave, onClose, userEmail, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: new Date().toISOString().split("T")[0], status: "Open", amount: "", fee: "", openBy: userName || "", type: "Affiliate Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
   const availableStatuses = getAvailableStatuses(userEmail);
@@ -1663,7 +1663,7 @@ function BulkActionBar({ count, onDelete, onDuplicate, onArchive, onClear }) {
   );
 }
 
-function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, onFieldUpdate, emptyMsg, statusOptions, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
   const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
@@ -1769,7 +1769,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
             <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
               <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
             </th>
-            {["Affiliate ID","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","USDC Address","Hash","Actions"].map(h =>
+            {["Affiliate ID","Date","Status","Amount","Fee","Open By","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
@@ -1798,6 +1798,9 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
                   onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
                 >{p.invoice}{getAffiliateName(p.invoice) ? <span style={{ fontWeight: 400, color: "#64748B", fontSize: 11, marginLeft: 4 }}>- {getAffiliateName(p.invoice)}</span> : ""}</span>
               </td>
+              <td style={{ padding: "4px 4px", borderRight: "1px solid #CBD5E1" }}>
+                <input type="date" value={p.paidDate || ""} onChange={e => { const updated = { ...p, paidDate: e.target.value, updatedAt: Date.now() }; onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value); }} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: 100 }} />
+              </td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {p.status !== "Paid" && statusOptions && onStatusChange ? (
                   <select value={p.status} onChange={e => onStatusChange(p.id, e.target.value)}
@@ -1813,9 +1816,6 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.usdcAddress || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
@@ -4777,6 +4777,11 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
     }));
   };
 
+  // v10.22: Inline field update for date and other fields
+  const handleFieldUpdate = (id, field, value) => {
+    setPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
+  };
+
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -4891,12 +4896,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
 
         {/* Open Payments Group */}
         <GroupHeader icon={I.openBox} title="Open Payments" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleStatusChange} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleStatusChange} onFieldUpdate={handleFieldUpdate} statusOptions={availStatuses} emptyMsg="No open payments — all caught up!" sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
 
         {/* Paid This Month Group */}
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={paidPayments.length} total={paidTotal} accentColor="#EC4899" defaultOpen={true}>
-          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
+          <PaymentTable payments={paidPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onFieldUpdate={handleFieldUpdate} emptyMsg={`No paid payments for ${MONTHS[month]} ${year}`} sortMode={paySort} onMove={handlePayMove} onDuplicate={handleBulkDuplicate} onArchive={handleBulkArchive} />
         </GroupHeader>
       </main>
 
@@ -5265,7 +5270,7 @@ const CP_TYPE_OPTIONS = ["Brand Payment", "Affiliate Refund"];
 const CP_INITIAL = []; // REMOVED: hardcoded demo data caused production data loss
 
 function CPForm({ payment, onSave, onClose, userName }) {
-  const [f, setF] = useState(payment || { invoice: "", paidDate: "", status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
+  const [f, setF] = useState(payment || { invoice: "", paidDate: new Date().toISOString().split("T")[0], status: "Open", amount: "", fee: "", openBy: userName || "", type: "Brand Payment", trcAddress: "", ercAddress: "", usdcAddress: "", paymentHash: "" });
   const [error, setError] = useState("");
   const s = (k, v) => { setF(p => ({ ...p, [k]: v })); setError(""); };
 
@@ -5323,7 +5328,7 @@ function CPForm({ payment, onSave, onClose, userName }) {
   );
 }
 
-function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
+function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, onFieldUpdate, statusOptions, emptyMsg, sortMode, onMove, onDuplicate, onArchive, onBulkDelete }) {
   const payments = rawPayments || [];
   const fmt = a => { const n = parseFloat(a) || 0; return n.toLocaleString("en-US") + "$"; };
   const [selected, setSelected] = useState(new Set());
@@ -5416,7 +5421,7 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
             <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
               <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
             </th>
-            {["Brand Name","Date","Type","Status","Amount","Fee","Open By","TRC Address","ERC Address","USDC Address","Hash","Actions"].map(h =>
+            {["Brand Name","Date","Status","Amount","Fee","Open By","Hash","Actions"].map(h =>
               <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
@@ -5433,15 +5438,11 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
               <td style={{ padding: "4px 4px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
                 <input type="checkbox" checked={isSel} onChange={() => toggleSelect(p.id)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
               </td>
-              <td style={{ padding: "7px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
-                <span onClick={() => onEdit(p)} style={{ cursor: "pointer", color: "#0EA5E9", textDecoration: "underline", textDecorationColor: "rgba(14,165,233,0.3)", textUnderlineOffset: 3 }}
-                  onMouseEnter={e => e.currentTarget.style.textDecorationColor = "#0EA5E9"}
-                  onMouseLeave={e => e.currentTarget.style.textDecorationColor = "rgba(14,165,233,0.3)"}
-                >{p.invoice}</span>
+              <td style={{ padding: "4px 6px", fontWeight: 700, fontSize: 13, borderRight: "1px solid #CBD5E1" }}>
+                <input value={p.invoice || ""} onChange={e => onFieldUpdate && onFieldUpdate(p.id, "invoice", e.target.value)} onClick={e => e.stopPropagation()} style={{ width: "100%", padding: "3px 6px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 12, fontWeight: 700, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC" }} />
               </td>
-              <td style={{ padding: "7px 6px", color: p.paidDate ? "#334155" : "#CBD5E1", fontSize: 11, borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap" }}>{p.paidDate ? new Date(p.paidDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</td>
-              <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
-                <span style={{ padding: "2px 6px", borderRadius: 4, background: (p.type || "Brand Payment") === "Affiliate Refund" ? "#FEE2E2" : "#EFF6FF", color: (p.type || "Brand Payment") === "Affiliate Refund" ? "#DC2626" : "#2563EB", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>{p.type || "Brand Payment"}</span>
+              <td style={{ padding: "4px 4px", borderRight: "1px solid #CBD5E1" }}>
+                <input type="date" value={p.paidDate || ""} onChange={e => onFieldUpdate && onFieldUpdate(p.id, "paidDate", e.target.value)} style={{ padding: "2px 4px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, color: "#334155", fontFamily: "'JetBrains Mono',monospace", cursor: "pointer", width: 100 }} />
               </td>
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 {!["Received", "Refund"].includes(p.status) && statusOptions && onStatusChange ? (
@@ -5458,9 +5459,6 @@ function CPTable({ payments: rawPayments, onEdit, onDelete, onStatusChange, stat
               <td style={{ padding: "7px 6px", borderRight: "1px solid #CBD5E1" }}>
                 <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 4, background: getPersonColor(p.openBy), color: "#FFF", fontWeight: 700, fontSize: 11 }}>{p.openBy}</span>
               </td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.trcAddress || p.instructions || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.ercAddress || "—"}</td>
-              <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.usdcAddress || "—"}</td>
               <td style={{ padding: "7px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: 9, color: "#94A3B8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderRight: "1px solid #CBD5E1" }}>{p.paymentHash || "—"}</td>
               <td style={{ padding: "4px 4px" }}>
                 <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
@@ -5521,6 +5519,15 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
     setPayments(prev => [...prev].sort((a, b) => (a.invoice || "").localeCompare(b.invoice || "", undefined, { numeric: true })));
   };
 
+  // v10.22: Inline field update for date and other fields
+  const handleFieldUpdate = (id, field, value) => {
+    setPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
+  };
+
+  // v10.22: Inline field update for CP
+  const handleCpFieldUpdate = (id, field, value) => {
+    setPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
+  };
   const matchSearch = p => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -5633,11 +5640,11 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
         </div>
 
         <GroupHeader icon={I.openBox} title="Open Invoices" count={openPayments.length} total={openTotal} accentColor="#F59E0B" defaultOpen={true}>
-          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleCpStatusChange} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={openPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onStatusChange={handleCpStatusChange} onFieldUpdate={handleCpFieldUpdate} statusOptions={CP_STATUS_OPTIONS} emptyMsg="No open invoices — all caught up!" sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
 
         <GroupHeader icon={I.calendar} title={`${MONTHS[month].toUpperCase()} ${year}`} count={receivedPayments.length} total={receivedTotal} accentColor="#EC4899" defaultOpen={true}>
-          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
+          <CPTable payments={receivedPayments} onEdit={p => { setEditPay(p); setModalOpen(true); }} onDelete={handleDelete} onBulkDelete={handleBulkDelete} onFieldUpdate={handleCpFieldUpdate} emptyMsg={`No received payments for ${MONTHS[month]} ${year}`} sortMode={cpSort} onMove={handleCpMove} onDuplicate={handleCpBulkDuplicate} onArchive={handleCpBulkArchive} />
         </GroupHeader>
       </main>
 
