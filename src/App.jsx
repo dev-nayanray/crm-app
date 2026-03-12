@@ -4536,11 +4536,12 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
                         <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Status</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 90, color: "#7C3AED" }}>Transferred</th>
                         <th style={{ ...thStyle, width: 30 }}></th>
                       </tr></thead>
                       <tbody>
                         {recentAffPay.length === 0 && (
-                          <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
+                          <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
                             No affiliate payments for {yStr} — click "+ Add Row" to add one
                           </td></tr>
                         )}
@@ -4562,6 +4563,28 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                                 {["Open", "On the way", "Approved to pay", "Paid"].map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                             </td>
+                            <td style={{ ...tdStyle, textAlign: "right", padding: "4px 6px" }}>
+                              {(() => {
+                                // Auto-fill from PNL Daily: match by name substring
+                                const nameKey = (p.invoice || "").toLowerCase().trim();
+                                const match = affiliates.find(r => {
+                                  const rn = (r.name || "").toLowerCase();
+                                  return nameKey && (rn.includes(nameKey) || nameKey.includes(rn.split(" ")[0]));
+                                });
+                                const autoVal = match ? Math.abs(parseNum(match.balanceWithCrg) - parseNum(match.balanceNoCrg)) : null;
+                                const displayVal = p.transferred !== undefined && p.transferred !== "" ? p.transferred : (autoVal !== null ? autoVal : "");
+                                return (
+                                  <input
+                                    type="number"
+                                    value={displayVal}
+                                    onChange={e => handlePayField(p.id, "transferred", e.target.value)}
+                                    style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#7C3AED", width: 80 }}
+                                    placeholder={autoVal !== null ? String(autoVal) : "0"}
+                                    title={match ? "Auto-filled from PNL Daily: " + match.name : "Enter transferred amount"}
+                                  />
+                                );
+                              })()}
+                            </td>
                             <td style={{ ...tdStyle, textAlign: "center", padding: "4px 4px" }}>
                               <button onClick={() => deleteAffPay(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
                             </td>
@@ -4572,7 +4595,8 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentAffPay.length})</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(affPayTotal)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(affFeeTotal)}</td>
-                        <td colSpan={2} style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#7C3AED" }}>{fmtMoney(recentAffPay.reduce((s,p) => s + parseNum(p.transferred || 0), 0))}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
                       </tr></tfoot>
                     </table>
                   </div>
@@ -4593,11 +4617,12 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
                         <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Status</th>
+                        <th style={{ ...thStyle, textAlign: "right", width: 90, color: "#7C3AED" }}>Transferred</th>
                         <th style={{ ...thStyle, width: 30 }}></th>
                       </tr></thead>
                       <tbody>
                         {recentCpPay.length === 0 && (
-                          <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
+                          <tr><td colSpan={6} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
                             No brand payments for {yStr} — click "+ Add Row" to add one
                           </td></tr>
                         )}
@@ -4619,6 +4644,28 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                                 {["Open", "Pending", "Received", "Refund"].map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                             </td>
+                            <td style={{ ...tdStyle, textAlign: "right", padding: "4px 6px" }}>
+                              {(() => {
+                                // Auto-fill from Brand PNL Daily: match by name substring
+                                const nameKey = (p.invoice || p.brand || "").toLowerCase().trim();
+                                const match = brands.find(r => {
+                                  const rn = (r.name || "").toLowerCase();
+                                  return nameKey && (rn.includes(nameKey) || nameKey.includes(rn.split(" ")[0]) || nameKey.includes(rn.split("(")[0].trim()));
+                                });
+                                const autoVal = match ? Math.abs(parseNum(match.balanceWithCrg) - parseNum(match.balanceNoCrg)) : null;
+                                const displayVal = p.transferred !== undefined && p.transferred !== "" ? p.transferred : (autoVal !== null ? autoVal : "");
+                                return (
+                                  <input
+                                    type="number"
+                                    value={displayVal}
+                                    onChange={e => handleCpField(p.id, "transferred", e.target.value)}
+                                    style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#7C3AED", width: 80 }}
+                                    placeholder={autoVal !== null ? String(autoVal) : "0"}
+                                    title={match ? "Auto-filled from PNL Daily: " + match.name : "Enter transferred amount"}
+                                  />
+                                );
+                              })()}
+                            </td>
                             <td style={{ ...tdStyle, textAlign: "center", padding: "4px 4px" }}>
                               <button onClick={() => deleteCpPay(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
                             </td>
@@ -4629,7 +4676,8 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentCpPay.length})</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(cpPayTotal)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(cpFeeTotal)}</td>
-                        <td colSpan={2} style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#7C3AED" }}>{fmtMoney(recentCpPay.reduce((s,p) => s + parseNum(p.transferred || 0), 0))}</td>
+                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
                       </tr></tfoot>
                     </table>
                   </div>
