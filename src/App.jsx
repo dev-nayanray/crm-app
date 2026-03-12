@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.27";
+const VERSION = "10.28";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -2113,7 +2113,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>💳 Wallets</h2>
             <button onClick={() => {
-              const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "" };
+              const newW = { id: genId(), date: new Date().toISOString().split("T")[0], trc: "", erc: "", btc: "", updatedAt: Date.now(), createdAt: Date.now() };
               setWallets(prev => [newW, ...prev]);
               setEditingWallet(newW.id);
               setWalletForm({ date: newW.date, trc: "", erc: "", btc: "" });
@@ -4669,6 +4669,163 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
 }
 
 // ═══════════════════════════════════════════════════════════════
+// v10.28: ZIP DATA EXPORT / IMPORT COMPONENT
+// ═══════════════════════════════════════════════════════════════
+function ZipDataSection({ user }) {
+  const [zipStatus, setZipStatus] = useState(null); // { type: 'ok'|'error'|'loading', msg: string }
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const sectionStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", marginBottom: 20, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+  const sectionTitle = { fontSize: 15, fontWeight: 700, color: "#334155", marginBottom: 4 };
+
+  // ── Download all data as ZIP ──
+  const handleDownloadZip = async () => {
+    setZipStatus({ type: 'loading', msg: 'Preparing ZIP…' });
+    try {
+      const res = await fetch(`${API_BASE}/data/download-zip`, { headers: authHeaders() });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `blitz-data-${dateStr}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setZipStatus({ type: 'ok', msg: `✅ Downloaded blitz-data-${dateStr}.zip` });
+    } catch (e) {
+      setZipStatus({ type: 'error', msg: '❌ Download failed: ' + e.message });
+    }
+  };
+
+  // ── Upload ZIP to restore data ──
+  const handleUploadZip = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = '';
+
+    if (!file.name.endsWith('.zip')) {
+      setZipStatus({ type: 'error', msg: '❌ Please select a .zip file (exported from this CRM)' });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Upload "${file.name}" and restore all data?\n\n` +
+      `⚠️ This will REPLACE all current data (payments, deals, CRG, etc.)\n` +
+      `Users and permissions are preserved.\n\n` +
+      `Make sure you have a backup before proceeding.`
+    );
+    if (!confirmed) return;
+
+    setZipStatus({ type: 'loading', msg: `Uploading ${file.name}…` });
+    setUploadProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch(`${API_BASE}/data/upload-zip`, {
+        method: 'POST',
+        headers: authHeaders(), // NOTE: do NOT set Content-Type — browser sets multipart boundary
+        body: formData,
+      });
+
+      const result = await res.json();
+      if (!res.ok || !result.ok) throw new Error(result.error || 'Upload failed');
+
+      const summary = result.restored.map(r => `${r.table}: ${r.count} records`).join(', ');
+      const skippedMsg = result.skipped?.length ? `\nSkipped: ${result.skipped.join(', ')}` : '';
+      const errMsg = result.errors?.length ? `\nErrors: ${result.errors.join(', ')}` : '';
+
+      setZipStatus({ type: 'ok', msg: `✅ Restored! ${summary}${skippedMsg}${errMsg}` });
+      setUploadProgress(null);
+
+      window.alert(
+        `✅ ZIP restore complete!\n\n${summary}${skippedMsg}${errMsg}\n\nRefresh the page to see updated data.`
+      );
+    } catch (e) {
+      setZipStatus({ type: 'error', msg: '❌ Upload failed: ' + e.message });
+      setUploadProgress(null);
+    }
+  };
+
+  const statusColor = zipStatus?.type === 'ok' ? '#10B981' : zipStatus?.type === 'error' ? '#EF4444' : '#64748B';
+
+  return (
+    <div style={sectionStyle}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 20 }}>🗂️</span>
+        <div style={sectionTitle}>Data Export / Import (ZIP)</div>
+      </div>
+      <div style={{ fontSize: 12, color: '#64748B', marginBottom: 16, lineHeight: 1.6 }}>
+        Export all CRM data as a <b>.zip</b> file containing one JSON file per table. Use the same ZIP to update your lab or any other instance — upload it and all tables are restored instantly.
+        <br /><span style={{ color: '#94A3B8' }}>Users and passwords are always preserved during import.</span>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+        {/* Download button */}
+        <button
+          onClick={handleDownloadZip}
+          disabled={zipStatus?.type === 'loading'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 20px', borderRadius: 10,
+            background: zipStatus?.type === 'loading' ? '#94A3B8' : 'linear-gradient(135deg,#0EA5E9,#38BDF8)',
+            border: 'none', color: '#FFF', cursor: zipStatus?.type === 'loading' ? 'not-allowed' : 'pointer',
+            fontSize: 13, fontWeight: 700, boxShadow: '0 2px 8px rgba(14,165,233,0.3)',
+            transition: 'opacity 0.2s',
+          }}
+        >
+          <span style={{ fontSize: 16 }}>⬇️</span>
+          {zipStatus?.type === 'loading' ? 'Preparing…' : 'Download Data (.zip)'}
+        </button>
+
+        {/* Upload button */}
+        <label style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '10px 20px', borderRadius: 10,
+          background: 'linear-gradient(135deg,#8B5CF6,#A78BFA)',
+          color: '#FFF', cursor: 'pointer', fontSize: 13, fontWeight: 700,
+          boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+        }}>
+          <span style={{ fontSize: 16 }}>⬆️</span>
+          Upload & Restore (.zip)
+          <input
+            ref={fileInputRef}
+            type='file'
+            accept='.zip'
+            style={{ display: 'none' }}
+            onChange={handleUploadZip}
+          />
+        </label>
+      </div>
+
+      {/* Status message */}
+      {zipStatus && (
+        <div style={{
+          marginTop: 14, padding: '8px 12px', borderRadius: 8,
+          background: zipStatus.type === 'ok' ? '#F0FDF4' : zipStatus.type === 'error' ? '#FEF2F2' : '#F8FAFC',
+          border: `1px solid ${zipStatus.type === 'ok' ? '#BBF7D0' : zipStatus.type === 'error' ? '#FECACA' : '#E2E8F0'}`,
+          fontSize: 12, color: statusColor, fontWeight: 500, lineHeight: 1.5,
+        }}>
+          {zipStatus.msg}
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 10 }}>
+        💡 <b>Workflow:</b> Download from production → Upload to lab to sync. Or download from lab → Upload to production to push changes.
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SETTINGS PAGE — All configurable settings
 // ═══════════════════════════════════════════════════════════════
 function SettingsPage({ user, onLogout, onNav, userAccess }) {
@@ -4783,6 +4940,9 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
 
           {/* Restore moved to Admin Panel */}
         </div>
+
+        {/* ═══ v10.28: ZIP Data Export / Import ═══ */}
+        <ZipDataSection user={user} />
 
         {/* ═══ Monthly Targets Per Agent ═══ */}
         {isAdmin(user.email) && (() => {
@@ -5953,7 +6113,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
         ...d, id: genId(), date: targetDate,
         started: false, capReceived: "", ftd: "", funnel: "",
         status: "pending", confirmRotation: false, confirmCap: false, confirmFinance: false,
-        rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now(),
+        rotationBy: "", capBy: "", financeBy: "", createdAt: Date.now(), updatedAt: Date.now(),
       }));
     if (newEntries.length === 0) return;
     setDeals(prev => [...prev, ...newEntries]);
@@ -6059,7 +6219,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
   const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('crg-deals', id); setDeals(prev => prev.filter(d => d.id !== id)); };
 
   const handleDuplicate = deal => {
-    const dup = { ...deal, id: genId() };
+    const dup = { ...deal, id: genId(), updatedAt: Date.now(), createdAt: Date.now() };
     setDeals(prev => {
       const idx = prev.findIndex(d => d.id === deal.id);
       const arr = [...prev];
@@ -6526,7 +6686,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
       .filter(d => !existingAgents.has((d.agent || "").trim().toLowerCase()))
       .map(d => ({
         ...d, id: genId(), date: targetDate,
-        affiliates: "", brands: "",
+        affiliates: "", brands: "", updatedAt: Date.now(), createdAt: Date.now(),
       }));
     if (newEntries.length === 0) return;
     setEntries(prev => [...prev, ...newEntries]);
@@ -6598,9 +6758,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
 
   const handleSave = form => {
     if (editEntry) {
-      setEntries(prev => prev.map(d => d.id === editEntry.id ? { ...editEntry, ...form } : d));
+      setEntries(prev => prev.map(d => d.id === editEntry.id ? { ...editEntry, ...form, updatedAt: Date.now() } : d));
     } else {
-      setEntries(prev => [...prev, { ...form, id: genId() }]);
+      setEntries(prev => [...prev, { ...form, id: genId(), updatedAt: Date.now(), createdAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditEntry(null);
@@ -6891,7 +7051,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
     if (editDeal) {
       setDeals(prev => prev.map(d => d.id === editDeal.id ? { ...editDeal, ...form, updatedAt: Date.now() } : d));
     } else {
-      setDeals(prev => [...prev, { ...form, id: genId() }]);
+      setDeals(prev => [...prev, { ...form, id: genId(), updatedAt: Date.now(), createdAt: Date.now() }]);
     }
     setModalOpen(false);
     setEditDeal(null);
@@ -6900,7 +7060,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
   const handleDelete = id => { if (!confirm("Are you sure? This can't be undone.")) return; trackDelete('deals', id); setDeals(prev => prev.filter(d => d.id !== id)); };
 
   const handleDuplicate = deal => {
-    const dup = { ...deal, id: genId() };
+    const dup = { ...deal, id: genId(), updatedAt: Date.now(), createdAt: Date.now() };
     setDeals(prev => {
       const idx = prev.findIndex(d => d.id === deal.id);
       const arr = [...prev];
@@ -6921,7 +7081,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
       const newItems = [];
       ids.forEach(id => {
         const orig = arr.find(d => d.id === id);
-        if (orig) newItems.push({ ...orig, id: genId() });
+        if (orig) newItems.push({ ...orig, id: genId(), updatedAt: Date.now(), createdAt: Date.now() });
       });
       return [...arr, ...newItems];
     });
@@ -7660,7 +7820,11 @@ function AppInner() {
               t.setter(merged);
               lsSave(t.key, merged);
               lastKnownCounts[t.key] = merged.length; // Set baseline for data loss protection
-              if (t.ref) saveBaselines.current[t.ref] = JSON.stringify(merged);
+              if (t.ref) {
+                const mergedJson = JSON.stringify(merged);
+                saveBaselines.current[t.ref] = mergedJson;
+                if (lastSavedHash.current) lastSavedHash.current[t.ref] = mergedJson; // v10.28: seed server-sent hash
+              }
               if (merged.length > t.srv.length) pushTasks.push(apiSave(t.key, merged, user?.email));
             } else if (local[t.key] && local[t.key].length > 0) {
               t.setter(local[t.key]);
@@ -7791,24 +7955,36 @@ function AppInner() {
     return () => { clearInterval(interval); clearInterval(reconnectFlush); unsub(); };
   }, [loaded]);
 
-  // ── Unified debounced auto-save (v10.05) ──
+  // ── Unified debounced auto-save (v10.28) ──
   // Single system: debounce 3s (matches server throttle), skip if unchanged from baseline, block during init
+  // v10.28 FIX: lastSavedHash tracks the exact JSON that was last successfully sent to the server.
+  // This prevents the autosave loop where the baseline drifted out of sync with the server state,
+  // causing zero-change saves to fire repeatedly (287 saves/day observed in diagnostics).
   const saveBaselines = useRef({});
   const saveTimers = useRef({});
+  const lastSavedHash = useRef({}); // v10.28: tracks what was ACTUALLY sent to server
 
   const debouncedSave = (table, data) => {
     if (!serverFetchDone.current || !loaded || skipSave.current) return;
     if (!Array.isArray(data)) return;
     const json = JSON.stringify(data);
+    // v10.28: Skip if identical to what we LAST SENT to server (not just baseline)
+    if (json === (lastSavedHash.current[table] || null)) return;
+    // Also skip if identical to baseline (unchanged since last load/merge)
     if (json === (saveBaselines.current[table] || '[]')) return;
     lsSave(table, data);
     if (saveTimers.current[table]) clearTimeout(saveTimers.current[table]);
-    saveTimers.current[table] = setTimeout(() => {
+    saveTimers.current[table] = setTimeout(async () => {
       if (skipSave.current) return;
       const currentJson = JSON.stringify(data);
+      // v10.28: Double-check against both baseline AND last server-sent hash
       if (currentJson === (saveBaselines.current[table] || '[]')) return;
+      if (currentJson === (lastSavedHash.current[table] || null)) return;
       saveBaselines.current[table] = currentJson;
-      apiSave(table, data, user?.email);
+      lastSavedHash.current[table] = currentJson; // v10.28: record what we're sending
+      const ok = await apiSave(table, data, user?.email);
+      // v10.28: If server returned unchanged (throttled/no-op), update baseline to prevent re-fire
+      if (ok) saveBaselines.current[table] = currentJson;
     }, 3000); // v10.05: 3s (was 2s) to match server-side throttle
   };
 
