@@ -1,62 +1,240 @@
 [
   {
     "email": "sophia@blitz-affiliates.marketing",
-    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
-    "name": "Sophia"
+    "name": "Sophia",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1"
   },
   {
     "email": "office1092021@gmail.com",
-    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
-    "name": "Office"
+    "name": "Office",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1"
   },
   {
     "email": "y0505300530@gmail.com",
-    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1",
-    "name": "Y Admin"
+    "name": "Y Admin",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": "2026-03-12T14:12:10.354Z",
+    "updatedAt": null,
+    "passwordHash": "0db6b937e90449977f5daa522c82b1492aae0b1edb11f5d7a9c0fbfc6f71fdd1"
   },
   {
     "email": "zack@blitz-affiliates.marketing",
-    "passwordHash": "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e",
-    "name": "Zack"
+    "name": "Zack",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "3f21a8490cef2bfb60a9702e9d2ddb7a805c9bd1a263557dfd51a7d0e9dfa93e"
   },
   {
     "email": "cameron@blitz-affiliates.marketing",
-    "passwordHash": "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476",
-    "name": "Cameron"
+    "name": "Cameron",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "249194fd43bdcfbb0748eebd6f45baa76c383f8579cdb3ddf9d359d44fbdd476"
   },
   {
     "email": "wpnayanray@gmail.com",
-    "passwordHash": "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0",
-    "name": "Nayan"
+    "name": "Nayan",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "d6a72b1098615c3354d725f4b539b7fdf91e8213cd03af08c4ae3c8729526bd0"
   },
   {
     "email": "kazarian.oleksandra.v@gmail.com",
-    "passwordHash": "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020",
-    "name": "Oleksandra"
+    "name": "Oleksandra",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "4531edf6d1a36b47db61e9ac2f83af8f03920c48eec79a308e89d45cb751e020"
   },
   {
     "email": "kate@blitz-affiliates.marketing",
-    "passwordHash": "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8",
-    "name": "Kate"
+    "name": "Kate",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "b7cb217334dc1f94c975370b003efb532b57b1b99ac81b424199f1da854cf6e8"
   },
   {
     "email": "alehandro@blitz-affiliates.marketing",
-    "passwordHash": "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262",
-    "name": "Alehandro"
+    "name": "Alehandro",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "1635c8525afbae58c37bede3c9440844e9143727cc7c160bed665ec378d8a262"
   },
   {
     "email": "john.leon@blitz-affiliates.marketing",
-    "passwordHash": "77dbc78facad3377d2c8dc621e532a70e82b3931a19dfe5bc972d748ff535a90",
-    "name": "John Leon"
+    "name": "John Leon",
+    "pageAccess": [
+      "overview",
+      "customer-payments",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": 1773324730359,
+    "passwordHash": "77dbc78facad3377d2c8dc621e532a70e82b3931a19dfe5bc972d748ff535a90"
   },
   {
     "email": "joy.blitz@blitz-affiliates.marketing",
-    "passwordHash": "7c2d684615c271eddf3621808fafa0ff752e6f3b0f6dc976484ad5086afd520a",
-    "name": "Joy"
+    "name": "Joy",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "7c2d684615c271eddf3621808fafa0ff752e6f3b0f6dc976484ad5086afd520a"
   },
   {
     "email": "kristyblitz8@gmail.com",
-    "passwordHash": "1230c44d379979499b2ee538b26811e58c7351560418f917b6236fde43cdc097",
-    "name": "Oksana"
+    "name": "Oksana",
+    "pageAccess": [
+      "overview",
+      "payments",
+      "customer-payments",
+      "crg-deals",
+      "daily-cap",
+      "offers",
+      "partners",
+      "blitz-report",
+      "ftd-info",
+      "daily-calcs",
+      "admin"
+    ],
+    "lastLogin": null,
+    "updatedAt": null,
+    "passwordHash": "1230c44d379979499b2ee538b26811e58c7351560418f917b6236fde43cdc097"
   }
 ]
