@@ -20,8 +20,10 @@ npm install
 npm run build
 
 # 6. Copy build files to web directory
-rm -rf /var/www/leeds-crm/*
-cp -r dist/* /var/www/leeds-crm/
+sudo rm -rf /var/www/leeds-crm/*
+sudo cp -r dist/* /var/www/leeds-crm/
+sudo chown -R www-data:www-data /var/www/leeds-crm/
+sudo chmod -R 755 /var/www/leeds-crm/
 
 # 7. Restart the backend (if using PM2)
 pm2 restart all
