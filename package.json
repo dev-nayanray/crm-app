@@ -2,6 +2,7 @@
   "name": "blitz-crm-lab",
   "version": "10.28.0",
   "description": "Blitz CRM v10.28 Lab Environment",
+  "type": "module",
   "main": "server.cjs",
   "scripts": {
     "dev": "vite",
@@ -17,5 +18,11 @@
     "multer": "^2.1.1",
     "node-telegram-bot-api": "^0.66.0",
     "ws": "^8.17.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^5.4.8"
   }
 }
