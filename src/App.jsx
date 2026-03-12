@@ -43,193 +43,320 @@ function ToastProvider({ children }) {
 
 /* ── Dark Mode CSS — Deep Space 2026 ── */
 const darkModeCSS = `
+  /* ══════════════════════════════════════════════════════
+     BLITZ CRM v11.03 — "Aurora" Design System
+     Deep dark base · Vivid accent palette · Glass surfaces
+  ══════════════════════════════════════════════════════ */
+
   :root {
-    --space-void: #080B14;
-    --space-deep: #0C1021;
-    --space-mid: #111729;
-    --space-surface: #161D31;
-    --space-elevated: #1C2540;
-    --space-border: rgba(56, 189, 248, 0.08);
-    --space-border-glow: rgba(56, 189, 248, 0.15);
-    --neon-cyan: #38BDF8;
-    --neon-lime: #A3E635;
-    --neon-pink: #F472B6;
-    --neon-purple: #A78BFA;
-    --neon-orange: #FB923C;
-    --text-primary: #F1F5F9;
-    --text-secondary: #94A3B8;
-    --text-muted: #64748B;
-    --glass-bg: rgba(12, 16, 33, 0.7);
-    --glass-border: rgba(56, 189, 248, 0.1);
-    --glass-blur: 20px;
-    --shadow-neon: 0 0 20px rgba(56, 189, 248, 0.08), 0 0 60px rgba(56, 189, 248, 0.03);
-    --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --void:          #05070F;
+    --deep:          #090D1A;
+    --base:          #0D1220;
+    --surface:       #121829;
+    --elevated:      #182035;
+    --overlay:       #1E2840;
+    --rim:           rgba(99,179,237,0.10);
+    --rim-bright:    rgba(99,179,237,0.22);
+    --rim-glow:      rgba(99,179,237,0.35);
+    --cyan:   #38BDF8;
+    --blue:   #60A5FA;
+    --indigo: #818CF8;
+    --violet: #A78BFA;
+    --pink:   #F472B6;
+    --rose:   #FB7185;
+    --amber:  #FBBF24;
+    --lime:   #A3E635;
+    --teal:   #2DD4BF;
+    --green:  #34D399;
+    --orange: #FB923C;
+    --t1: #F0F6FF;
+    --t2: #9BB3CC;
+    --t3: #5C7A99;
+    --t4: #3A5068;
+    --grad-header: linear-gradient(180deg, rgba(9,13,26,0.97) 0%, rgba(9,13,26,0.93) 100%);
+    --grad-card:   linear-gradient(135deg, rgba(18,24,41,0.9) 0%, rgba(12,17,32,0.95) 100%);
+    --shadow-sm:  0 2px 8px rgba(0,0,0,0.35);
+    --shadow-md:  0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.3);
+    --shadow-lg:  0 8px 48px rgba(0,0,0,0.55), 0 2px 12px rgba(0,0,0,0.4);
+    --shadow-xl:  0 20px 80px rgba(0,0,0,0.65), 0 4px 20px rgba(0,0,0,0.5);
+    --glow-cyan:  0 0 24px rgba(56,189,248,0.18), 0 0 60px rgba(56,189,248,0.06);
+    --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 20px; --r-2xl: 28px;
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
   }
-  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
-  @keyframes pulse-glow { 0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.15); } 50% { box-shadow: 0 0 20px rgba(56,189,248,0.3); } }
-  @keyframes border-flow { 0% { border-color: rgba(56,189,248,0.1); } 50% { border-color: rgba(56,189,248,0.25); } 100% { border-color: rgba(56,189,248,0.1); } }
+
+  @keyframes slideIn    { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+  @keyframes fadeUp     { from { opacity: 0; transform: translateY(14px) scale(0.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes fadeIn     { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes pulse      { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+  @keyframes shimmer    { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes rowIn      { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes glowPulse  { 0%,100% { box-shadow: var(--glow-cyan); } 50% { box-shadow: 0 0 40px rgba(56,189,248,0.28), 0 0 80px rgba(56,189,248,0.1); } }
+  @keyframes float      { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
   @keyframes stagger-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes border-flow { 0%,100% { border-color: var(--rim); } 50% { border-color: var(--rim-bright); } }
+  @keyframes pulse-glow  { 0%,100% { box-shadow: var(--glow-cyan); } 50% { box-shadow: 0 0 32px rgba(56,189,248,0.3); } }
 
   .dark-mode {
-    background: var(--space-void) !important;
-    color: var(--text-primary) !important;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    background: var(--void) !important;
+    color: var(--t1) !important;
+    font-family: 'Inter', 'Plus Jakarta Sans', 'Segoe UI', system-ui, sans-serif !important;
+    font-feature-settings: 'cv02','cv03','cv04','cv11','ss01';
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
-  .dark-mode * { transition: background 0.2s ease, border-color 0.2s ease, color 0.15s ease, box-shadow 0.2s ease; }
+  .dark-mode * {
+    transition: background 0.2s var(--ease), border-color 0.2s var(--ease), color 0.15s var(--ease), box-shadow 0.2s var(--ease);
+    box-sizing: border-box;
+  }
 
-  /* Glass containers */
+  .dark-mode ::-webkit-scrollbar { width: 5px; height: 5px; }
+  .dark-mode ::-webkit-scrollbar-track { background: var(--void); }
+  .dark-mode ::-webkit-scrollbar-thumb { background: rgba(99,179,237,0.18); border-radius: 3px; }
+  .dark-mode ::-webkit-scrollbar-thumb:hover { background: rgba(99,179,237,0.35); }
+  .dark-mode ::selection { background: rgba(56,189,248,0.28); color: #FFF; }
+
   .dark-mode .blitz-header {
-    background: rgba(12, 16, 33, 0.85) !important;
-    backdrop-filter: blur(20px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-    border-color: var(--space-border) !important;
-    border-bottom: 1px solid var(--glass-border) !important;
-    box-shadow: 0 1px 0 rgba(56,189,248,0.05), 0 4px 30px rgba(0,0,0,0.3) !important;
+    background: var(--grad-header) !important;
+    backdrop-filter: blur(24px) saturate(200%) !important;
+    -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+    border-bottom: 1px solid var(--rim) !important;
+    box-shadow: 0 1px 0 rgba(99,179,237,0.06), 0 4px 40px rgba(0,0,0,0.5) !important;
   }
+
+  .dark-mode .blitz-main { animation: fadeUp 0.35s var(--ease); background: var(--void) !important; }
 
   .dark-mode input, .dark-mode select, .dark-mode textarea {
-    background: var(--space-deep) !important;
-    color: var(--text-primary) !important;
-    border-color: var(--space-border-glow) !important;
-    caret-color: var(--neon-cyan);
+    background: var(--base) !important;
+    color: var(--t1) !important;
+    border: 1.5px solid var(--rim) !important;
+    border-radius: var(--r-sm) !important;
+    caret-color: var(--cyan);
+    font-family: 'Inter', sans-serif !important;
+    font-size: 13px !important;
   }
   .dark-mode input:focus, .dark-mode select:focus, .dark-mode textarea:focus {
-    border-color: var(--neon-cyan) !important;
-    box-shadow: 0 0 0 3px rgba(56,189,248,0.1), 0 0 20px rgba(56,189,248,0.05) !important;
+    border-color: var(--cyan) !important;
+    box-shadow: 0 0 0 3px rgba(56,189,248,0.12), 0 0 20px rgba(56,189,248,0.06) !important;
     outline: none !important;
+    background: var(--deep) !important;
   }
-  .dark-mode input::placeholder { color: var(--text-muted) !important; }
+  .dark-mode input::placeholder { color: var(--t4) !important; }
+  .dark-mode select option { background: var(--surface) !important; color: var(--t1) !important; }
 
-  /* Tables — the core */
-  .dark-mode table { color: var(--text-primary) !important; border-collapse: separate !important; border-spacing: 0 !important; }
-  .dark-mode table thead tr { background: var(--space-deep) !important; }
+  /* ══ TABLES ══ */
+  .dark-mode table {
+    color: var(--t1) !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    width: 100% !important;
+  }
+  .dark-mode table thead tr {
+    background: linear-gradient(90deg, rgba(14,20,40,0.98) 0%, rgba(18,24,41,0.95) 100%) !important;
+  }
   .dark-mode table thead th {
-    border-color: var(--space-border) !important;
-    color: var(--text-secondary) !important;
+    color: var(--t3) !important;
     text-transform: uppercase !important;
-    font-size: 10px !important;
-    letter-spacing: 0.8px !important;
+    font-size: 10.5px !important;
+    font-weight: 700 !important;
+    letter-spacing: 1.2px !important;
+    border-bottom: 1px solid var(--rim-bright) !important;
+    border-top: none !important;
+    padding: 11px 14px !important;
+    white-space: nowrap;
+    background: transparent !important;
   }
+  .dark-mode table thead th:first-child { border-radius: var(--r-sm) 0 0 0 !important; }
+  .dark-mode table thead th:last-child  { border-radius: 0 var(--r-sm) 0 0 !important; }
   .dark-mode table tbody tr {
-    border-color: var(--space-border) !important;
-    animation: stagger-in 0.3s ease both;
+    border-bottom: 1px solid rgba(99,179,237,0.05) !important;
+    animation: rowIn 0.25s var(--ease) both;
   }
+  .dark-mode table tbody tr:nth-child(even) { background: rgba(255,255,255,0.013) !important; }
   .dark-mode table tbody tr:hover {
-    background: rgba(56, 189, 248, 0.04) !important;
-    box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.06);
+    background: rgba(56,189,248,0.055) !important;
+    box-shadow: inset 3px 0 0 0 var(--cyan), inset 0 0 0 1px rgba(56,189,248,0.08) !important;
   }
-  .dark-mode table td, .dark-mode table th {
-    border-color: var(--space-border) !important;
-    color: var(--text-secondary) !important;
+  .dark-mode table td {
+    color: var(--t2) !important;
+    border-bottom: 1px solid rgba(99,179,237,0.045) !important;
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+    vertical-align: middle !important;
   }
-
-  /* Surfaces */
-  .dark-mode [style*="background: #FFFFFF"], .dark-mode [style*="background:#FFFFFF"] {
-    background: var(--space-surface) !important;
-    border-color: var(--space-border) !important;
-    box-shadow: var(--shadow-neon) !important;
-  }
-  .dark-mode [style*="background: #F8FAFC"], .dark-mode [style*="background:#F8FAFC"] { background: var(--space-deep) !important; }
-  .dark-mode [style*="background: #F1F5F9"], .dark-mode [style*="background:#F1F5F9"] { background: var(--space-void) !important; }
-  .dark-mode [style*="color: #0F172A"], .dark-mode [style*="color:#0F172A"] { color: var(--text-primary) !important; }
-  .dark-mode [style*="color: #334155"], .dark-mode [style*="color:#334155"] { color: var(--text-secondary) !important; }
-  .dark-mode [style*="color: #64748B"], .dark-mode [style*="color:#64748B"] { color: var(--text-muted) !important; }
-  .dark-mode [style*="color: #475569"] { color: var(--text-secondary) !important; }
-  .dark-mode [style*="border: 1px solid #E2E8F0"], .dark-mode [style*="border:1px solid #E2E8F0"] { border-color: var(--space-border) !important; }
-  .dark-mode [style*="border-color: #E2E8F0"] { border-color: var(--space-border) !important; }
-  .dark-mode [style*="border-bottom: 2px solid #E2E8F0"] { border-color: var(--space-border-glow) !important; }
-
-  /* Modal glass effect */
-  .dark-mode .blitz-modal-content {
-    background: rgba(22, 29, 49, 0.95) !important;
-    backdrop-filter: blur(24px) saturate(180%) !important;
-    -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-    border: 1px solid var(--glass-border) !important;
-    box-shadow: var(--shadow-elevated), 0 0 80px rgba(56,189,248,0.05) !important;
-    animation: fadeUp 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  .dark-mode table td:first-child { color: var(--t1) !important; font-weight: 500 !important; }
+  .dark-mode table tfoot tr {
+    background: rgba(56,189,248,0.04) !important;
+    border-top: 1px solid var(--rim-bright) !important;
   }
 
-  /* Buttons — tactile feedback */
-  .dark-mode button {
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  /* ══ SURFACES ══ */
+  .dark-mode [style*="background: #FFFFFF"], .dark-mode [style*="background:#FFFFFF"],
+  .dark-mode [style*="background: white"], .dark-mode [style*="background:white"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--rim) !important;
+    box-shadow: var(--shadow-md) !important;
   }
-  .dark-mode button:active {
-    transform: scale(0.96) !important;
-  }
-  .dark-mode button[style*="background: linear-gradient"]:hover,
-  .dark-mode button[style*="background:linear-gradient"]:hover {
-    box-shadow: 0 0 24px rgba(14,165,233,0.35) !important;
-    filter: brightness(1.1) !important;
-  }
+  .dark-mode [style*="background: #F8FAFC"], .dark-mode [style*="background:#F8FAFC"],
+  .dark-mode [style*="background: #F9FAFB"], .dark-mode [style*="background:#F9FAFB"] { background: var(--base) !important; }
+  .dark-mode [style*="background: #F1F5F9"], .dark-mode [style*="background:#F1F5F9"] { background: var(--void) !important; }
+  .dark-mode [style*="background: #E2E8F0"], .dark-mode [style*="background:#E2E8F0"] { background: var(--elevated) !important; color: var(--t2) !important; }
 
-  /* v9.05: Neon glow hover on all action buttons */
-  .dark-mode button:not([disabled]):hover {
-    box-shadow: 0 0 12px rgba(56,189,248,0.12), 0 2px 8px rgba(0,0,0,0.2) !important;
-  }
-
-  /* v9.05: Enhanced glass surfaces */
-  .dark-mode [style*="borderRadius: 14"],
-  .dark-mode [style*="borderRadius: 12"] {
+  /* ══ CARDS ══ */
+  .dark-mode [style*="borderRadius: 14"], .dark-mode [style*="borderRadius: 16"], .dark-mode [style*="borderRadius: 12"] {
     backdrop-filter: blur(16px) saturate(160%) !important;
     -webkit-backdrop-filter: blur(16px) saturate(160%) !important;
   }
-
-  /* v9.05: Table row hover — neon trace */
-  .dark-mode table tbody tr:hover {
-    background: rgba(56, 189, 248, 0.06) !important;
-    box-shadow: inset 3px 0 0 0 var(--neon-cyan), inset 0 0 0 1px rgba(56, 189, 248, 0.06) !important;
+  .dark-mode [style*="borderRadius: 14"]:hover, .dark-mode [style*="borderRadius: 16"]:hover {
+    border-color: var(--rim-bright) !important;
+    box-shadow: var(--glow-cyan), var(--shadow-md) !important;
+    transform: translateY(-1px);
   }
 
-  /* v9.05: Smooth page transitions */
-  .dark-mode .blitz-main { animation: fadeUp 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+  /* ══ BORDERS ══ */
+  .dark-mode [style*="border: 1px solid #E2E8F0"], .dark-mode [style*="border:1px solid #E2E8F0"],
+  .dark-mode [style*="border: 1px solid #CBD5E1"], .dark-mode [style*="borderColor: #E2E8F0"],
+  .dark-mode [style*="border-color: #E2E8F0"] { border-color: var(--rim) !important; }
+  .dark-mode [style*="border-bottom: 2px solid #E2E8F0"], .dark-mode [style*="borderBottom: 2px solid #E2E8F0"] { border-color: var(--rim-bright) !important; }
+  .dark-mode [style*="border-bottom: 1px solid #E2E8F0"], .dark-mode [style*="borderBottom: 1px solid #E2E8F0"] { border-color: var(--rim) !important; }
 
-  /* v9.05: Enhanced summary cards — glass bento with neon border on hover */
-  .dark-mode [style*="borderRadius: 14"]:hover {
-    border-color: rgba(56,189,248,0.2) !important;
-    box-shadow: 0 0 20px rgba(56,189,248,0.08), 0 4px 16px rgba(0,0,0,0.3) !important;
+  /* ══ TEXT ══ */
+  .dark-mode [style*="color: #0F172A"], .dark-mode [style*="color:#0F172A"],
+  .dark-mode [style*="color: #1E293B"], .dark-mode [style*="color:#1E293B"] { color: var(--t1) !important; }
+  .dark-mode [style*="color: #334155"], .dark-mode [style*="color:#334155"],
+  .dark-mode [style*="color: #475569"], .dark-mode [style*="color:#475569"] { color: var(--t2) !important; }
+  .dark-mode [style*="color: #64748B"], .dark-mode [style*="color:#64748B"],
+  .dark-mode [style*="color: #94A3B8"], .dark-mode [style*="color:#94A3B8"] { color: var(--t3) !important; }
+
+  /* ══ STATUS BADGES ══ */
+  .dark-mode [style*="background: #ECFDF5"], .dark-mode [style*="background:#ECFDF5"] {
+    background: rgba(52,211,153,0.12) !important; color: var(--green) !important; border: 1px solid rgba(52,211,153,0.25) !important;
+  }
+  .dark-mode [style*="background: #FEF3C7"], .dark-mode [style*="background:#FEF3C7"],
+  .dark-mode [style*="background: #FFFBEB"], .dark-mode [style*="background:#FFFBEB"] {
+    background: rgba(251,191,36,0.12) !important; color: var(--amber) !important; border: 1px solid rgba(251,191,36,0.25) !important;
+  }
+  .dark-mode [style*="background: #EFF6FF"], .dark-mode [style*="background:#EFF6FF"],
+  .dark-mode [style*="background: #DBEAFE"], .dark-mode [style*="background:#DBEAFE"] {
+    background: rgba(96,165,250,0.1) !important; color: var(--blue) !important; border: 1px solid rgba(96,165,250,0.22) !important;
+  }
+  .dark-mode [style*="background: #FEF2F2"], .dark-mode [style*="background:#FEF2F2"],
+  .dark-mode [style*="background: #FFF1F2"], .dark-mode [style*="background:#FFF1F2"] {
+    background: rgba(251,113,133,0.1) !important; color: var(--rose) !important; border: 1px solid rgba(251,113,133,0.22) !important;
+  }
+  .dark-mode [style*="background: #F5F3FF"], .dark-mode [style*="background:#F5F3FF"],
+  .dark-mode [style*="background: #EDE9FE"], .dark-mode [style*="background:#EDE9FE"] {
+    background: rgba(167,139,250,0.1) !important; color: var(--violet) !important; border: 1px solid rgba(167,139,250,0.22) !important;
+  }
+  .dark-mode [style*="background: #ECFEFF"], .dark-mode [style*="background:#ECFEFF"] {
+    background: rgba(45,212,191,0.1) !important; color: var(--teal) !important; border: 1px solid rgba(45,212,191,0.22) !important;
   }
 
-  /* v9.05: Nav dropdown dark mode */
+  /* ══ BUTTONS ══ */
+  .dark-mode button { transition: all 0.15s var(--ease) !important; font-family: 'Inter', sans-serif !important; }
+  .dark-mode button:active { transform: scale(0.95) !important; }
+  .dark-mode button:not([disabled]):hover { box-shadow: 0 0 16px rgba(56,189,248,0.14), 0 2px 8px rgba(0,0,0,0.25) !important; }
+  .dark-mode button[style*="background: linear-gradient"]:hover, .dark-mode button[style*="background:linear-gradient"]:hover {
+    filter: brightness(1.12) saturate(1.1) !important;
+    box-shadow: 0 0 28px rgba(14,165,233,0.4) !important;
+  }
+
+  /* ══ MODAL ══ */
+  .dark-mode .blitz-modal-content {
+    background: rgba(18,24,41,0.97) !important;
+    backdrop-filter: blur(28px) saturate(200%) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(200%) !important;
+    border: 1px solid var(--rim-bright) !important;
+    box-shadow: var(--shadow-xl), var(--glow-cyan) !important;
+    animation: fadeUp 0.3s var(--ease) !important;
+    border-radius: var(--r-xl) !important;
+  }
+
+  /* ══ NAV DROPDOWN ══ */
   .dark-mode .nav-dropdown-panel {
-    background: var(--space-surface) !important;
-    border-color: var(--space-border-glow) !important;
-    box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 40px rgba(56,189,248,0.04) !important;
+    background: rgba(18,24,41,0.98) !important;
+    border: 1px solid var(--rim-bright) !important;
+    box-shadow: var(--shadow-xl), 0 0 60px rgba(0,0,0,0.6) !important;
+    backdrop-filter: blur(24px) !important;
+    border-radius: var(--r-md) !important;
   }
-  .dark-mode .nav-dropdown-panel button:hover {
-    background: var(--space-elevated) !important;
-  }
+  .dark-mode .nav-dropdown-panel button:hover { background: rgba(56,189,248,0.07) !important; color: var(--cyan) !important; }
 
-  /* Scrollbar */
-  .dark-mode ::-webkit-scrollbar { width: 6px; height: 6px; }
-  .dark-mode ::-webkit-scrollbar-track { background: var(--space-void); }
-  .dark-mode ::-webkit-scrollbar-thumb { background: rgba(56,189,248,0.15); border-radius: 3px; }
-  .dark-mode ::-webkit-scrollbar-thumb:hover { background: rgba(56,189,248,0.3); }
-
-  /* Neon status badges in dark */
-  .dark-mode [style*="background: #FEF3C7"] { background: rgba(245,158,11,0.15) !important; color: #FBBF24 !important; }
-  .dark-mode [style*="background: #ECFDF5"] { background: rgba(16,185,129,0.12) !important; }
-  .dark-mode [style*="background: #EFF6FF"] { background: rgba(56,189,248,0.1) !important; }
-  .dark-mode [style*="background: #FEF2F2"] { background: rgba(239,68,68,0.1) !important; }
-  .dark-mode [style*="background: #FFFBEB"] { background: rgba(245,158,11,0.1) !important; }
-  .dark-mode [style*="background: #E2E8F0"] { background: var(--space-elevated) !important; color: var(--text-secondary) !important; }
-
-  /* Login screen */
-  .dark-mode [style*="minHeight: \\"100vh\\"][style*="background: \\"#F1F5F9"] { background: var(--space-void) !important; }
-
-  /* Selection */
-  .dark-mode ::selection { background: rgba(56,189,248,0.25); color: #FFF; }
-
-  /* Mobile nav dark */
+  /* ══ MOBILE NAV ══ */
   .dark-mode [style*="position: fixed"][style*="background: #FFFFFF"] {
-    background: rgba(12, 16, 33, 0.97) !important;
-    border-color: var(--space-border) !important;
+    background: rgba(9,13,26,0.99) !important;
+    border-color: var(--rim-bright) !important;
+    backdrop-filter: blur(24px) !important;
   }
-`;
+
+  /* ══ ACCENT COLOURS ══ */
+  .dark-mode [style*="color: #10B981"], .dark-mode [style*="color:#10B981"] { color: var(--green) !important; }
+  .dark-mode [style*="color: #059669"], .dark-mode [style*="color:#059669"] { color: var(--teal) !important; }
+  .dark-mode [style*="color: #EF4444"], .dark-mode [style*="color:#EF4444"] { color: var(--rose) !important; }
+  .dark-mode [style*="color: #F59E0B"], .dark-mode [style*="color:#F59E0B"] { color: var(--amber) !important; }
+  .dark-mode [style*="color: #0EA5E9"], .dark-mode [style*="color:#0EA5E9"] { color: var(--cyan) !important; }
+  .dark-mode [style*="color: #6366F1"], .dark-mode [style*="color:#6366F1"] { color: var(--indigo) !important; }
+  .dark-mode [style*="color: #8B5CF6"], .dark-mode [style*="color:#8B5CF6"] { color: var(--violet) !important; }
+  .dark-mode [style*="color: #EC4899"], .dark-mode [style*="color:#EC4899"] { color: var(--pink) !important; }
+  .dark-mode [style*="color: #F97316"], .dark-mode [style*="color:#F97316"] { color: var(--orange) !important; }
+  .dark-mode [style*="color: #14B8A6"], .dark-mode [style*="color:#14B8A6"] { color: var(--teal) !important; }
+  .dark-mode [style*="color: #A3E635"], .dark-mode [style*="color:#A3E635"] { color: var(--lime) !important; }
+  .dark-mode [style*="color: #38BDF8"], .dark-mode [style*="color:#38BDF8"] { color: var(--cyan) !important; }
+
+  /* ══ TABLE CONTAINER ══ */
+  .dark-mode .blitz-table-responsive {
+    border: 1px solid var(--rim) !important;
+    border-radius: var(--r-lg) !important;
+    overflow: hidden !important;
+    box-shadow: var(--shadow-md) !important;
+  }
+
+  /* ══ SUMMARY GRID CARDS ══ */
+  .dark-mode .blitz-summary > div {
+    background: var(--grad-card) !important;
+    border: 1px solid var(--rim) !important;
+    border-radius: var(--r-lg) !important;
+    box-shadow: var(--shadow-md) !important;
+    transition: all 0.25s var(--ease) !important;
+    position: relative;
+    overflow: hidden;
+  }
+  .dark-mode .blitz-summary > div:hover {
+    border-color: var(--rim-bright) !important;
+    box-shadow: var(--glow-cyan), var(--shadow-lg) !important;
+    transform: translateY(-2px) !important;
+  }
+
+  /* ══ RECHARTS ══ */
+  .dark-mode [class*="recharts"] text { fill: var(--t3) !important; font-size: 11px !important; }
+  .dark-mode [class*="recharts-cartesian-grid"] line { stroke: rgba(99,179,237,0.08) !important; }
+  .dark-mode [class*="recharts-tooltip-wrapper"] > div {
+    background: var(--elevated) !important;
+    border: 1px solid var(--rim-bright) !important;
+    border-radius: var(--r-md) !important;
+    box-shadow: var(--shadow-lg) !important;
+    color: var(--t1) !important;
+  }
+
+  /* ══ PROGRESS BARS ══ */
+  .dark-mode [style*="background: #E2E8F0"][style*="borderRadius"][style*="height"] { background: var(--elevated) !important; }
+
+  /* ══ GRADIENT CARDS (overview) ══ */
+  .dark-mode [style*="background: linear-gradient"][style*="borderRadius"] { border: 1px solid rgba(255,255,255,0.06) !important; }
+
+  /* ══ LOGIN SCREEN ══ */
+  .dark-mode [style*="minHeight"][style*="100vh"] {
+    background: radial-gradient(ellipse at 20% 50%, rgba(56,189,248,0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(167,139,250,0.05) 0%, transparent 50%),
+                radial-gradient(ellipse at 60% 80%, rgba(251,191,36,0.04) 0%, transparent 50%),
+                var(--void) !important;
+  }
+
+  /* ══ MONOSPACE (wallet addresses etc) ══ */
+  .dark-mode code, .dark-mode [style*="JetBrains Mono"] { color: var(--cyan) !important; }
+
+  /* ══ HR ══ */
+  .dark-mode hr { border-color: var(--rim) !important; }
+`
 
 /* ── Mobile Responsive CSS ── */
 const mobileCSS = `
@@ -422,7 +549,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "11.00";
+const VERSION = "11.03";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -638,7 +765,7 @@ async function apiGet(endpoint) {
           serverOnline = true;
           const json = await retry.json();
           const data = json.data || json;
-          if (json.version) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); }
+          if (json.version && json.version !== dataVersions[endpoint]) { dataVersions[endpoint] = json.version; savePersistedVersions(dataVersions); } // v11.02 L4
           if (Array.isArray(data)) lsSave(endpoint, data);
           return data;
         }
@@ -667,10 +794,10 @@ async function apiGet(endpoint) {
     serverOnline = true;
     const json = await res.json();
     let data = json.data || json;
-    if (json.version) {
-      dataVersions[endpoint] = json.version;
-      savePersistedVersions(dataVersions);
-    }
+    if (json.version && json.version !== dataVersions[endpoint]) { // v11.02 L4: only write when changed
+          dataVersions[endpoint] = json.version;
+          savePersistedVersions(dataVersions);
+        }
     // v10.05: Process tombstoned IDs from server GET response
     if (json.tombstoned) {
       processTombstoned(endpoint, json.tombstoned);
@@ -729,9 +856,13 @@ let mergeByIDGlobal = null;
 
 async function flushPendingSaves() {
   if (pendingSaves.size === 0) return;
+  // v11.02 M2: drop saves that have failed too many times
   const token = getSessionToken();
   if (!token) return;
-  for (const [endpoint, save] of pendingSaves) {
+  for (const [endpoint, save] of [...pendingSaves]) {
+    // v11.02 M2: drop after 5 retries to prevent infinite hammering
+    if ((save.retries || 0) >= 5) { console.warn(`⚠️ Dropping pending save for ${endpoint} after 5 retries`); pendingSaves.delete(endpoint); continue; }
+    pendingSaves.set(endpoint, { ...save, retries: (save.retries || 0) + 1 });
     try {
       const res = await fetch(`${API_BASE}/${endpoint}`, {
         method: 'POST', headers: authHeaders(),
@@ -883,6 +1014,7 @@ async function apiSave(endpoint, data, userEmail) {
   lastSaveTimestamps[endpoint] = now;
 
   // Collect any explicit deletes for this table
+  // v11.02 C2 FIX: capture deleted ONCE before first attempt so retry reuses same list
   const deleted = getAndClearDeletes(endpoint);
 
   // ALWAYS save to localStorage first — this is the safety net
@@ -983,7 +1115,7 @@ async function apiSave(endpoint, data, userEmail) {
       });
       if (res.ok) { 
         const json = await res.json(); 
-        if (json.version) {
+        if (json.version && json.version !== dataVersions[endpoint]) { // v11.02 L4
           dataVersions[endpoint] = json.version;
           savePersistedVersions(dataVersions);
         }
@@ -1074,19 +1206,9 @@ function connectWebSocket() {
 
 function onWsUpdate(fn) { wsListeners.add(fn); return () => wsListeners.delete(fn); }
 
-// ── Debounced Auto-Save helper ──
-function useDebouncedSave(endpoint, data, delay = 500, userEmail) {
-  const timerRef = useRef(null);
-  const latestData = useRef(data);
-  latestData.current = data;
-  useEffect(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      apiSave(endpoint, latestData.current, userEmail);
-    }, delay);
-    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
-  }, [data, endpoint, delay, userEmail]);
-}
+// ── useDebouncedSave: DEPRECATED (v11.02) — replaced by debouncedSave() in AppInner ──
+// Kept as stub to avoid breaking any external references; do not use.
+function useDebouncedSave() {}
 
 // Telegram API functions
 async function telegramTest() {
@@ -1114,10 +1236,15 @@ const STATUS_OPTIONS = ["Open", "On the way", "Approved to pay", "Paid"];
 const OPEN_STATUSES = ["Open", "On the way", "Approved to pay"];
 const TYPE_OPTIONS = ["Affiliate Payment", "Brand Refund"];
 const STATUS_COLORS = {
-  Open: { bg: "#FEF3C7", text: "#92400E", border: "#F59E0B" },
-  "On the way": { bg: "#E0E7FF", text: "#3730A3", border: "#818CF8" },
-  "Approved to pay": { bg: "#D1FAE5", text: "#065F46", border: "#10B981" },
-  Paid: { bg: "#D1FAE5", text: "#065F46", border: "#10B981" },
+  Open:              { bg: "#FEF3C7", text: "#92400E", border: "#F59E0B" },
+  "On the way":       { bg: "#EEF2FF", text: "#4338CA", border: "#818CF8" },
+  "Approved to pay":  { bg: "#ECFDF5", text: "#065F46", border: "#34D399" },
+  Paid:               { bg: "#ECFDF5", text: "#065F46", border: "#34D399" },
+  Pending:            { bg: "#FEF3C7", text: "#92400E", border: "#F59E0B" },
+  Received:           { bg: "#ECFDF5", text: "#065F46", border: "#34D399" },
+  Refund:             { bg: "#FFF1F2", text: "#9F1239", border: "#FB7185" },
+  Cancelled:          { bg: "#FFF1F2", text: "#9F1239", border: "#FB7185" },
+  Processing:         { bg: "#EFF6FF", text: "#1D4ED8", border: "#60A5FA" },
 };
 
 const MONTHS = [
@@ -1125,7 +1252,7 @@ const MONTHS = [
   "July","August","September","October","November","December",
 ];
 
-const genId = () => Math.random().toString(36).substr(2, 9);
+const genId = () => (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'').slice(0,9) : Math.random().toString(36).substr(2, 9)); // v11.02 M4: crypto-safe IDs
 // v10.05: Stamp new records with updatedAt for LWW merge
 const stampNew = (record) => ({ ...record, updatedAt: Date.now() });
 
@@ -1282,7 +1409,10 @@ function SyncStatus() {
 
 function StatusBadge({ status }) {
   const c = STATUS_COLORS[status] || { bg: "#F1F5F9", text: "#475569", border: "#94A3B8" };
-  return <span style={{ display: "inline-block", padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600, background: c.bg, color: c.text, border: `1px solid ${c.border}`, whiteSpace: "nowrap" }}>{status}</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 10px 3px 7px", borderRadius: 20, fontSize: 11.5, fontWeight: 700, background: c.bg, color: c.text, border: `1px solid ${c.border}55`, whiteSpace: "nowrap", letterSpacing: "0.2px" }}>
+    <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.border, flexShrink: 0, boxShadow: `0 0 5px ${c.border}90` }} />
+    {status}
+  </span>;
 }
 
 // ── Currency & Branding Badges (₿ / € / $ / 🇺🇦) ──
@@ -1310,10 +1440,10 @@ function Modal({ title, onClose, children }) {
   const [show, setShow] = useState(false);
   useEffect(() => { requestAnimationFrame(() => setShow(true)); }, []);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(8px)", WebkitBackdropFilter: "blur(8px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12, opacity: show ? 1 : 0, transition: "opacity 0.3s ease" }} onClick={onClose}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(5,7,15,0.7)", backdropFilter: "blur(10px) saturate(180%)", WebkitBackdropFilter: "blur(10px) saturate(180%)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 12, opacity: show ? 1 : 0, transition: "opacity 0.3s ease" }} onClick={onClose}>
       <div className="blitz-modal-content" onClick={e => e.stopPropagation()} style={{ background: "#FFFFFF", borderRadius: 20, border: "1px solid #E2E8F0", padding: 32, width: 540, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 25px 80px rgba(0,0,0,0.15), 0 0 0 1px rgba(255,255,255,0.05)", transform: show ? "translateY(0) scale(1)" : "translateY(20px) scale(0.97)", opacity: show ? 1 : 0, transition: "all 0.35s cubic-bezier(0.4, 0, 0.2, 1)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h2 style={{ margin: 0, color: "#0F172A", fontSize: 20, fontWeight: 700 }}>{title}</h2>
+          <h2 style={{ margin: 0, color: "#0F172A", fontSize: 20, fontWeight: 800, letterSpacing: "-0.3px" }}>{title}</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#64748B", padding: 4, transition: "all 0.15s", borderRadius: 8 }}
             onMouseEnter={e => { e.currentTarget.style.background = "rgba(100,116,139,0.1)"; e.currentTarget.style.transform = "rotate(90deg)"; }}
             onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.transform = "rotate(0)"; }}
@@ -1492,11 +1622,11 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 
   return (
     <>
-      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.97)", backdropFilter: "blur(16px) saturate(180%)", WebkitBackdropFilter: "blur(16px) saturate(180%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.96)", backdropFilter: "blur(20px) saturate(200%)", WebkitBackdropFilter: "blur(20px) saturate(200%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
           {I.logo}
-          {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, fontSize: 18, letterSpacing: -0.3 }}>Blitz CRM</span>}
-          <span style={{ fontSize: 11, color: "#64748B", fontFamily: "'JetBrains Mono',monospace", background: "#E2E8F0", padding: "2px 8px", borderRadius: 6 }}>v{VERSION}</span>
+          {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, letterSpacing: -0.5, background: "linear-gradient(135deg, #0EA5E9 0%, #818CF8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Blitz CRM</span>}
+          <span style={{ fontSize: 11, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", padding: "3px 10px", borderRadius: 20, border: "1px solid #BFDBFE", fontWeight: 700, letterSpacing: "0.3px" }}>v{VERSION}</span>
           {!mobile && <>
             <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
             <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -1520,7 +1650,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
           {!mobile && <>
             <div className="desktop-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
               {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
-              <div style={{ padding: "5px 14px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}12`, border: `1px solid ${accentColor || "#0EA5E9"}33`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 500 }}>{user.name}</div>
+              <div style={{ padding: "5px 16px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}15`, border: `1.5px solid ${accentColor || "#0EA5E9"}40`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 600, letterSpacing: "0.2px" }}>{user.name}</div>
               <SyncStatus />
               <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
                 onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
@@ -2015,7 +2145,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
 
       <main style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 32px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 28 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>User Management</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>User Management</h1>
           <button onClick={() => setAddOpen(true)}
             style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#0EA5E9,#38BDF8)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(14,165,233,0.3)" }}
           >{I.plus} Add User</button>
@@ -2719,7 +2849,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
   };
 
   // ── Styles ──
-  const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 24px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
+  const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 16, padding: "20px 24px", boxShadow: "0 2px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)" };
   const sectionTitle = (icon, title) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
       <span style={{ fontSize: 18 }}>{icon}</span>
@@ -2742,10 +2872,10 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
   const KpiCard = ({ label, value, prevValue, icon, accent, bg, onClick, prefix, suffix }) => {
     const ch = compare ? pctChange(typeof value === "string" ? parseFloat(value) || 0 : value, prevValue || 0) : null;
     return (
-      <div onClick={onClick} style={{ background: bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", cursor: onClick ? "pointer" : "default", transition: "transform 0.15s" }}
-        onMouseEnter={e => { if (onClick) e.currentTarget.style.transform = "translateY(-2px)"; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}>
-        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: accent }} />
+      <div onClick={onClick} style={{ background: bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 18px", position: "relative", overflow: "hidden", cursor: onClick ? "pointer" : "default", transition: "all 0.2s cubic-bezier(0.4,0,0.2,1)", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" }}
+        onMouseEnter={e => { if (onClick) { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 8px 28px rgba(0,0,0,0.1), 0 0 0 2px ${accent}22`; } }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 2px 12px rgba(0,0,0,0.06)"; }}>
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${accent}, ${accent}88)`, borderRadius: "14px 14px 0 0" }} />
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
             <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 4 }}>{label}</div>
@@ -3442,7 +3572,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
             { label: "Deals", value: filtered.length, color: "#EC4899" },
           ].map((c, i) => (
             <div key={i} style={{ padding: "12px 14px", background: "#FFF", borderRadius: 10, border: "1px solid #E2E8F0", borderLeft: `3px solid ${c.color}` }}>
-              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
+              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>{c.label}</div>
               <div style={{ fontSize: 20, fontWeight: 800, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
             </div>
           ))}
@@ -3478,7 +3608,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
           const dayAllSelected = dayDeals.length > 0 && dayDeals.every(d => selected.has(d.id));
 
           return (
-            <div key={date} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 14, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={date} style={{ background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 14, boxShadow: "0 2px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", background: "linear-gradient(135deg, #F8FAFC, #EFF6FF)", borderBottom: "2px solid #E2E8F0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <input type="checkbox" checked={dayAllSelected} onChange={() => toggleAll(dayDeals)} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#10B981" }} />
@@ -5101,7 +5231,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
                 { label: "Backups", value: diagData.backups?.count ?? "?", color: (diagData.backups?.count || 0) > 0 ? "#10B981" : "#EF4444" },
               ].map((c, i) => (
                 <div key={i} style={{ padding: "10px 12px", background: "#F8FAFC", borderRadius: 8, borderLeft: `3px solid ${c.color}` }}>
-                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 600, textTransform: "uppercase" }}>{c.label}</div>
+                  <div style={{ fontSize: 10, color: "#64748B", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px" }}>{c.label}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: c.color, fontFamily: "'JetBrains Mono',monospace" }}>{c.value}</div>
                 </div>
               ))}
@@ -5289,12 +5419,12 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
             { label: "Paid This Month", value: paidPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
             { label: "Paid Total", value: paidTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 16, padding: "22px 24px", position: "relative", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", animation: `stagger-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) ${i * 0.08}s both`, cursor: "default" }}
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 16, padding: "22px 24px", position: "relative", overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", animation: `stagger-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) ${i * 0.08}s both`, cursor: "default" }}
               onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px rgba(0,0,0,0.08), 0 0 20px ${c.accent}15`; }}
               onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.04)"; }}
             >
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${c.accent}, ${c.accent}88)`, borderRadius: "16px 16px 0 0" }} />
-              <div style={{ fontSize: 10, color: "#64748B", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 10 }}>{c.label}</div>
+              <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.4, marginBottom: 10 }}>{c.label}</div>
               <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent, letterSpacing: -1 }}>
                 {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
               </div>
@@ -5463,7 +5593,7 @@ function LoginScreen({ onLogin, users }) {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #F0F7FF 0%, #FFFFFF 30%, #F8FBFF 60%, #EFF6FF 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EBF5FF 0%, #F8FBFF 25%, #FFFFFF 50%, #F5F0FF 75%, #EBF5FF 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <style>{mobileCSS}{`
         @keyframes sparkle { 0%,100% { opacity:0.3; transform:scale(0.8) rotate(0deg); } 50% { opacity:1; transform:scale(1.2) rotate(180deg); } }
@@ -5551,7 +5681,7 @@ function LoginScreen({ onLogin, users }) {
       <Dot x="70%" y="8%" size={9} color="#F472B6" />
 
       {/* ══ Login Card ══ */}
-      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(226,232,240,0.8)", padding: "44px 40px", boxShadow: "0 20px 60px rgba(15,23,42,0.08), 0 0 0 1px rgba(255,255,255,0.6) inset", animation: "fadeSlideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1)", position: "relative", zIndex: 10 }}>
+      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(226,232,240,0.8)", padding: "44px 40px", boxShadow: "0 24px 80px rgba(15,23,42,0.12), 0 8px 32px rgba(15,23,42,0.06), 0 0 0 1px rgba(255,255,255,0.7) inset", animation: "fadeSlideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1)", position: "relative", zIndex: 10 }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
@@ -6033,9 +6163,9 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
             { label: "Received This Month", value: receivedPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
             { label: "Received Total", value: receivedTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.25s ease" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 10.5, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>{c.label}</div>
               <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>
                 {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
               </div>
@@ -6360,7 +6490,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>CRG Deals</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>CRG Deals</h1>
           <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 500, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
@@ -6410,9 +6540,9 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
             { label: "CAP Sum Today", value: totalCap, accent: "#6366F1", bg: "#EEF2FF" },
             { label: "Started Today", value: `${startedCount} / ${todayDeals.length}`, accent: "#10B981", bg: "#ECFDF5" },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.25s ease" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 10.5, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>{c.label}</div>
               <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
             </div>
           ))}
@@ -6876,7 +7006,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
 
       <main className="blitz-main" style={{ maxWidth: 900, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Daily Cap</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Daily Cap</h1>
           <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ position: "relative" }}>
@@ -6931,9 +7061,9 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
             { label: "Brands CAP Today", value: grandBrands, accent: "#0EA5E9", bg: "#EFF6FF" },
             { label: "Active Agents", value: activeAgents, accent: "#10B981", bg: "#ECFDF5" },
           ].map((c, i) => (
-            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.25s ease" }}>
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: c.accent }} />
-              <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{c.label}</div>
+              <div style={{ fontSize: 10.5, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>{c.label}</div>
               <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent }}>{c.value}</div>
             </div>
           ))}
@@ -7218,7 +7348,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
 
       <main className="blitz-main" style={{ maxWidth: 1400, margin: "0 auto", padding: "28px 32px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700 }}>Offers</h1>
+          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800 }}>Offers</h1>
           <CurrencyBadges />
           <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, maxWidth: 600, marginLeft: 24 }}>
             <div style={{ position: "relative", flex: 1 }}>
@@ -7239,13 +7369,13 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16, marginBottom: 28, maxWidth: 300 }}>
           <div style={{ background: "#ECFDF5", border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "#10B981" }} />
-            <div style={{ fontSize: 11, color: "#64748B", fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>Total Offers</div>
+            <div style={{ fontSize: 10.5, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8 }}>Total Offers</div>
             <div style={{ fontSize: 24, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: "#10B981" }}>{filtered.length}</div>
           </div>
         </div>
 
         {/* Table */}
-        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+        <div style={{ background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 16px rgba(0,0,0,0.07), 0 1px 4px rgba(0,0,0,0.04)" }}>
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
               <thead>
@@ -7802,7 +7932,7 @@ function AppInner() {
           // During sync: server is authority — DON'T add old local records
           // Only add if it was created recently (within last 5 minutes = likely user just created it)
           const age = Date.now() - (r.createdAt || r.updatedAt || 0);
-          if (age < 5 * 60 * 1000) { merged.set(r.id, r); added++; }
+          if (age < 30 * 60 * 1000) { merged.set(r.id, r); added++; } // v11.02: extended from 5min to 30min
           // else: skip — this is a ghost record from stale localStorage
         } else {
           // During init: push local records to server (offline edits)
@@ -7850,6 +7980,8 @@ function AppInner() {
         users: lsGet('users', null), payments: lsGet('payments', null),
         'customer-payments': lsGet('customer-payments', null), 'crg-deals': lsGet('crg-deals', null),
         'daily-cap': lsGet('daily-cap', null), deals: lsGet('deals', null), wallets: lsGet('wallets', null),
+        // v11.02 L1+L2: added missing tables so offline edits survive first load
+        partners: lsGet('partners', null), 'ftd-entries': lsGet('ftd-entries', null), 'daily-calcs-data': lsGet('daily-calcs-data', null),
       };
       if (local.users && local.users.length > 0) setUsers(local.users);
       if (Array.isArray(local.payments)) setPayments(local.payments);
@@ -7972,7 +8104,7 @@ function AppInner() {
         msg.data.forEach(o => { if (o && o.id && !existing.has(o.id) && !isDeleted('deals', o.id)) { existing.set(o.id, o); added++; } });
         if (added > 0) {
           skipSave.current = true;
-          const merged = Array.from(existing.values());
+          const merged = filterTombstoned('deals', Array.from(existing.values())); // v11.02 C3: tombstone check
           lsSave('deals', merged);
           setDealsData(merged);
           setTimeout(() => { skipSave.current = false; }, 2000);
@@ -8056,7 +8188,7 @@ function AppInner() {
         let added = 0;
         sof.forEach(o => { if (o && o.id && !existing.has(o.id) && !isDeleted('deals', o.id)) { existing.set(o.id, o); added++; } });
         if (added > 0) {
-          const merged = Array.from(existing.values());
+          const merged = filterTombstoned('deals', Array.from(existing.values())); // v11.02 C4: tombstone check
           lsSave('deals', merged);
           setDealsData(merged);
           anyChanged = true;
@@ -8087,7 +8219,7 @@ function AppInner() {
     // v11.01: For users table, only push if an admin edit happened (updatedAt changed)
     // This prevents the polling merge from triggering a redundant users save that could overwrite pageAccess
     if (table === 'users') {
-      const maxUpdatedAt = Math.max(0, ...data.map(u => u.updatedAt || 0));
+      const maxUpdatedAt = data.reduce((m, u) => Math.max(m, u.updatedAt || 0), 0); // v11.02 H5: avoid spread stack overflow
       if (maxUpdatedAt <= lastUsersUpdatedAt.current) return; // No admin edit since last save
       lastUsersUpdatedAt.current = maxUpdatedAt;
     }
@@ -8131,7 +8263,7 @@ function AppInner() {
       <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
       <div style={{ textAlign: "center", animation: "fadeUp 0.5s ease" }}>
         {I.logo}
-        <div style={{ fontSize: 24, fontWeight: 700, color: "#F1F5F9", marginBottom: 8, marginTop: 16, fontFamily: "'JetBrains Mono',monospace" }}>Blitz CRM</div>
+        <div style={{ fontSize: 24, fontWeight: 800, color: "#F1F5F9", marginBottom: 8, marginTop: 16, fontFamily: "'JetBrains Mono',monospace" }}>Blitz CRM</div>
         <div style={{ color: "#64748B", fontSize: 14 }}>Initializing v{VERSION}...</div>
         <div style={{ width: 120, height: 2, background: "rgba(56,189,248,0.15)", borderRadius: 2, margin: "20px auto 0", overflow: "hidden", position: "relative" }}>
           <div style={{ width: "40%", height: "100%", background: "linear-gradient(90deg, transparent, #38BDF8, transparent)", borderRadius: 2, animation: "shimmer 1.5s ease infinite", backgroundSize: "200% 100%" }} />
