@@ -1,4 +1,4 @@
-// Blitz CRM Server — v11.05 (2026-03-12)
+// Blitz CRM Server — v12.00 (2026-03-12)
 // Load environment variables
 // require("dotenv").config();
 
@@ -70,7 +70,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "11.05";
+const VERSION = "12.00";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
