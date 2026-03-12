@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.27";
+const VERSION = "10.28";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1882,6 +1882,18 @@ app.post("/api/payments", requireAuth, async (req, res) => {
     // where users couldn't save at all (74+ failed saves/day in diagnostics).
     // The merge logic below preserves ALL server records regardless of what client sends.
 
+    // v10.28: DEALS HARD GUARD — if client sends < 20% of server records AND no explicit deletes,
+    // the client is almost certainly stale (e.g. fresh browser, cleared localStorage).
+    // Return server data so the client syncs up without performing any merge.
+    // This prevents the "4 records" collapse observed on 2026-03-12 in diagnostics.
+    if (ep === 'deals' && existingBeforeMerge.length > 20 && records.length < existingBeforeMerge.length * 0.2 && deleteSet.size === 0) {
+      console.warn(`🛑 DEALS GUARD [deals]: client sent ${records.length} records but server has ${existingBeforeMerge.length}. Client appears stale — returning server data without merge.`);
+      writeAuditLog('deals', 'stale_client_blocked', userEmail || 'unknown', `[deals] Stale client blocked: client=${records.length} server=${existingBeforeMerge.length} — no merge performed`);
+      const tombstonedNow = getTombstonedIds('deals');
+      const serverFiltered = existingBeforeMerge.filter(r => !r || !r.id || !tombstonedNow.has(r.id));
+      return res.json({ ok: true, count: serverFiltered.length, version: getVersion(ep), unchanged: true, data: serverFiltered, tombstoned: [...tombstonedNow] });
+    }
+
     // SPECIAL HANDLING: customer-payments status change notifications
     if (ep === "customer-payments") {
       const oldRecords = readJSON("customer-payments.json", []);
@@ -2196,6 +2208,116 @@ app.get("/api/versions", requireAuth, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// v10.28: ZIP DATA EXPORT & IMPORT
+// ═══════════════════════════════════════════════════════════════
+
+let archiver;
+try { archiver = require('archiver'); } catch (e) { console.warn('⚠️ archiver not installed — ZIP download disabled'); }
+
+let multer;
+try { multer = require('multer'); } catch (e) { console.warn('⚠️ multer not installed — ZIP upload disabled'); }
+
+// GET /api/data/download-zip — streams all data tables as individual JSON files inside a ZIP
+app.get('/api/data/download-zip', requireAuth, (req, res) => {
+  if (!archiver) return res.status(503).json({ error: 'ZIP support not available (archiver not installed)' });
+  try {
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `blitz-data-${dateStr}.zip`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/zip');
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', err => { console.error('ZIP archive error:', err); });
+    archive.pipe(res);
+
+    // Add each data table as its own JSON file
+    endpoints.forEach(ep => {
+      const data = readJSON(ep + '.json', []);
+      const json = JSON.stringify(data, null, 2);
+      archive.append(json, { name: `${ep}.json` });
+    });
+
+    // Add a manifest file with metadata
+    const manifest = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      exportedBy: req.user?.email || 'unknown',
+      tables: endpoints,
+      recordCounts: Object.fromEntries(endpoints.map(ep => [ep, readJSON(ep + '.json', []).length])),
+    };
+    archive.append(JSON.stringify(manifest, null, 2), { name: '_manifest.json' });
+
+    archive.finalize();
+    writeAuditLog('system', 'zip_download', req.user?.email || 'unknown', `ZIP data export: ${endpoints.length} tables`);
+    console.log(`📦 ZIP data export by ${req.user?.email}`);
+  } catch (e) {
+    console.error('ZIP download error:', e);
+    if (!res.headersSent) res.status(500).json({ error: 'ZIP export failed' });
+  }
+});
+
+// POST /api/data/upload-zip — accepts a ZIP of JSON files, restores each matching table
+// Uses multer for multipart upload, max 50MB
+const zipUploadMiddleware = multer
+  ? multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } }).single('file')
+  : (req, res, next) => res.status(503).json({ error: 'ZIP upload not available (multer not installed)' });
+
+app.post('/api/data/upload-zip', requireAuth, zipUploadMiddleware, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const AdmZip = (() => { try { return require('adm-zip'); } catch { return null; } })();
+  if (!AdmZip) {
+    // Fallback: try to parse as JSON backup if not a ZIP
+    return res.status(503).json({ error: 'adm-zip not installed — use JSON restore instead' });
+  }
+  try {
+    const zip = new AdmZip(req.file.buffer);
+    const entries = zip.getEntries();
+    const restored = [];
+    const skipped = [];
+    const errors = [];
+
+    for (const entry of entries) {
+      const name = entry.entryName;
+      if (!name.endsWith('.json') || name === '_manifest.json') continue;
+      const ep = name.replace('.json', '');
+      if (!endpoints.includes(ep)) { skipped.push(ep); continue; }
+      if (ep === 'users') { skipped.push('users (protected)'); continue; }
+      try {
+        const data = JSON.parse(entry.getData().toString('utf8'));
+        if (!Array.isArray(data)) { errors.push(`${ep}: not an array`); continue; }
+        // Skip empty arrays — server's WAL guard rejects payloads < 3 chars ("[]");
+        // an empty table in the ZIP means no data to restore, so we just skip it.
+        if (data.length === 0) { skipped.push(`${ep} (empty)`); continue; }
+        const success = await lockedWrite(ep + '.json', data, {
+          action: 'zip_restore', user: req.user?.email || 'unknown',
+          details: `[${ep}] Restored ${data.length} records from ZIP upload`,
+        });
+        if (success) restored.push({ table: ep, count: data.length });
+        else errors.push(`${ep}: write failed`);
+      } catch (parseErr) {
+        errors.push(`${ep}: ${parseErr.message}`);
+      }
+    }
+
+    writeAuditLog('system', 'zip_upload_restore', req.user?.email || 'unknown',
+      `ZIP restore: ${restored.length} tables restored, ${skipped.length} skipped, ${errors.length} errors`);
+    console.log(`📦 ZIP restore by ${req.user?.email}: ${restored.map(r => `${r.table}(${r.count})`).join(', ')}`);
+
+    // Broadcast version bump to all WS clients so they re-fetch
+    if (wss) {
+      const versions = {};
+      endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
+      const msg = JSON.stringify({ type: 'versions', versions, timestamp: Date.now() });
+      wss.clients.forEach(ws => { try { ws.send(msg); } catch {} });
+    }
+
+    res.json({ ok: true, restored, skipped, errors });
+  } catch (e) {
+    console.error('ZIP upload error:', e);
+    res.status(500).json({ error: 'ZIP restore failed: ' + e.message });
+  }
+});
+
 // v10.23: BACKUP DOWNLOAD & RESTORE
 // ═══════════════════════════════════════════════════════════════
 
@@ -4184,6 +4306,19 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // ═══════════════════════════════════════════════════════════════
 // 14. START SERVER (HTTP + WebSocket on same port)
 // ═══════════════════════════════════════════════════════════════
+
+// ── Serve built React frontend (lab/production) ──
+const PUBLIC_DIR = path.join(__dirname, "public");
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+  // SPA fallback — serve index.html for all non-API routes
+  app.get(/^(?!\/api|\/ws).*/, (req, res) => {
+    const indexFile = path.join(PUBLIC_DIR, "index.html");
+    if (fs.existsSync(indexFile)) res.sendFile(indexFile);
+    else res.status(404).send("Frontend not built");
+  });
+  console.log(`📦 Serving static frontend from ${PUBLIC_DIR}`);
+}
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`\n╔══════════════════════════════════════════════╗`);
