@@ -549,7 +549,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "11.03";
+const VERSION = "11.04";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1548,7 +1548,7 @@ function NavDropdown({ label, icon, items, activePage, userAccess, onNav, accent
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 200,
-          background: "#FFFFFF", borderRadius: 12, border: "1px solid #E2E8F0",
+          background: "#FFFFFF", borderRadius: 16, border: "1px solid rgba(99,102,241,0.12)", boxShadow: "0 4px 20px rgba(99,102,241,0.07)",
           boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
           padding: "6px", zIndex: 200, animation: "fadeUp 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
         }}>
@@ -1622,13 +1622,13 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 
   return (
     <>
-      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.96)", backdropFilter: "blur(20px) saturate(200%)", WebkitBackdropFilter: "blur(20px) saturate(200%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(0,0,0,0.06), 0 4px 24px rgba(0,0,0,0.04)" }}>
+      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(10,15,30,0.97)", backdropFilter: "blur(24px) saturate(200%)", WebkitBackdropFilter: "blur(24px) saturate(200%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(99,102,241,0.25), 0 4px 32px rgba(0,0,0,0.3)", borderBottom: "1px solid rgba(99,102,241,0.2)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
           {I.logo}
-          {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, letterSpacing: -0.5, background: "linear-gradient(135deg, #0EA5E9 0%, #818CF8 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Blitz CRM</span>}
-          <span style={{ fontSize: 11, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "linear-gradient(135deg,#EFF6FF,#DBEAFE)", padding: "3px 10px", borderRadius: 20, border: "1px solid #BFDBFE", fontWeight: 700, letterSpacing: "0.3px" }}>v{VERSION}</span>
+          {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, letterSpacing: -0.5, background: "linear-gradient(135deg, #38BDF8 0%, #A78BFA 50%, #F472B6 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Blitz CRM</span>}
+          <span style={{ fontSize: 11, color: "#A5B4FC", fontFamily: "'JetBrains Mono',monospace", background: "rgba(99,102,241,0.15)", padding: "3px 10px", borderRadius: 20, border: "1px solid rgba(99,102,241,0.35)", fontWeight: 700, letterSpacing: "0.3px" }}>v{VERSION}</span>
           {!mobile && <>
-            <span style={{ color: "#CBD5E1", margin: "0 4px" }}>|</span>
+            <span style={{ color: "rgba(99,102,241,0.3)", margin: "0 4px" }}>|</span>
             <div className="nav-links" style={{ display: "flex", alignItems: "center", gap: 4 }}>
               {NAV_GROUPS.map(group => {
                 if (group.type === "single") {
@@ -1636,9 +1636,9 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
                   const isActive = activePage === group.key;
                   return isActive
                     ? <span key={group.key} style={{ display: "flex", alignItems: "center", gap: 5, background: `${group.color}15`, border: `1.5px solid ${group.color}40`, color: group.color, padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700 }}><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</span>
-                    : <button key={group.key} onClick={() => onNav(group.key)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1.5px solid transparent", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 8, transition: "all 0.15s" }}
-                        onMouseEnter={e => { e.currentTarget.style.color = group.color; e.currentTarget.style.background = "rgba(100,116,139,0.06)"; }}
-                        onMouseLeave={e => { e.currentTarget.style.color = "#64748B"; e.currentTarget.style.background = "transparent"; }}
+                    : <button key={group.key} onClick={() => onNav(group.key)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1.5px solid transparent", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 8, transition: "all 0.15s", background: "transparent" }}
+                        onMouseEnter={e => { e.currentTarget.style.color = group.color; e.currentTarget.style.background = "rgba(99,102,241,0.12)"; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = "#94A3B8"; e.currentTarget.style.background = "transparent"; }}
                       ><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</button>;
                 }
                 return <NavDropdown key={group.label} label={group.label} icon={group.icon} items={group.items} activePage={activePage} userAccess={userAccess} onNav={onNav} accentColor={group.color} />;
@@ -1649,10 +1649,10 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 6 : 12 }}>
           {!mobile && <>
             <div className="desktop-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626, #EF4444)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
-              <div style={{ padding: "5px 16px", borderRadius: 20, background: `${accentColor || "#0EA5E9"}15`, border: `1.5px solid ${accentColor || "#0EA5E9"}40`, fontSize: 13, color: accentColor || "#38BDF8", fontWeight: 600, letterSpacing: "0.2px" }}>{user.name}</div>
+              {isAdmin(user.email) && <button onClick={onAdmin} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #DC2626 0%, #F43F5E 100%)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(239,68,68,0.4)" }}>⚙️ Admin</button>}
+              <div style={{ padding: "5px 16px", borderRadius: 20, background: "rgba(99,102,241,0.15)", border: "1.5px solid rgba(99,102,241,0.4)", fontSize: 13, color: "#A5B4FC", fontWeight: 600, letterSpacing: "0.2px" }}>{user.name}</div>
               <SyncStatus />
-              <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#64748B", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
+              <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 500, padding: "6px 8px", borderRadius: 8 }}
                 onMouseEnter={e => e.currentTarget.style.color = "#F87171"} onMouseLeave={e => e.currentTarget.style.color = "#64748B"}
               >{I.logout}<span>Logout</span></button>
             </div>
@@ -1813,10 +1813,10 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
 
   const statusStyle = status => {
     const styles = {
-      Open: { background: "#FEF3C7", color: "#92400E" },
-      "On the way": { background: "#818CF8", color: "#FFF" },
-      "Approved to pay": { background: "#34D399", color: "#FFF" },
-      Paid: { background: "#10B981", color: "#FFF" },
+      Open: { background: "linear-gradient(135deg, #FEF3C7, #FDE68A)", color: "#92400E", border: "1px solid #FDE68A" },
+      "On the way": { background: "linear-gradient(135deg, #818CF8, #6366F1)", color: "#FFF", boxShadow: "0 2px 8px rgba(99,102,241,0.3)" },
+      "Approved to pay": { background: "linear-gradient(135deg, #34D399, #10B981)", color: "#FFF", boxShadow: "0 2px 8px rgba(16,185,129,0.3)" },
+      Paid: { background: "linear-gradient(135deg, #10B981, #059669)", color: "#FFF", boxShadow: "0 2px 8px rgba(16,185,129,0.3)" },
     };
     return styles[status] || { background: "#F1F5F9", color: "#475569" };
   };
@@ -1885,12 +1885,12 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
           <col style={{ width: "12%" }} />{/* Actions */}
         </colgroup>
         <thead>
-          <tr style={{ background: "#F8FAFC" }}>
-            <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", textAlign: "center" }}>
+          <tr style={{ background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)" }}>
+            <th style={{ padding: "8px 4px", borderBottom: "2px solid #E2E8F0", borderRight: "1px solid rgba(99,102,241,0.08)", textAlign: "center" }}>
               <input type="checkbox" checked={selected.size === sorted.length && sorted.length > 0} onChange={toggleAll} style={{ cursor: "pointer", width: 15, height: 15, accentColor: "#0EA5E9" }} />
             </th>
             {["Affiliate ID","Date","Status","Amount","Fee","Open By","Hash","Actions"].map(h =>
-              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#64748B", fontSize: 10, fontWeight: 700, borderBottom: "2px solid #E2E8F0", borderRight: "1px solid #CBD5E1", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
+              <th key={h} style={{ padding: "8px 6px", textAlign: "left", color: "#94A3B8", fontSize: 10, fontWeight: 700, letterSpacing: "0.8px", textTransform: "uppercase", borderBottom: "2px solid rgba(99,102,241,0.3)", borderRight: "1px solid rgba(255,255,255,0.05)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h}</th>
             )}
           </tr>
         </thead>
@@ -1906,7 +1906,7 @@ function PaymentTable({ payments: rawPayments, onEdit, onDelete, onStatusChange,
             return (
             <tr key={p.id}
               style={{ borderBottom: `1px solid ${rowBorder}`, transition: "background 0.15s", background: rowBg, borderLeft: isSel ? "3px solid #0EA5E9" : isOverdue ? "3px solid #EF4444" : isHighValue ? "3px solid #0EA5E9" : "3px solid transparent" }}
-              onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "#F8FAFC"; }}
+              onMouseEnter={e => { if (!isSel) e.currentTarget.style.background = isOverdue ? "rgba(239,68,68,0.08)" : isHighValue ? "rgba(14,165,233,0.08)" : "rgba(99,102,241,0.04)"; }}
               onMouseLeave={e => e.currentTarget.style.background = rowBg}
             >
               <td style={{ padding: "4px 4px", textAlign: "center", borderRight: "1px solid #CBD5E1" }}>
@@ -1984,8 +1984,8 @@ function GroupHeader({ icon, title, count, total, accentColor, defaultOpen, chil
     <div style={{ marginBottom: 24, animation: "fadeUp 0.4s ease both" }}>
       <button onClick={() => setOpen(!open)} style={{
         display: "flex", alignItems: "center", gap: 10, width: "100%",
-        padding: "18px 24px", background: "#FFFFFF",
-        border: "1px solid #E2E8F0", borderRadius: open ? "16px 16px 0 0" : 16,
+        padding: "18px 24px", background: "linear-gradient(135deg, #FAFBFF 0%, #FFFFFF 100%)",
+        border: "1px solid rgba(99,102,241,0.12)", borderRadius: open ? "16px 16px 0 0" : 16,
         cursor: "pointer", color: "#0F172A", fontSize: 16, fontWeight: 800,
         transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
         boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
@@ -2003,11 +2003,11 @@ function GroupHeader({ icon, title, count, total, accentColor, defaultOpen, chil
       </button>
       <div style={{
         background: "#FFFFFF",
-        border: "1px solid #E2E8F0",
+        border: "1px solid rgba(99,102,241,0.12)",
         borderTop: "none",
         borderRadius: "0 0 16px 16px",
         overflow: "hidden",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.03)",
+        boxShadow: "0 8px 24px rgba(99,102,241,0.06), 0 2px 8px rgba(0,0,0,0.03)",
         maxHeight: open ? "5000px" : "0px",
         opacity: open ? 1 : 0,
         transition: "all 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -2126,7 +2126,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
 
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", position: "sticky", top: 0, zIndex: 100 }}>
@@ -2291,7 +2291,7 @@ function AdminPanel({ users, setUsers, wallets, setWallets, onBack, user }) {
                           setWallets(prev => prev.map(ww => ww.id === w.id ? { ...ww, ...walletForm } : ww));
                           setEditingWallet(null);
                         }}
-                          style={{ padding: "8px 18px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Save</button>
+                          style={{ padding: "8px 18px", background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", borderRadius: 8, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Save</button>
                         <button onClick={() => setEditingWallet(null)}
                           style={{ padding: "8px 18px", background: "transparent", border: "1px solid #E2E8F0", borderRadius: 8, color: "#64748B", cursor: "pointer", fontSize: 13 }}>Cancel</button>
                       </div>
@@ -2550,7 +2550,7 @@ function ServerDiagnostics() {
 
   useEffect(() => { fetchDiag(); const iv = setInterval(fetchDiag, 30000); return () => clearInterval(iv); }, []);
 
-  const cardStyle = { background: "#F8FAFC", borderRadius: 12, padding: 16, border: "1px solid #E2E8F0" };
+  const cardStyle = { background: "#FFFFFF", borderRadius: 16, padding: 20, border: "1px solid rgba(99,102,241,0.1)", boxShadow: "0 2px 12px rgba(99,102,241,0.06)" };
   const labelStyle = { fontSize: 11, color: "#94A3B8", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 };
   const valStyle = { fontSize: 20, fontWeight: 700, color: "#0F172A", fontFamily: "'JetBrains Mono',monospace" };
 
@@ -2596,7 +2596,7 @@ function ServerDiagnostics() {
               if (data.ok) alert("✅ Both screenshots sent to Telegram!");
               else alert("❌ " + (data.error || "Failed to send screenshots"));
             } catch (e) { alert("❌ " + e.message); }
-          }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(16,185,129,0.3)" }}>📸 Send All Screenshots</button>
+          }} style={{ padding: "6px 14px", borderRadius: 8, background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700, boxShadow: "0 2px 8px rgba(16,185,129,0.3)" }}>📸 Send All Screenshots</button>
         </div>
       </div>
 
@@ -3016,7 +3016,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
   const activeMetric = metricOptions.find(m => m.key === chartMetric) || metricOptions[0];
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="overview" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
@@ -3089,10 +3089,10 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
         {/* ═══════════ FINANCE ═══════════ */}
         {sectionTitle("💰", "Finance")}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 12, marginBottom: 28 }}>
-          <KpiCard label="Payments" value={curPaidTotal} prevValue={prevPaidTotal} icon="💳" accent="#10B981" bg="#ECFDF5" onClick={() => onNav("payments")} prefix="$" />
+          <KpiCard label="Payments" value={curPaidTotal} prevValue={prevPaidTotal} icon="💳" accent="#10B981" bg="linear-gradient(135deg,#ECFDF5,#D1FAE5)" onClick={() => onNav("payments")} prefix="$" />
           <KpiCard label="Customer Payments" value={curCpTotal} prevValue={prevCpTotal} icon="🏦" accent="#0EA5E9" bg="#EFF6FF" onClick={() => onNav("customers")} prefix="$" />
           <KpiCard label="Open Payments" value={openPayTotal} icon="⏳" accent="#EF4444" bg="#FEF2F2" onClick={() => onNav("payments")} prefix="$" />
-          <KpiCard label={"Paid Count"} value={curPaid.length} prevValue={prevPaid.length} icon="📝" accent="#8B5CF6" bg="#F5F3FF" />
+          <KpiCard label={"Paid Count"} value={curPaid.length} prevValue={prevPaid.length} icon="📝" accent="#8B5CF6" bg="linear-gradient(135deg,#F5F3FF,#EDE9FE)" />
           <KpiCard label="CP Count" value={curCp.length} prevValue={prevCp.length} icon="📋" accent="#6366F1" bg="#EEF2FF" />
         </div>
 
@@ -3100,8 +3100,8 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
         {sectionTitle("📋", "CRG Deals")}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
           <KpiCard label="CAP" value={curCap} prevValue={prevCapVal} icon="📊" accent="#6366F1" bg="#EEF2FF" onClick={() => onNav("crg")} />
-          <KpiCard label="Deals" value={curCrg.length} prevValue={prevCrg.length} icon="📝" accent="#F59E0B" bg="#FFFBEB" onClick={() => onNav("crg")} />
-          <KpiCard label="Started" value={curStarted} prevValue={prevStartedVal} icon="🚀" accent="#10B981" bg="#ECFDF5" />
+          <KpiCard label="Deals" value={curCrg.length} prevValue={prevCrg.length} icon="📝" accent="#F59E0B" bg="linear-gradient(135deg,#FFFBEB,#FEF3C7)" onClick={() => onNav("crg")} />
+          <KpiCard label="Started" value={curStarted} prevValue={prevStartedVal} icon="🚀" accent="#10B981" bg="linear-gradient(135deg,#ECFDF5,#D1FAE5)" />
           <KpiCard label="FTD" value={curFtd} prevValue={prevFtdVal} icon="🎯" accent="#F59E0B" bg="#FFFBEB" />
           <KpiCard label="Conversion" value={curConv} icon="📈" accent="#0EA5E9" bg="#EFF6FF" suffix="%" />
         </div>
@@ -3300,7 +3300,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                     const onTrack = (bPct === null || bPct >= Math.round(pace * 100)) && (aPct === null || aPct >= Math.round(pace * 100));
                     const completed = (bPct !== null && bPct >= 100) || (aPct !== null && aPct >= 100);
                     return (
-                      <tr key={agent} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <tr key={agent} style={{ borderBottom: "1px solid rgba(99,102,241,0.06)" }}>
                         <td style={{ padding: "7px 6px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span></td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: bToday > 0 ? "#10B981" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{bToday}</td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{bM}{bPct !== null && <span style={{ fontSize: 8, color: pc(bPct), marginLeft: 2 }}>({bPct}%)</span>}</td>
@@ -3547,12 +3547,12 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
     setSelected(prev => { const n = new Set(prev); dayIds.forEach(id => allSelected ? n.delete(id) : n.add(id)); return n; });
   };
 
-  const btnS = (active) => ({ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid", background: active ? "linear-gradient(135deg,#10B981,#34D399)" : "#FFF", borderColor: active ? "#10B981" : "#E2E8F0", color: active ? "#FFF" : "#64748B" });
-  const thS = { padding: "8px 10px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" };
+  const btnS = (active) => ({ padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", border: "1px solid", background: active ? "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)" : "#FFF", borderColor: active ? "#10B981" : "#E2E8F0", color: active ? "#FFF" : "#64748B" });
+  const thS = { padding: "10px 12px", textAlign: "left", fontWeight: 700, fontSize: 10, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.8px", whiteSpace: "nowrap", background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)", borderBottom: "2px solid rgba(99,102,241,0.3)" };
   const tdS = { padding: "4px 6px", fontSize: 13, verticalAlign: "middle" };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="ftdsinfo" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
 
@@ -3561,7 +3561,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155" }}>📈 FTDs Info</h2>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <CurrencyBadges />
-            <button onClick={() => setAddOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)" }}>{I.plus} New FTD</button>
+            <button onClick={() => setAddOpen(true)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)" }}>{I.plus} New FTD</button>
           </div>
         </div>
 
@@ -3686,7 +3686,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setAddOpen(false)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
-            <button onClick={handleAdd} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(16,185,129,0.3)" }}>Add FTD</button>
+            <button onClick={handleAdd} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(16,185,129,0.3)" }}>Add FTD</button>
           </div>
         </Modal>
       )}
@@ -3854,7 +3854,7 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
   const wdInfo = getWorkDayInfo();
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="monthlystats" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#6366F1" />
 
@@ -3862,13 +3862,13 @@ function MonthlyStatsPage({ user, onLogout, onNav, onAdmin, crgDeals: rawCrg, dc
         {/* ── Header bar ── */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#334155", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 26 }}>📊</span> Blitz Report
+            <span style={{ fontSize: 26 }}>📊</span> <span style={{ background: "linear-gradient(135deg, #1E293B, #6366F1)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Blitz Report</span>
             <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 500, marginLeft: 6 }}>auto-saves</span>
           </h2>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <CurrencyBadges />
             {!isCurrentMonth && <button onClick={() => setActiveMonth(curMonth)} style={{ padding: "6px 14px", borderRadius: 8, background: "#6366F1", border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>← Current Month</button>}
-            <button onClick={saveReport} style={{ padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>💾 Save Report</button>
+            <button onClick={saveReport} style={{ padding: "8px 20px", borderRadius: 10, background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 700, boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>💾 Save Report</button>
           </div>
         </div>
 
@@ -4319,7 +4319,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   const fmtMoney = n => { const s = Math.abs(n).toLocaleString("en-US"); return n < 0 ? `-$${s}` : `$${s}`; };
 
   const inp = { width: "100%", padding: "6px 8px", borderRadius: 6, border: "1px solid #E2E8F0", fontSize: 12, fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC" };
-  const thStyle = { padding: "8px 10px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748B", borderBottom: "2px solid #E2E8F0", background: "#F8FAFC", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap" };
+  const thStyle = { padding: "10px 12px", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.8px", color: "#94A3B8", borderBottom: "2px solid rgba(99,102,241,0.3)", background: "linear-gradient(135deg, #1E293B 0%, #0F172A 100%)", position: "sticky", top: 0, zIndex: 2, whiteSpace: "nowrap" };
   const tdStyle = { padding: "6px 10px", borderBottom: "1px solid #F1F5F9", fontSize: 12, verticalAlign: "middle" };
   const btnSm = { background: "none", border: "none", cursor: "pointer", padding: "2px 4px", fontSize: 13, borderRadius: 4, lineHeight: 1 };
 
@@ -4416,7 +4416,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="dailycalcs" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#EF4444" />
       <main className="blitz-main" style={{ maxWidth: 1500, margin: "0 auto", padding: "24px 28px" }}>
@@ -5091,7 +5091,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
   const btnStyle = (bg) => ({ padding: "8px 16px", borderRadius: 8, background: bg, border: "none", color: "#FFF", cursor: "pointer", fontSize: 12, fontWeight: 700 });
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="settings" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#64748B" />
 
@@ -5110,7 +5110,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
                 const data = await res.json();
                 alert(data.ok ? "✅ Screenshots sent!" : "❌ " + (data.error || "Failed"));
               } catch (e) { alert("❌ " + e.message); }
-            }} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>📸 Send All Screenshots</button>}
+            }} style={btnStyle("linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)")}>📸 Send All Screenshots</button>}
           </div>
 
           {/* v10.23: Download Full Backup & Restore */}
@@ -5205,7 +5205,7 @@ function SettingsPage({ user, onLogout, onNav, userAccess }) {
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => { const name = prompt("Agent name:"); if (name && name.trim()) setTargets(p => ({ ...p, [name.trim()]: "," })); }} style={btnStyle("#0EA5E9")}>+ Add Agent</button>
-                <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg,#10B981,#34D399)")}>💾 Save Targets</button>
+                <button onClick={saveTargets} style={btnStyle("linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)")}>💾 Save Targets</button>
               </div>
             </div>
           );
@@ -5378,7 +5378,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="payments" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
@@ -5414,10 +5414,10 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
         {/* Summary Cards — Bento Glass */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
-            { label: "Open Payments", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
-            { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "#FFFBEB", isMoney: true },
-            { label: "Paid This Month", value: paidPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
-            { label: "Paid Total", value: paidTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
+            { label: "Open Payments", value: openPayments.length, accent: "#F59E0B", bg: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", isMoney: false },
+            { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", isMoney: true },
+            { label: "Paid This Month", value: paidPayments.length, accent: "#10B981", bg: "linear-gradient(135deg,#ECFDF5,#D1FAE5)", isMoney: false },
+            { label: "Paid Total", value: paidTotal, accent: "#10B981", bg: "linear-gradient(135deg,#ECFDF5,#D1FAE5)", isMoney: true },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 16, padding: "22px 24px", position: "relative", overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)", animation: `stagger-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) ${i * 0.08}s both`, cursor: "default" }}
               onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 8px 24px rgba(0,0,0,0.08), 0 0 20px ${c.accent}15`; }}
@@ -5425,7 +5425,7 @@ function Dashboard({ user, onLogout, onAdmin, onNav, payments: rawPayments, setP
             >
               <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg, ${c.accent}, ${c.accent}88)`, borderRadius: "16px 16px 0 0" }} />
               <div style={{ fontSize: 10, color: "#94A3B8", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.4, marginBottom: 10 }}>{c.label}</div>
-              <div style={{ fontSize: 26, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent, letterSpacing: -1 }}>
+              <div style={{ fontSize: 28, fontWeight: 800, fontFamily: "'JetBrains Mono',monospace", color: c.accent, letterSpacing: -1 }}>
                 {c.isMoney ? c.value.toLocaleString("en-US") + "$" : c.value}
               </div>
             </div>
@@ -5593,7 +5593,7 @@ function LoginScreen({ onLogin, users }) {
   );
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EBF5FF 0%, #F8FBFF 25%, #FFFFFF 50%, #F5F0FF 75%, #EBF5FF 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #0A0F1E 0%, #0F172A 30%, #1E1B4B 60%, #0A0F1E 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", position: "relative", overflow: "hidden" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <style>{mobileCSS}{`
         @keyframes sparkle { 0%,100% { opacity:0.3; transform:scale(0.8) rotate(0deg); } 50% { opacity:1; transform:scale(1.2) rotate(180deg); } }
@@ -5681,12 +5681,12 @@ function LoginScreen({ onLogin, users }) {
       <Dot x="70%" y="8%" size={9} color="#F472B6" />
 
       {/* ══ Login Card ══ */}
-      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(255,255,255,0.85)", backdropFilter: "blur(20px) saturate(180%)", WebkitBackdropFilter: "blur(20px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(226,232,240,0.8)", padding: "44px 40px", boxShadow: "0 24px 80px rgba(15,23,42,0.12), 0 8px 32px rgba(15,23,42,0.06), 0 0 0 1px rgba(255,255,255,0.7) inset", animation: "fadeSlideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1)", position: "relative", zIndex: 10 }}>
+      <div style={{ width: 440, maxWidth: "92vw", background: "rgba(15,23,42,0.85)", backdropFilter: "blur(24px) saturate(180%)", WebkitBackdropFilter: "blur(24px) saturate(180%)", borderRadius: 24, border: "1px solid rgba(99,102,241,0.25)", padding: "44px 40px", boxShadow: "0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(99,102,241,0.1) inset", animation: "fadeSlideUp 0.6s cubic-bezier(0.4, 0, 0.2, 1)", position: "relative", zIndex: 10 }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 6 }}>
           {I.logo}
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 24, color: "#0F172A", letterSpacing: -0.5 }}>Blitz CRM</span>
+          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 24, background: "linear-gradient(135deg, #38BDF8, #A78BFA)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", letterSpacing: -0.5 }}>Blitz CRM</span>
           <span style={{ fontSize: 11, color: "#0EA5E9", fontFamily: "'JetBrains Mono',monospace", background: "#EFF6FF", padding: "3px 12px", borderRadius: 20, border: "1px solid #BFDBFE", fontWeight: 600 }}>v{VERSION}</span>
         </div>
 
@@ -5704,16 +5704,16 @@ function LoginScreen({ onLogin, users }) {
         </div>
 
         <form onSubmit={submit} method="post" autoComplete="on">
-          <label htmlFor="login-email" style={{ display: "block", color: "#334155", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Email</label>
+          <label htmlFor="login-email" style={{ display: "block", color: "#94A3B8", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Email</label>
           <input id="login-email" name="email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com"
-            style={{ width: "100%", padding: "14px 18px", background: "#FFFFFF", border: "2px solid #E2E8F0", borderRadius: 14, color: "#0F172A", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#0EA5E9" }}
+            style={{ width: "100%", padding: "14px 18px", background: "rgba(30,41,59,0.8)", border: "2px solid rgba(99,102,241,0.2)", borderRadius: 14, color: "#F1F5F9", fontSize: 15, outline: "none", boxSizing: "border-box", marginBottom: 20, transition: "all 0.2s ease", caretColor: "#818CF8" }}
             onFocus={e => { e.target.style.borderColor = "#38BDF8"; e.target.style.boxShadow = "0 0 0 4px rgba(56,189,248,0.1)"; }}
             onBlur={e => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none"; }} />
 
           <label htmlFor="login-password" style={{ display: "block", color: "#334155", fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Password</label>
           <div style={{ position: "relative", marginBottom: 20 }}>
             <input id="login-password" name="password" type={showPass ? "text" : "password"} autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••"
-              style={{ width: "100%", padding: "14px 18px", paddingRight: 50, background: "#FFFFFF", border: "2px solid #E2E8F0", borderRadius: 14, color: "#0F172A", fontSize: 15, outline: "none", boxSizing: "border-box", transition: "all 0.2s ease", caretColor: "#0EA5E9" }}
+              style={{ width: "100%", padding: "14px 18px", paddingRight: 50, background: "rgba(30,41,59,0.8)", border: "2px solid rgba(99,102,241,0.2)", borderRadius: 14, color: "#F1F5F9", fontSize: 15, outline: "none", boxSizing: "border-box", transition: "all 0.2s ease", caretColor: "#818CF8" }}
               onFocus={e => { e.target.style.borderColor = "#38BDF8"; e.target.style.boxShadow = "0 0 0 4px rgba(56,189,248,0.1)"; }}
               onBlur={e => { e.target.style.borderColor = "#E2E8F0"; e.target.style.boxShadow = "none"; }} />
             <button type="button" onClick={() => setShowPass(!showPass)} tabIndex={-1}
@@ -5762,7 +5762,7 @@ function LoginScreen({ onLogin, users }) {
           )}
 
           <button type="submit" disabled={loading || blocked > 0}
-            style={{ width: "100%", padding: 16, background: loading ? "#93C5FD" : "linear-gradient(135deg, #0EA5E9 0%, #38BDF8 50%, #60C6FA 100%)", color: "#FFF", border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: loading ? "wait" : "pointer", boxShadow: loading ? "none" : "0 6px 30px rgba(14,165,233,0.35)", transition: "all 0.2s", letterSpacing: 0.5, marginTop: 8 }}
+            style={{ width: "100%", padding: 16, background: loading ? "rgba(99,102,241,0.4)" : "linear-gradient(135deg, #6366F1 0%, #818CF8 50%, #A78BFA 100%)", color: "#FFF", border: "none", borderRadius: 14, fontSize: 16, fontWeight: 800, cursor: loading ? "wait" : "pointer", boxShadow: loading ? "none" : "0 6px 30px rgba(99,102,241,0.45)", transition: "all 0.2s", letterSpacing: 0.5, marginTop: 8 }}
             onMouseEnter={e => { if (!loading) e.currentTarget.style.transform = "translateY(-1px)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
           >
@@ -5797,7 +5797,7 @@ function LoginScreen({ onLogin, users }) {
 /* ── Customer Payments Page ── */
 const CP_STATUS_OPTIONS = ["Open", "Pending", "Received", "Refund"];
 const CP_STATUS_COLORS = {
-  Open: { background: "#FEF3C7", color: "#92400E" },
+  Open: { background: "linear-gradient(135deg, #FEF3C7, #FDE68A)", color: "#92400E", border: "1px solid #FDE68A" },
   Pending: { background: "#818CF8", color: "#FFF" },
   Received: { background: "#10B981", color: "#FFF" },
   Refund: { background: "#EF4444", color: "#FFF" },
@@ -6125,7 +6125,7 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="customers" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#0EA5E9" />
 
@@ -6158,9 +6158,9 @@ function CustomerPayments({ user, onLogout, onNav, onAdmin, payments: rawCpPayme
         {/* Summary */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 28 }}>
           {[
-            { label: "Open Invoices", value: openPayments.length, accent: "#F59E0B", bg: "#FFFBEB", isMoney: false },
-            { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "#FFFBEB", isMoney: true },
-            { label: "Received This Month", value: receivedPayments.length, accent: "#10B981", bg: "#ECFDF5", isMoney: false },
+            { label: "Open Invoices", value: openPayments.length, accent: "#F59E0B", bg: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", isMoney: false },
+            { label: "Open Total", value: openTotal, accent: "#F59E0B", bg: "linear-gradient(135deg,#FFFBEB,#FEF3C7)", isMoney: true },
+            { label: "Received This Month", value: receivedPayments.length, accent: "#10B981", bg: "linear-gradient(135deg,#ECFDF5,#D1FAE5)", isMoney: false },
             { label: "Received Total", value: receivedTotal, accent: "#10B981", bg: "#ECFDF5", isMoney: true },
           ].map((c, i) => (
             <div key={i} style={{ background: c.bg, border: "1px solid #E2E8F0", borderRadius: 14, padding: "20px 22px", position: "relative", overflow: "hidden", boxShadow: "0 2px 10px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)", transition: "all 0.25s ease" }}>
@@ -6484,7 +6484,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="crg" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#F59E0B" />
 
@@ -7000,7 +7000,7 @@ function DailyCap({ user, onLogout, onNav, onAdmin, entries: rawEntries, setEntr
   const activeAgents = todayEntries.length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="dailycap" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#8B5CF6" />
 
@@ -7227,7 +7227,7 @@ function DealsForm({ deal, allDeals, onSave, onClose, userName }) {
       {error && <div style={{ color: "#DC2626", fontSize: 13, padding: "8px 12px", background: "rgba(220,38,38,0.08)", borderRadius: 8, marginBottom: 8, border: "1px solid rgba(220,38,38,0.2)" }}>{error}</div>}
       <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 8 }}>
         <button onClick={onClose} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14, fontWeight: 500 }}>Cancel</button>
-        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(16,185,129,0.3)" }}>{deal ? "Save Changes" : "Add Deal"}</button>
+        <button onClick={handleSave} style={{ padding: "10px 24px", borderRadius: 8, background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 15px rgba(16,185,129,0.3)" }}>{deal ? "Save Changes" : "Add Deal"}</button>
       </div>
     </>
   );
@@ -7342,7 +7342,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
   })();
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="deals" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#10B981" />
 
@@ -7360,7 +7360,7 @@ function DealsPage({ user, onLogout, onNav, onAdmin, deals: rawDealsPage, setDea
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", background: "#10B981", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
             >↕ Sort: {sortCol} {sortDir === "asc" ? "↑" : "↓"} ✕</button>}
             <button onClick={() => { setEditDeal(null); setModalOpen(true); }}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg,#10B981,#34D399)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)", whiteSpace: "nowrap" }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 20px", background: "linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%)", border: "none", borderRadius: 10, color: "#FFF", cursor: "pointer", fontSize: 14, fontWeight: 600, boxShadow: "0 4px 20px rgba(16,185,129,0.3)", whiteSpace: "nowrap" }}
             >{I.plus} New Offer</button>
           </div>
         </div>
@@ -7649,7 +7649,7 @@ function PartnersPage({ user, onLogout, onNav, onAdmin, partners: rawPartners, s
   const cardStyle = { background: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 14, padding: "16px 20px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #F8FBFF 0%, #F1F5F9 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #EEF2FF 0%, #F5F7FF 40%, #FAFBFF 100%)", fontFamily: "'Plus Jakarta Sans','Segoe UI',sans-serif", color: "#0F172A" }}>
       <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <BlitzHeader user={user} activePage="partners" userAccess={userAccess} onNav={onNav} onAdmin={() => onNav("admin")} onLogout={onLogout} accentColor="#EC4899" />
 
