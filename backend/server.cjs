@@ -69,7 +69,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "10.23";
+const VERSION = "10.25";
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -2193,6 +2193,59 @@ app.get("/api/versions", requireAuth, (req, res) => {
   const versions = {};
   endpoints.forEach(ep => { versions[ep] = getVersion(ep); });
   res.json({ versions, timestamp: Date.now() });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// v10.23: BACKUP DOWNLOAD & RESTORE
+// ═══════════════════════════════════════════════════════════════
+
+// Download full backup — all tables as a single JSON file
+app.get("/api/backup/download", requireAuth, (req, res) => {
+  try {
+    const backup = { version: VERSION, timestamp: Date.now(), date: new Date().toISOString(), tables: {} };
+    endpoints.forEach(ep => {
+      backup.tables[ep] = readJSON(ep + ".json", []);
+    });
+    // Include users with passwordHash stripped
+    backup.tables["users"] = (backup.tables["users"] || []).map(u => ({ email: u.email, name: u.name, pageAccess: u.pageAccess, lastLogin: u.lastLogin }));
+    res.setHeader("Content-Disposition", `attachment; filename="blitz-backup-${new Date().toISOString().slice(0,10)}.json"`);
+    res.setHeader("Content-Type", "application/json");
+    res.json(backup);
+    writeAuditLog("system", "backup_download", req.user?.email || "unknown", `Full backup downloaded (${endpoints.length} tables)`);
+    console.log(`📦 Backup downloaded by ${req.user?.email}`);
+  } catch (e) {
+    console.error("Backup download error:", e);
+    res.status(500).json({ error: "Backup failed" });
+  }
+});
+
+// Restore from backup file — replaces all table data
+app.post("/api/backup/restore", requireAuth, async (req, res) => {
+  try {
+    const { tables, version: backupVersion, date: backupDate } = req.body;
+    if (!tables || typeof tables !== "object") return res.status(400).json({ error: "Invalid backup format" });
+    
+    const restored = [];
+    for (const [ep, data] of Object.entries(tables)) {
+      if (!endpoints.includes(ep)) continue; // skip unknown tables
+      if (!Array.isArray(data)) continue;
+      // Skip users table restore to preserve local passwords/access
+      if (ep === "users") continue;
+      const file = ep + ".json";
+      const success = await lockedWrite(file, data, {
+        action: "restore", user: req.user?.email || "unknown",
+        details: `[${ep}] Restored ${data.length} records from backup (${backupDate || backupVersion || "unknown"})`
+      });
+      if (success) restored.push({ table: ep, count: data.length });
+    }
+    
+    writeAuditLog("system", "backup_restore", req.user?.email || "unknown", `Restored ${restored.length} tables from backup (${backupDate || "unknown"})`);
+    console.log(`📦 Backup restored by ${req.user?.email}: ${restored.map(r => `${r.table}(${r.count})`).join(", ")}`);
+    res.json({ ok: true, restored });
+  } catch (e) {
+    console.error("Backup restore error:", e);
+    res.status(500).json({ error: "Restore failed" });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════
