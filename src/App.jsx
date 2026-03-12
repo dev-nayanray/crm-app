@@ -422,7 +422,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "10.28";
+const VERSION = "11.00";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -4005,6 +4005,8 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   const [editSide, setEditSide] = useState(null); // 'affiliate' or 'brand'
   const [sortAff, setSortAff] = useState("manual");
   const [sortBrand, setSortBrand] = useState("manual");
+  const [sortAffToday, setSortAffToday] = useState(false);
+  const [sortBrandToday, setSortBrandToday] = useState(false);
   const userName = user?.name || user?.email || "";
 
   // v10.12: Load default affiliates & brands data
@@ -4142,6 +4144,8 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   const handleSort = (type) => {
     const setter = type === 'affiliate' ? setSortAff : setSortBrand;
     const current = type === 'affiliate' ? sortAff : sortBrand;
+    // Deactivate Today sort when switching to alpha
+    if (type === 'affiliate') setSortAffToday(false); else setSortBrandToday(false);
     if (current === "alpha") { setter("manual"); return; }
     setter("alpha");
     setCalcs(prev => {
@@ -4149,6 +4153,23 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
       const subset = arr.filter(r => r.type === type);
       const others = arr.filter(r => r.type !== type);
       subset.sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { numeric: true }));
+      return [...others, ...subset];
+    });
+  };
+
+  const handleSortToday = (type) => {
+    const isSortingToday = type === 'affiliate' ? sortAffToday : sortBrandToday;
+    const setToday = type === 'affiliate' ? setSortAffToday : setSortBrandToday;
+    const setAlpha = type === 'affiliate' ? setSortAff : setSortBrand;
+    if (isSortingToday) { setToday(false); return; } // toggle off
+    // Deactivate alpha sort
+    setAlpha("manual");
+    setToday(true);
+    setCalcs(prev => {
+      const arr = [...(prev || [])];
+      const subset = arr.filter(r => r.type === type);
+      const others = arr.filter(r => r.type !== type);
+      subset.sort((a, b) => parseNum(b.balanceWithCrg) - parseNum(a.balanceWithCrg));
       return [...others, ...subset];
     });
   };
@@ -4185,6 +4206,10 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             <button onClick={() => handleSort(type)} style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E2E8F0", background: sort === "alpha" ? "#0EA5E9" : "#FFF", color: sort === "alpha" ? "#FFF" : "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>A→Z</button>
+            <button
+              onClick={() => handleSortToday(type)}
+              title="Sort by Balance Today (high → low)"
+              style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E2E8F0", background: (type === 'affiliate' ? sortAffToday : sortBrandToday) ? "#F59E0B" : "#FFF", color: (type === 'affiliate' ? sortAffToday : sortBrandToday) ? "#FFF" : "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>$↓</button>
             <button onClick={() => addRow(type)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: isBrand ? "#7C3AED" : "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
           </div>
         </div>
@@ -4195,7 +4220,13 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                 <th style={{ ...thStyle, width: 30 }}>#</th>
                 <th style={thStyle}>{isBrand ? "Brand / Network" : "Affiliate"}</th>
                 <th style={{ ...thStyle, textAlign: "right" }}>Balance Yesterday</th>
-                <th style={{ ...thStyle, textAlign: "right" }}>Balance Today</th>
+                <th
+                  style={{ ...thStyle, textAlign: "right", cursor: "pointer", userSelect: "none" }}
+                  title="Click to sort high → low"
+                  onClick={() => handleSortToday(type)}
+                >
+                  Balance Today {(type === 'affiliate' ? sortAffToday : sortBrandToday) ? " ▼" : ""}
+                </th>
                 <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Active</th>
                 {isBrand && <th style={thStyle}>Comment</th>}
                 <th style={{ ...thStyle, width: 80, textAlign: "center" }}>Actions</th>
@@ -4297,21 +4328,26 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
           {renderTable(filteredBrand, 'brand', sortBrand)}
         </div>
 
-        {/* ═══ YESTERDAY PAYMENTS — Auto from CRM data ═══ */}
+        {/* ═══ YESTERDAY PAYMENTS — Auto from CRM data + Add/Edit/Delete ═══ */}
         {(() => {
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const yStr = yesterday.toISOString().split("T")[0];
           const today = new Date().toISOString().split("T")[0];
-          // Get payments from yesterday or today that are open/pending
-          const recentAffPay = (payments || []).filter(p => {
-            const d = p.paidDate || "";
-            return (d === yStr || d === today) && p.type !== "Brand Refund";
-          });
-          const recentCpPay = (cpPayments || []).filter(p => {
-            const d = p.paidDate || "";
-            return (d === yStr || d === today);
-          });
+
+          // Auto-populate: paidDate = yesterday OR (no paidDate but createdAt was yesterday)
+          const isYesterday = (p) => {
+            if (p.paidDate === yStr) return true;
+            if (!p.paidDate && p.createdAt) {
+              const d = new Date(p.createdAt).toISOString().split("T")[0];
+              return d === yStr;
+            }
+            return false;
+          };
+
+          const recentAffPay = (payments || []).filter(p => isYesterday(p) && p.type !== "Brand Refund");
+          const recentCpPay = (cpPayments || []).filter(p => isYesterday(p));
+
           const affPayTotal = recentAffPay.reduce((s, p) => s + parseNum(p.amount), 0);
           const affFeeTotal = recentAffPay.reduce((s, p) => { const f = String(p.fee || "0"); if (f.includes("%")) return s; return s + parseNum(f); }, 0);
           const cpPayTotal = recentCpPay.reduce((s, p) => s + parseNum(p.amount), 0);
@@ -4323,42 +4359,81 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
           const handleCpField = (id, field, value) => {
             setCpPayments(prev => prev.map(p => p.id === id ? { ...p, [field]: value, updatedAt: Date.now() } : p));
           };
+          const deleteAffPay = (id) => {
+            if (!confirm("Remove this affiliate payment?")) return;
+            trackDelete('payments', id);
+            setPayments(prev => prev.filter(p => p.id !== id));
+          };
+          const deleteCpPay = (id) => {
+            if (!confirm("Remove this brand payment?")) return;
+            trackDelete('customer-payments', id);
+            setCpPayments(prev => prev.filter(p => p.id !== id));
+          };
+          const addAffPay = () => {
+            const newP = { id: genId(), invoice: "", paidDate: yStr, status: "Open", amount: "", fee: "", openBy: user?.name || "", type: "Affiliate Payment", instructions: "", paymentHash: "", month: yesterday.getMonth(), year: yesterday.getFullYear(), createdAt: Date.now(), updatedAt: Date.now() };
+            setPayments(prev => [newP, ...(prev || [])]);
+          };
+          const addCpPay = () => {
+            const newP = { id: genId(), invoice: "", amount: "", fee: "", status: "Open", type: "Customer Payment", openBy: user?.name || "", paidDate: yStr, paymentHash: "", trcAddress: "", ercAddress: "", brand: "", walletMatched: false, month: yesterday.getMonth(), year: yesterday.getFullYear(), createdAt: Date.now(), updatedAt: Date.now() };
+            setCpPayments(prev => [newP, ...(prev || [])]);
+          };
 
           const miniInp = { padding: "3px 6px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 11, fontFamily: "'JetBrains Mono',monospace", background: "#FAFBFC", width: "100%" };
+          const miniSel = { padding: "3px 5px", borderRadius: 4, border: "1px solid #E2E8F0", fontSize: 10, background: "#FAFBFC", cursor: "pointer", width: "100%" };
+          const statusBg = (s) => s === "Paid" || s === "Received" ? "#D1FAE5" : s === "Open" ? "#FEF3C7" : "#DBEAFE";
+          const statusColor = (s) => s === "Paid" || s === "Received" ? "#065F46" : s === "Open" ? "#92400E" : "#1E40AF";
 
           return (
             <div style={{ marginTop: 36 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16, color: "#0F172A" }}>💳 Yesterday Payments</h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: "#0F172A" }}>💳 Yesterday Payments</h2>
+                <span style={{ padding: "3px 10px", borderRadius: 20, background: "#F0FDF4", border: "1px solid #BBF7D0", fontSize: 10, fontWeight: 700, color: "#15803D" }}>⟳ Auto-synced from Payments page · {yStr}</span>
+              </div>
               <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-                {/* Affiliate Payments */}
+
+                {/* ── Affiliate Payments ── */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#DC2626" }}>
-                    👤 Affiliate Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentAffPay.length})</span>
-                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#DC2626" }}>
+                      👤 Affiliate Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentAffPay.length})</span>
+                    </h3>
+                    <button onClick={addAffPay} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add Row</button>
+                  </div>
                   <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 340 }}>
                       <thead><tr>
                         <th style={thStyle}>Affiliate</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Status</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Status</th>
+                        <th style={{ ...thStyle, width: 30 }}></th>
                       </tr></thead>
                       <tbody>
-                        {recentAffPay.length === 0 && <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>No affiliate payments yesterday/today</td></tr>}
+                        {recentAffPay.length === 0 && (
+                          <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
+                            No affiliate payments for {yStr} — click "+ Add Row" to add one
+                          </td></tr>
+                        )}
                         {recentAffPay.map(p => (
                           <tr key={p.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
                             <td style={tdStyle}>
-                              <input value={p.invoice || ""} onChange={e => handlePayField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#0EA5E9" }} />
+                              <input value={p.invoice || ""} onChange={e => handlePayField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#0EA5E9" }} placeholder="Invoice / AFF ID" />
                               {getAffiliateName(p.invoice) && <div style={{ fontSize: 9, color: "#64748B", marginTop: 1 }}>{getAffiliateName(p.invoice)}</div>}
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
-                              <input value={p.amount || ""} onChange={e => handlePayField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} />
+                              <input value={p.amount || ""} onChange={e => handlePayField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} placeholder="0" />
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
-                              <input value={p.fee || ""} onChange={e => handlePayField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} />
+                              <input value={p.fee || ""} onChange={e => handlePayField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} placeholder="0" />
                             </td>
-                            <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: p.status === "Paid" ? "#D1FAE5" : p.status === "Open" ? "#FEF3C7" : "#DBEAFE", color: p.status === "Paid" ? "#065F46" : p.status === "Open" ? "#92400E" : "#1E40AF" }}>{p.status}</span>
+                            <td style={{ ...tdStyle, textAlign: "center", padding: "4px 6px" }}>
+                              <select value={p.status || "Open"} onChange={e => handlePayField(p.id, "status", e.target.value)}
+                                style={{ ...miniSel, background: statusBg(p.status), color: statusColor(p.status), fontWeight: 700 }}>
+                                {["Open", "On the way", "Approved to pay", "Paid"].map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "center", padding: "4px 4px" }}>
+                              <button onClick={() => deleteAffPay(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
                             </td>
                           </tr>
                         ))}
@@ -4367,40 +4442,55 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentAffPay.length})</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(affPayTotal)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(affFeeTotal)}</td>
-                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td colSpan={2} style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
                       </tr></tfoot>
                     </table>
                   </div>
                 </div>
 
-                {/* Brand/Customer Payments */}
+                {/* ── Brand / Customer Payments ── */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 700, color: "#7C3AED" }}>
-                    🏢 Brand Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentCpPay.length})</span>
-                  </h3>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: "#7C3AED" }}>
+                      🏢 Brand Payments <span style={{ fontSize: 11, color: "#64748B", fontWeight: 500 }}>({recentCpPay.length})</span>
+                    </h3>
+                    <button onClick={addCpPay} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#7C3AED", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add Row</button>
+                  </div>
                   <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 300 }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 340 }}>
                       <thead><tr>
                         <th style={thStyle}>Brand Name</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Amount</th>
                         <th style={{ ...thStyle, textAlign: "right" }}>Fee</th>
-                        <th style={{ ...thStyle, textAlign: "center", width: 50 }}>Status</th>
+                        <th style={{ ...thStyle, textAlign: "center", width: 80 }}>Status</th>
+                        <th style={{ ...thStyle, width: 30 }}></th>
                       </tr></thead>
                       <tbody>
-                        {recentCpPay.length === 0 && <tr><td colSpan={4} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>No brand payments yesterday/today</td></tr>}
+                        {recentCpPay.length === 0 && (
+                          <tr><td colSpan={5} style={{ ...tdStyle, textAlign: "center", padding: 20, color: "#CBD5E1", fontSize: 12 }}>
+                            No brand payments for {yStr} — click "+ Add Row" to add one
+                          </td></tr>
+                        )}
                         {recentCpPay.map(p => (
                           <tr key={p.id} onMouseEnter={e => e.currentTarget.style.background="#F8FAFC"} onMouseLeave={e => e.currentTarget.style.background=""}>
                             <td style={tdStyle}>
-                              <input value={p.invoice || ""} onChange={e => handleCpField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#7C3AED" }} />
+                              <input value={p.invoice || ""} onChange={e => handleCpField(p.id, "invoice", e.target.value)} style={{ ...miniInp, fontWeight: 700, color: "#7C3AED" }} placeholder="Invoice / Brand" />
+                              {p.brand && <div style={{ fontSize: 9, color: "#64748B", marginTop: 1 }}>{p.brand}</div>}
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
-                              <input value={p.amount || ""} onChange={e => handleCpField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} />
+                              <input value={p.amount || ""} onChange={e => handleCpField(p.id, "amount", e.target.value)} style={{ ...miniInp, textAlign: "right", fontWeight: 700, color: "#0F172A" }} placeholder="0" />
                             </td>
                             <td style={{ ...tdStyle, textAlign: "right" }}>
-                              <input value={p.fee || ""} onChange={e => handleCpField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} />
+                              <input value={p.fee || ""} onChange={e => handleCpField(p.id, "fee", e.target.value)} style={{ ...miniInp, textAlign: "right", color: "#0EA5E9" }} placeholder="0" />
                             </td>
-                            <td style={{ ...tdStyle, textAlign: "center" }}>
-                              <span style={{ padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: p.status === "Received" ? "#D1FAE5" : p.status === "Open" ? "#FEF3C7" : "#DBEAFE", color: p.status === "Received" ? "#065F46" : p.status === "Open" ? "#92400E" : "#1E40AF" }}>{p.status}</span>
+                            <td style={{ ...tdStyle, textAlign: "center", padding: "4px 6px" }}>
+                              <select value={p.status || "Open"} onChange={e => handleCpField(p.id, "status", e.target.value)}
+                                style={{ ...miniSel, background: statusBg(p.status), color: statusColor(p.status), fontWeight: 700 }}>
+                                {["Open", "Pending", "Received", "Refund"].map(s => <option key={s} value={s}>{s}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ ...tdStyle, textAlign: "center", padding: "4px 4px" }}>
+                              <button onClick={() => deleteCpPay(p.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#EF4444", fontSize: 14, padding: "2px 4px", borderRadius: 4 }} title="Delete">✕</button>
                             </td>
                           </tr>
                         ))}
@@ -4409,11 +4499,12 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
                         <td style={{ ...tdStyle, fontWeight: 700, borderTop: "2px solid #E2E8F0" }}>Total ({recentCpPay.length})</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 800, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace" }}>{fmtMoney(cpPayTotal)}</td>
                         <td style={{ ...tdStyle, textAlign: "right", fontWeight: 700, borderTop: "2px solid #E2E8F0", fontFamily: "'JetBrains Mono',monospace", color: "#0EA5E9" }}>{fmtMoney(cpFeeTotal)}</td>
-                        <td style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
+                        <td colSpan={2} style={{ ...tdStyle, borderTop: "2px solid #E2E8F0" }}></td>
                       </tr></tfoot>
                     </table>
                   </div>
                 </div>
+
               </div>
             </div>
           );
@@ -7912,8 +8003,31 @@ function AppInner() {
         apiGet('users'), apiGet('payments'), apiGet('customer-payments'), apiGet('crg-deals'), apiGet('daily-cap'), apiGet('deals'), apiGet('wallets'), apiGet('offers'), apiGet('partners'), apiGet('ftd-entries'), apiGet('daily-calcs-data'),
       ]);
       skipSave.current = true;
+      // v11.01: Handle users separately — server is ALWAYS source of truth for pageAccess
+      if (su !== null && Array.isArray(su)) {
+        const currentUsers = lsGet('users', null) || [];
+        const currentMap = new Map(currentUsers.map(u => [u.email, u]));
+        // Merge: server wins on pageAccess, preserve local passwordHash
+        const pollMerged = su.map(srv => {
+          const local = currentMap.get(srv.email);
+          return {
+            ...srv,
+            // pageAccess: always use server value (admin edits land here)
+            pageAccess: Array.isArray(srv.pageAccess) ? srv.pageAccess : (local?.pageAccess || []),
+            // passwordHash: never sent by server, keep local copy
+            passwordHash: local?.passwordHash || undefined,
+          };
+        });
+        const currentStr = JSON.stringify(currentUsers.map(u => ({email:u.email,pageAccess:u.pageAccess})).sort((a,b)=>a.email.localeCompare(b.email)));
+        const pollStr = JSON.stringify(pollMerged.map(u => ({email:u.email,pageAccess:u.pageAccess})).sort((a,b)=>a.email.localeCompare(b.email)));
+        if (currentStr !== pollStr) {
+          lsSave('users', pollMerged);
+          setUsers(pollMerged);
+        }
+      }
+
       const all = [
-        { d: su, s: setUsers, k: 'users' }, { d: sp, s: setPayments, k: 'payments' },
+        { d: sp, s: setPayments, k: 'payments' },
         { d: scp, s: setCpPayments, k: 'customer-payments' }, { d: scrg, s: setCrgDeals, k: 'crg-deals' },
         { d: sdc, s: setDcEntries, k: 'daily-cap' }, { d: sdl, s: setDealsData, k: 'deals' },
         { d: swl, s: setWalletsData, k: 'wallets' }, { d: spt, s: setPartnersData, k: 'partners' },
@@ -7964,9 +8078,19 @@ function AppInner() {
   const saveTimers = useRef({});
   const lastSavedHash = useRef({}); // v10.28: tracks what was ACTUALLY sent to server
 
+  // v11.01: Track the last updatedAt seen in users — only push users to server when admin made a real edit
+  const lastUsersUpdatedAt = useRef(0);
+
   const debouncedSave = (table, data) => {
     if (!serverFetchDone.current || !loaded || skipSave.current) return;
     if (!Array.isArray(data)) return;
+    // v11.01: For users table, only push if an admin edit happened (updatedAt changed)
+    // This prevents the polling merge from triggering a redundant users save that could overwrite pageAccess
+    if (table === 'users') {
+      const maxUpdatedAt = Math.max(0, ...data.map(u => u.updatedAt || 0));
+      if (maxUpdatedAt <= lastUsersUpdatedAt.current) return; // No admin edit since last save
+      lastUsersUpdatedAt.current = maxUpdatedAt;
+    }
     const json = JSON.stringify(data);
     // v10.28: Skip if identical to what we LAST SENT to server (not just baseline)
     if (json === (lastSavedHash.current[table] || null)) return;
