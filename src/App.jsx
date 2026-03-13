@@ -666,7 +666,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "12.04";
+const VERSION = "12.10";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1420,6 +1420,7 @@ const AGENT_ALIASES = {
   "john leon": "John", "johnleon": "John", "john l": "John",
   "kate": "Katie", "katey": "Katie",
   "kristy": "Oksana", "kristy b": "Oksana",
+  "oleksandra": "Alex", "oleksandra v": "Alex", "oleks": "Alex",
 };
 function normalizeAgent(name) {
   if (!name) return name;
@@ -3377,7 +3378,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
             <div style={{ ...cardStyle, marginBottom: 28 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>🎯 {MONTHS[now.getMonth()]} — Daily Sales & Targets</div>
-                {isAdmin(user.email) && <button onClick={() => { setEditTgt(!editTgt); setTmpTgt({...savedTgt}); }} style={{ padding: "5px 14px", borderRadius: 6, background: editTgt ? "#EF4444" : "#0EA5E9", border: "none", color: "#FFF", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{editTgt ? "Cancel" : "Set Targets"}</button>}
+                {isAdmin(user.email) && <span style={{ fontSize: 10, color: "#94A3B8", fontStyle: "italic" }}>Edit targets in Settings → Agent Targets</span>}
               </div>
               {editTgt && (
                 <div style={{ marginBottom: 12, padding: 12, background: "#F8FAFC", borderRadius: 8 }}>
@@ -3438,6 +3439,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                     <th style={{ ...thC, color: "#8B5CF6" }}>Tgt</th>
                     <th style={{ ...thC, color: "#8B5CF6" }}>Avg/d</th>
                     <th style={{ ...thC, color: "#64748B", borderLeft: "2px solid #E2E8F0" }}>Status</th>
+                    {isAdmin(user.email) && <th style={{ ...thC, color: "#EF4444" }}></th>}
                   </tr></thead>
                   <tbody>{allA.filter(a => (mAgentAff[a] || 0) > 0 || (mAgentBrand[a] || 0) > 0 || (tAgentAff[a] || 0) > 0 || (tAgentBrand[a] || 0) > 0 || getAgentTgt(a)[0] > 0 || getAgentTgt(a)[1] > 0).map(agent => {
                     const bM = mAgentBrand[agent] || 0; const aM = mAgentAff[agent] || 0;
@@ -3454,13 +3456,31 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                         <td style={{ padding: "7px 6px" }}><span style={{ display: "inline-block", padding: "2px 0", background: getPersonColor(agent), color: "#FFF", fontWeight: 700, fontSize: 10, textAlign: "center", width: 65, borderRadius: 4 }}>{agent}</span></td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: bToday > 0 ? "#10B981" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{bToday}</td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{bM}{bPct !== null && <span style={{ fontSize: 8, color: pc(bPct), marginLeft: 2 }}>({bPct}%)</span>}</td>
-                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: bTgt > 0 ? "#10B981" : "#CBD5E1" }}>{bTgt || "—"}</td>
+                        <td style={{ padding: "3px 4px", textAlign: "center" }}>
+                          {isAdmin(user.email) ? (
+                            <input type="number" defaultValue={bTgt || ""} placeholder="—"
+                              onBlur={e => { const v = e.target.value.trim(); const p = String(savedTgt[agent] || ",").split(","); p[0] = v; const newTgt = { ...savedTgt, [agent]: p.join(",") }; localStorage.setItem(targetKey, JSON.stringify(newTgt)); toast("✅ Target saved"); window.location.reload(); }}
+                              style={{ width: 44, padding: "2px 4px", border: "1px solid #A7F3D0", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: "#10B981", textAlign: "center", background: "#F0FDF4" }} />
+                          ) : <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: bTgt > 0 ? "#10B981" : "#CBD5E1" }}>{bTgt || "—"}</span>}
+                        </td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#94A3B8" }}>{bAvg}</td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: aToday > 0 ? "#8B5CF6" : "#CBD5E1", borderLeft: "2px solid #E2E8F0" }}>{aToday}</td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#334155" }}>{aM}{aPct !== null && <span style={{ fontSize: 8, color: pc(aPct), marginLeft: 2 }}>({aPct}%)</span>}</td>
-                        <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: aTgt > 0 ? "#8B5CF6" : "#CBD5E1" }}>{aTgt || "—"}</td>
+                        <td style={{ padding: "3px 4px", textAlign: "center" }}>
+                          {isAdmin(user.email) ? (
+                            <input type="number" defaultValue={aTgt || ""} placeholder="—"
+                              onBlur={e => { const v = e.target.value.trim(); const p = String(savedTgt[agent] || ",").split(","); p[1] = v; const newTgt = { ...savedTgt, [agent]: p.join(",") }; localStorage.setItem(targetKey, JSON.stringify(newTgt)); toast("✅ Target saved"); window.location.reload(); }}
+                              style={{ width: 44, padding: "2px 4px", border: "1px solid #C4B5FD", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono',monospace", color: "#8B5CF6", textAlign: "center", background: "#F5F3FF" }} />
+                          ) : <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: aTgt > 0 ? "#8B5CF6" : "#CBD5E1" }}>{aTgt || "—"}</span>}
+                        </td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#94A3B8" }}>{aAvg}</td>
                         <td style={{ padding: "5px 4px", textAlign: "center", fontSize: 13, borderLeft: "2px solid #E2E8F0" }}>{completed ? "🏆" : onTrack ? "✓" : "⚠"}</td>
+                        {isAdmin(user.email) && (
+                          <td style={{ padding: "3px 4px", textAlign: "center" }}>
+                            <button onClick={() => { if (window.confirm(`Remove ${agent} from targets?`)) { const newTgt = { ...savedTgt }; delete newTgt[agent]; localStorage.setItem(targetKey, JSON.stringify(newTgt)); toast(`🗑 ${agent} removed`); window.location.reload(); } }}
+                              style={{ background: "#FEE2E2", border: "1px solid #FECACA", borderRadius: 4, padding: "2px 7px", cursor: "pointer", color: "#EF4444", fontSize: 13, fontWeight: 700, lineHeight: 1 }} title="Remove agent">×</button>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}</tbody>
@@ -3475,6 +3495,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                     <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#8B5CF6" }}>{totalAffTgt || "—"}</td>
                     <td style={{ padding: "5px 4px", textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 10, color: "#64748B" }}>{avgAff}</td>
                     <td style={{ borderLeft: "2px solid #E2E8F0" }}></td>
+                    {isAdmin(user.email) && <td></td>}
                   </tr></tfoot>
                 </table>
                 <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4 }}>Day {dayOfMonth}/{daysInMonth} — {Math.round(pace * 100)}% through month</div>
@@ -3587,7 +3608,7 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
 // ═══════════════════════════════════════════════════════════════
 // FTDS INFO PAGE — Full CRUD table with inline edit (v9.09)
 // ═══════════════════════════════════════════════════════════════
-function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setFtdEntries, userAccess }) {
+function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setFtdEntries, crgDeals: rawCrg, setCrgDeals, userAccess }) {
   const crg = Array.isArray(rawFtd) ? rawFtd : [];
   const now = new Date();
   const today = now.toISOString().split("T")[0];
@@ -3639,8 +3660,43 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
   const fmtDate = (ds) => { if (!ds) return "—"; const [y, m, d] = ds.split("-"); const dt = new Date(ds + "T00:00:00"); const dn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]; return `${dn[dt.getDay()]}, ${d}/${m}/${y}`; };
 
   // ── CRUD handlers ──
+  // v12.08: Auto-sync FTD count to CRG Deals when ftd field is updated
+  const syncFtdToCrg = (ftdEntry, newFtdVal) => {
+    if (!setCrgDeals || !rawCrg) return;
+    const ftdNum = parseInt(newFtdVal) || 0;
+    if (ftdNum <= 0) return;
+    const affRaw = (ftdEntry.affiliate || "").toLowerCase();
+    const brandRaw = (ftdEntry.brokerCap || "").toLowerCase();
+    const entryDate = ftdEntry.date || "";
+    // Find matching CRG deal rows by affiliate ID or brand name on same date
+    setCrgDeals(prev => prev.map(deal => {
+      if ((deal.date || "") !== entryDate) return deal;
+      const dealAff = (deal.affiliate || "").toLowerCase();
+      const dealBrand = (deal.broker || deal.brokerCap || "").toLowerCase();
+      // Match by affiliate: check if aff IDs overlap
+      const affIdMatch = affRaw.match(/\d+/);
+      const dealAffIdMatch = dealAff.match(/\d+/);
+      const affMatch = affIdMatch && dealAffIdMatch && affIdMatch[0] === dealAffIdMatch[0];
+      // Match by brand: check if brand name overlaps
+      const brandMatch = brandRaw.length > 2 && dealBrand.length > 2 && (brandRaw.includes(dealBrand.split(" ")[0]) || dealBrand.includes(brandRaw.split(" ")[0]));
+      if (affMatch || brandMatch) {
+        const existingFtd = parseInt(deal.ftd) || 0;
+        return { ...deal, ftd: String(existingFtd + ftdNum), updatedAt: Date.now() };
+      }
+      return deal;
+    }));
+  };
+
   const updateField = (id, field, value) => {
-    setFtdEntries(prev => prev.map(d => d.id === id ? { ...d, [field]: value } : d));
+    setFtdEntries(prev => {
+      const updated = prev.map(d => d.id === id ? { ...d, [field]: value } : d);
+      // Auto-sync FTD count to CRG Deals
+      if (field === 'ftd') {
+        const entry = prev.find(d => d.id === id);
+        if (entry) syncFtdToCrg(entry, value);
+      }
+      return updated;
+    });
   };
 
   const handleDelete = (id) => {
@@ -3685,9 +3741,11 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
       started: newFtd.started || false,
     };
     setFtdEntries(prev => [entry, ...prev]);
-    setNewFtd({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "" });
+    // Auto-sync FTD count to CRG Deals on add
+    if (parseInt(entry.ftd) > 0) syncFtdToCrg(entry, entry.ftd);
+    setNewFtd({ affiliate: "", brokerCap: "", cap: "", capReceived: "", ftd: "", started: false, date: today, hours: "", funnel: "", manageAff: "", time: "" });
     setAddOpen(false);
-    toast("✅ FTD entry added");
+    toast("✅ FTD entry added — CRG Deals updated");
   };
 
   const toggleSelect = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -3780,6 +3838,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
                       <th style={thS}>Brand</th>
                       <th style={thS}>Brand ID</th>
                       <th style={thS}>FTD</th>
+                      <th style={thS}>Time</th>
                       <th style={{ ...thS, width: 50 }}>Actions</th>
                     </tr>
                   </thead>
@@ -3804,6 +3863,9 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
                           <td style={tdS}><InlineCell value={brandName} onSave={v => { const newBroker = brandId ? `${brandId} ${v}` : v; updateField(d.id, "brokerCap", newBroker); }} style={{ fontWeight: 600, color: "#334155", fontSize: 13, padding: "0 8px" }} /></td>
                           <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#8B5CF6", fontWeight: 700 }}>{brandId || "—"}</td>
                           <td style={tdS}><InlineCell value={String(d.ftd || "0")} onSave={v => updateField(d.id, "ftd", v)} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, fontWeight: 700, color: parseInt(d.ftd) > 0 ? "#10B981" : "#CBD5E1", padding: "0 8px", textAlign: "center" }} /></td>
+                          <td style={{ ...tdS, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#64748B" }}>
+                            <InlineCell value={d.time || ""} onSave={v => updateField(d.id, "time", v)} placeholder="HH:MM" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#64748B", padding: "0 8px", minWidth: 60 }} />
+                          </td>
                           <td style={tdS}>
                             <button onClick={() => handleDelete(d.id)} title="Delete" style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 6, padding: 4, cursor: "pointer", color: "#DC2626", display: "flex", fontSize: 11 }}>{I.trash}</button>
                           </td>
@@ -3833,6 +3895,7 @@ function FtdsInfoPage({ user, onLogout, onNav, onAdmin, ftdEntries: rawFtd, setF
             <Field label="Country"><input style={inp} value={newFtd.country} onChange={e => setNewFtd(p => ({ ...p, country: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4) }))} placeholder="e.g. UK, DE, ES" maxLength={4} /></Field>
             <Field label="FTD Count"><input style={inp} type="number" value={newFtd.ftd} onChange={e => setNewFtd(p => ({ ...p, ftd: e.target.value }))} placeholder="0" /></Field>
             <Field label="Date"><input style={inp} type="date" value={newFtd.date} onChange={e => setNewFtd(p => ({ ...p, date: e.target.value }))} /></Field>
+            <Field label="Time (HH:MM)"><input style={inp} type="time" value={newFtd.time || ""} onChange={e => setNewFtd(p => ({ ...p, time: e.target.value }))} placeholder="e.g. 14:30" /></Field>
           </div>
           <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 16 }}>
             <button onClick={() => setAddOpen(false)} style={{ padding: "10px 20px", borderRadius: 8, background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", cursor: "pointer", fontSize: 14 }}>Cancel</button>
@@ -4405,7 +4468,9 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   const brands = data.filter(r => r.type === 'brand');
 
   // Component-level: yesterday payment helpers (used in both Yesterday Payments and PNL Daily sections)
-  const _yesterday = new Date(); _yesterday.setDate(_yesterday.getDate() - 1);
+  // v12.07: Use calcDate as "today" so Yesterday Payments shows the day before the selected date
+  const _calcDateObj = calcDate ? new Date(calcDate + 'T12:00:00') : new Date();
+  const _yesterday = new Date(_calcDateObj); _yesterday.setDate(_yesterday.getDate() - 1);
   const _yStr = _yesterday.toISOString().split("T")[0];
   const _isYesterday = (p) => {
     if (p.paidDate === _yStr) return true;
@@ -4488,6 +4553,48 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
     });
   };
 
+  // v12.07: Auto-add missing affiliates/brands to PNL tables when payments exist for them
+  React.useEffect(() => {
+    if (!recentAffPay.length && !recentCpPay.length) return;
+    setCalcs(prev => {
+      if (!prev) return prev;
+      let changed = false;
+      const updated = [...prev];
+
+      // Check affiliate payments — add missing affiliates
+      recentAffPay.forEach(p => {
+        const inv = (p.invoice || "").toString().trim().toLowerCase();
+        const payName = (p.affiliateName || p.name || inv).toLowerCase();
+        const exists = updated.filter(r => r.type === 'affiliate').some(r => {
+          const rName = (r.name || "").toLowerCase();
+          const rId = (r.id || "").toString();
+          return rId === inv || rName.includes(payName.split(" ")[0]) || payName.includes(rName.split(" ")[0]);
+        });
+        if (!exists && inv) {
+          updated.push({ id: genId(), type: 'affiliate', name: p.affiliateName || p.invoice || inv, balanceNoCrg: "", balanceWithCrg: "", transferred: p.amount || "", sent: false, comment: "Auto-added from Yesterday Payments", updatedAt: Date.now(), createdAt: Date.now() });
+          changed = true;
+        }
+      });
+
+      // Check brand payments — add missing brands
+      recentCpPay.forEach(p => {
+        const bName = (p.brand || p.invoice || "").toLowerCase().trim();
+        if (!bName) return;
+        const exists = updated.filter(r => r.type === 'brand').some(r => {
+          const rName = (r.name || "").toLowerCase().replace(/\s*\(id.*\)$/i, "").trim();
+          return rName && (bName.includes(rName.split(" ")[0]) || rName.includes(bName.split(" ")[0]));
+        });
+        if (!exists) {
+          updated.push({ id: genId(), type: 'brand', name: p.brand || p.invoice || bName, balanceNoCrg: "", balanceWithCrg: "", transferred: p.amount || "", sent: false, comment: "Auto-added from Yesterday Payments", updatedAt: Date.now(), createdAt: Date.now() });
+          changed = true;
+        }
+      });
+
+      return changed ? updated : prev;
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_yStr]);
+
   const matchSearch = r => {
     if (!search) return true;
     const q = search.toLowerCase();
@@ -4525,6 +4632,7 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
               title="Sort by Balance Today (high → low)"
               style={{ padding: "5px 10px", borderRadius: 6, border: "1px solid #E2E8F0", background: (type === 'affiliate' ? sortAffToday : sortBrandToday) ? "#F59E0B" : "#FFF", color: (type === 'affiliate' ? sortAffToday : sortBrandToday) ? "#FFF" : "#64748B", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>$↓</button>
             <button onClick={() => addRow(type)} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: isBrand ? "#7C3AED" : "#DC2626", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+            <button onClick={() => { setCalcs(prev => prev ? [...prev] : prev); toast("✅ Saved!"); }} style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#059669", color: "#FFF", fontSize: 11, fontWeight: 700, cursor: "pointer" }} title="Save changes to server">💾 Save</button>
           </div>
         </div>
         <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #E2E8F0", background: "#FFF" }}>
@@ -8601,7 +8709,7 @@ function AppInner() {
   if (page === "deals" && canAccess("deals")) return (<><DealsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} deals={dealsData} setDeals={setDealsData} userAccess={userAccess} /></>);
   if (page === "partners" && canAccess("partners")) return (<><PartnersPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} partners={partnersData} setPartners={setPartnersData} userAccess={userAccess} /></>);
   if (page === "monthlystats" && canAccess("monthlystats")) return (<><MonthlyStatsPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} payments={payments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
-  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} ftdEntries={ftdEntries} setFtdEntries={setFtdEntries} userAccess={userAccess} /></>);
+  if (page === "ftdsinfo" && canAccess("ftdsinfo")) return (<><FtdsInfoPage user={user} onLogout={handleLogout} onNav={setPage} onAdmin={() => setPage("admin")} ftdEntries={ftdEntries} setFtdEntries={setFtdEntries} crgDeals={crgDeals} setCrgDeals={setCrgDeals} userAccess={userAccess} /></>);
   if (page === "dailycalcs" && canAccess("dailycalcs")) return (<><DailyCalcsPage user={user} onLogout={handleLogout} onNav={setPage} calcs={dailyCalcs} setCalcs={setDailyCalcs} payments={payments} setPayments={setPayments} cpPayments={cpPayments} setCpPayments={setCpPayments} userAccess={userAccess} /></>);
   if (page === "settings") return (<><SettingsPage user={user} onLogout={handleLogout} onNav={setPage} userAccess={userAccess} /></>);
   return (<><OverviewDashboard user={user} onLogout={handleLogout} onNav={setPage} payments={payments} crgDeals={crgDeals} dcEntries={dcEntries} cpPayments={cpPayments} dealsData={dealsData} partnersData={partnersData} userAccess={userAccess} /></>);
