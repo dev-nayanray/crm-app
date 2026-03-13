@@ -1,33 +1,18 @@
 {
-  "name": "crm-app",
-  "version": "1.0.0",
-  "description": "Blitz CRM App",
-  "main": "vite.config.js",
+  "name": "blitz-crm-lab",
+  "version": "10.28.0",
+  "description": "Blitz CRM v10.28 Lab Environment",
+  "main": "server.cjs",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "start:backend": "node backend/server.cjs",
-    "dev:backend": "nodemon backend/server.cjs"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/dev-nayanray/crm-app.git"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/dev-nayanray/crm-app/issues"
-  },
-  "homepage": "https://github.com/dev-nayanray/crm-app#readme",
-  "devDependencies": {
-    "vite": "^5.4.8"
+    "start": "node server.cjs"
   },
   "dependencies": {
-    "cors": "^2.8.6",
-    "express": "^5.2.1",
-    "node-telegram-bot-api": "^0.67.0",
-    "ws": "^8.19.0"
+    "adm-zip": "^0.5.16",
+    "archiver": "^7.0.1",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "multer": "^2.1.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "ws": "^8.17.0"
   }
 }
