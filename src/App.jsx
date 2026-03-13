@@ -666,7 +666,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "12.02";
+const VERSION = "12.04";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -8411,6 +8411,18 @@ function AppInner() {
       const setter = setters[msg.table];
       if (setter) {
         const lsData = lsGet(msg.table, null) || [];
+        // v12.03 FIX: For users table, server is authoritative — replace, don't merge
+        // (mergeByID would re-add deleted users)
+        if (msg.table === 'users') {
+          const serverUsers = msg.data;
+          if (JSON.stringify(serverUsers) !== JSON.stringify(lsData)) {
+            skipSave.current = true;
+            lsSave('users', serverUsers);
+            setUsers(serverUsers);
+            setTimeout(() => { skipSave.current = false; }, 2000);
+          }
+          return;
+        }
         const merged = mergeByID(lsData, msg.data, msg.table, 'sync');
         if (JSON.stringify(merged) !== JSON.stringify(lsData)) {
           skipSave.current = true;
