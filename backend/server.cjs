@@ -1,4 +1,4 @@
-// Blitz CRM Server — v12.10 (2026-03-13)
+// Blitz CRM Server — v12.11 (2026-03-13)
 // Load environment variables
 // require("dotenv").config();
 
@@ -61,7 +61,18 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
-const screenshotModule = require("./screenshot.cjs");
+// v12.10: Safe require for screenshot module — falls back to stub if file missing
+let screenshotModule;
+try {
+  screenshotModule = require("./screenshot.cjs");
+} catch (e) {
+  console.warn('⚠️  screenshot.cjs not found — screenshot features disabled');
+  screenshotModule = {
+    takeScreenshot: async () => ({ ok: false, error: 'screenshot.cjs not found' }),
+    sendReport: async () => ({ ok: false, error: 'screenshot.cjs not found' }),
+    isAvailable: () => false,
+  };
+}
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -109,7 +120,7 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "12.10";
+const VERSION = "12.11";
 
 // ═══════════════════════════════════════════════
 // FILE-BASED LOGGING SYSTEM v12.04
@@ -4631,7 +4642,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🛡️  Auto-ban attackers + path traversal block ║`);
   console.log(`║  🧹 ID-based dedup (no more record collapse)  ║`);
   console.log(`║  🪦 Tombstone system (7-day anti-resurrect)   ║`);
-  console.log(`║  🔧 v12.10: Leadgreed FTD bot integration      ║`);
+  console.log(`║  🔧 v12.11: Build errors fixed (duplicate CSS keys)      ║`);
   console.log(`║  🔧 v12.08: FTD-CRG sync + Time column         ║`);
   console.log(`║  🔧 v12.07: Ghost records + date logic fixed   ║`);
   console.log(`║  🔧 v12.04: File-based logging to /logs/       ║`);
