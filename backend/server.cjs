@@ -3360,6 +3360,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   const chatIdStr = String(msg.chat.id);
   if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text && msg.text.includes('Deposit from')) {
     try {
+      const parseLeadgreedDeposit = require('./parseLeadgreedDeposit.js');
       const ftd = parseLeadgreedDeposit(msg.text);
       if (ftd) {
         await saveFTD(ftd, msg);
