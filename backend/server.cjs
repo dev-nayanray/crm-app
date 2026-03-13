@@ -3259,8 +3259,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     };
   }
 
-  async function saveFTD(ftd, msg) {
-    const ftds = readJSON("ftd-entries.json", []);
+
     ftds.unshift(ftd);
     
     // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
