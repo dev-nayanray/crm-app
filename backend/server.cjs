@@ -3358,17 +3358,22 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   }
 // Leadgreed FTD listener (-5195790399) — supports BOTH 🏦 format AND "Deposit from..." format
   const chatIdStr = String(msg.chat.id);
+  console.log(`💬 Leadgreed Deposit test: "${msg.text.substring(0,50)}..."`);
   if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text && msg.text.includes('Deposit from')) {
     try {
+      console.log('🔍 Parsing Leadgreed Deposit...');
       const parseLeadgreedDeposit = require('./parseLeadgreedDeposit.js');
       const ftd = parseLeadgreedDeposit(msg.text);
       if (ftd) {
+        console.log('✅ Deposit parsed:', JSON.stringify(ftd, null, 1));
         await saveFTD(ftd, msg);
-        structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliate: `${ftd.affiliateId}-${ftd.affiliateName}`, broker: `${ftd.brokerId}-${ftd.brokerName}` });
-        console.log(`✅ Deposit FTD saved: ${ftd.country} ${ftd.affiliateId}-${ftd.affiliateName} → ${ftd.brokerId}-${ftd.brokerName}`);
+        structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliateId: ftd.affiliateId });
+        bot.sendMessage(msg.chat.id, `✅ Deposit FTD saved!\n${ftd.country}\n${ftd.affiliateName} → ${ftd.brokerName}`);
+      } else {
+        console.log('❌ Deposit parse failed - no FTD object');
       }
     } catch (err) {
-      console.error("❌ Deposit FTD parse error:", err.message);
+      console.error("❌ Deposit FTD parse error:", err.message, err.stack);
     }
     return;
   }
