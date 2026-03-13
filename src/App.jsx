@@ -666,7 +666,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "12.00";
+const VERSION = "12.02";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1419,6 +1419,7 @@ const TEAM_NAMES_REF = { current: [...TEAM_NAMES_DEFAULT] };
 const AGENT_ALIASES = {
   "john leon": "John", "johnleon": "John", "john l": "John",
   "kate": "Katie", "katey": "Katie",
+  "kristy": "Oksana", "kristy b": "Oksana",
 };
 function normalizeAgent(name) {
   if (!name) return name;
@@ -3327,9 +3328,39 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
           const todayBrands = todayDc.reduce((s, d) => s + (parseInt(d.brands) || 0), 0);
           const todayAff = todayDc.reduce((s, d) => s + (parseInt(d.affiliates) || 0), 0);
           const mAgentAff = {}; const mAgentBrand = {};
-          monthDcAll.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
+          monthDcAll.forEach(d => {
+            let a = normalizeAgent((d.agent || "").trim());
+            if (!a) return;
+            // Split Alex/Kate (and similar combos) 50/50 into Alex and Katie
+            if (/alex.*kate|kate.*alex/i.test(a)) {
+              const aff = parseInt(d.affiliates) || 0;
+              const brd = parseInt(d.brands) || 0;
+              mAgentAff["Alex"] = (mAgentAff["Alex"] || 0) + Math.round(aff / 2);
+              mAgentBrand["Alex"] = (mAgentBrand["Alex"] || 0) + Math.round(brd / 2);
+              mAgentAff["Katie"] = (mAgentAff["Katie"] || 0) + Math.floor(aff / 2);
+              mAgentBrand["Katie"] = (mAgentBrand["Katie"] || 0) + Math.floor(brd / 2);
+              return;
+            }
+            mAgentAff[a] = (mAgentAff[a] || 0) + (parseInt(d.affiliates) || 0);
+            mAgentBrand[a] = (mAgentBrand[a] || 0) + (parseInt(d.brands) || 0);
+          });
           const tAgentAff = {}; const tAgentBrand = {};
-          todayDc.forEach(d => { const a = normalizeAgent((d.agent || "").trim()); if (!a) return; tAgentAff[a] = (tAgentAff[a] || 0) + (parseInt(d.affiliates) || 0); tAgentBrand[a] = (tAgentBrand[a] || 0) + (parseInt(d.brands) || 0); });
+          todayDc.forEach(d => {
+            let a = normalizeAgent((d.agent || "").trim());
+            if (!a) return;
+            // Split Alex/Kate 50/50 for today too
+            if (/alex.*kate|kate.*alex/i.test(a)) {
+              const aff = parseInt(d.affiliates) || 0;
+              const brd = parseInt(d.brands) || 0;
+              tAgentAff["Alex"] = (tAgentAff["Alex"] || 0) + Math.round(aff / 2);
+              tAgentBrand["Alex"] = (tAgentBrand["Alex"] || 0) + Math.round(brd / 2);
+              tAgentAff["Katie"] = (tAgentAff["Katie"] || 0) + Math.floor(aff / 2);
+              tAgentBrand["Katie"] = (tAgentBrand["Katie"] || 0) + Math.floor(brd / 2);
+              return;
+            }
+            tAgentAff[a] = (tAgentAff[a] || 0) + (parseInt(d.affiliates) || 0);
+            tAgentBrand[a] = (tAgentBrand[a] || 0) + (parseInt(d.brands) || 0);
+          });
           const totalBrands = Object.values(mAgentBrand).reduce((s, v) => s + v, 0);
           const totalAff = Object.values(mAgentAff).reduce((s, v) => s + v, 0);
           const avgBrands = dayOfMonth > 0 ? (totalBrands / dayOfMonth).toFixed(1) : 0;
@@ -3361,6 +3392,8 @@ function OverviewDashboard({ user, onLogout, onNav, payments: rawOvPayments, crg
                         <span style={{ fontSize: 9, color: "#8B5CF6", fontWeight: 700 }}>A:</span>
                         <input value={cur[1] || ""} onChange={e => { const p = String(tmpTgt[agent] || ",").split(","); p[1] = e.target.value; setTmpTgt(prev => ({ ...prev, [agent]: p.join(",") })); }}
                           style={{ width: 52, padding: "3px 4px", border: "1px solid #C4B5FD", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }} placeholder="0" type="number" />
+                        <button onClick={() => { if (window.confirm(`Remove ${agent} from targets?`)) { setTmpTgt(prev => { const n = {...prev}; delete n[agent]; return n; }); } }}
+                          style={{ marginLeft: "auto", padding: "2px 6px", borderRadius: 4, background: "#FEE2E2", border: "1px solid #FECACA", color: "#EF4444", cursor: "pointer", fontSize: 11, fontWeight: 700, lineHeight: 1 }} title="Remove agent">×</button>
                       </div>
                     ); })}
                   </div>
@@ -4371,6 +4404,20 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
   const affiliates = data.filter(r => r.type === 'affiliate');
   const brands = data.filter(r => r.type === 'brand');
 
+  // Component-level: yesterday payment helpers (used in both Yesterday Payments and PNL Daily sections)
+  const _yesterday = new Date(); _yesterday.setDate(_yesterday.getDate() - 1);
+  const _yStr = _yesterday.toISOString().split("T")[0];
+  const _isYesterday = (p) => {
+    if (p.paidDate === _yStr) return true;
+    if (!p.paidDate && p.createdAt) {
+      const d = new Date(p.createdAt).toISOString().split("T")[0];
+      return d === _yStr;
+    }
+    return false;
+  };
+  const recentAffPay = (payments || []).filter(p => _isYesterday(p) && p.type !== "Brand Refund");
+  const recentCpPay = (cpPayments || []).filter(p => _isYesterday(p));
+
   const addRow = (type) => {
     const base = { id: genId(), type, name: "", updatedAt: Date.now(), createdAt: Date.now() };
     if (type === 'buy-affiliate' || type === 'buy-brand') {
@@ -4622,9 +4669,6 @@ function DailyCalcsPage({ user, onLogout, onNav, calcs, setCalcs, payments, setP
             }
             return false;
           };
-
-          const recentAffPay = (payments || []).filter(p => isYesterday(p) && p.type !== "Brand Refund");
-          const recentCpPay = (cpPayments || []).filter(p => isYesterday(p));
 
           const affPayTotal = recentAffPay.reduce((s, p) => s + parseNum(p.amount), 0);
           const affFeeTotal = recentAffPay.reduce((s, p) => { const f = String(p.fee || "0"); if (f.includes("%")) return s; return s + parseNum(f); }, 0);
