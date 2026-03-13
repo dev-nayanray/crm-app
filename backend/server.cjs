@@ -242,6 +242,7 @@ const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 
 // Telegram Group Chat IDs (hardcoded)
 const AFFILIte_FINANCE_GROUP_CHAT_ID = "-1002830517753";
+const LEADS_GROUP_CHAT_ID = "-5195790399";  // Leadgreed FTD bot group
 const BRANDS_GROUP_CHAT_ID = "-1002796530029";        // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
@@ -3228,7 +3229,207 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     // BUG FIX from v1.055: /deals set state to 'waiting_for_country_deals' but
     // text handler only checked 'waiting_for_country' → typing country code did NOTHING
     bot.on("message", async (msg) => {
-      if (msg.text && msg.text.startsWith("/")) return;
+  // Leadgreed FTD Parser + Saver (functions moved here to avoid duplication)
+  function parseLeadgreedFTD(text) {
+    const lines = text.trim().split('\n').map(l => l.trim());
+    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
+    
+    const countryMatch = lines[0].match(/🏦\s*(.+)/);
+    if (!countryMatch) return null;
+    const country = countryMatch[1].trim();
+    
+    const ftdLine = lines[1];
+    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
+    if (!ftdMatch) return null;
+    
+    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
+    return {
+      id: crypto.randomBytes(6).toString('hex'),
+      timestamp: new Date().toISOString(),
+      country: country.trim(),
+      sourceId: sourceId.trim(),
+      sourceName: sourceName.trim(),
+      destId: destId.trim(),
+      destName: destName.trim(),
+      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
+      emoji: emoji || '',
+      rawMessage: text,
+      date: new Date().toISOString().split('T')[0]
+    };
+  }
+
+  async function saveFTD(ftd, msg) {
+    const ftds = readJSON("ftd-entries.json", []);
+    ftds.unshift(ftd);
+    
+    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
+    const deduped = ftds.filter(f => {
+      const key = `${f.sourceId}-${f.destId}-${f.country}`;
+      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
+    });
+    
+    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
+      action: "ftd_create",
+      user: "leadgreed-bot",
+      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
+    });
+    
+    if (success) {
+      broadcastUpdate("ftd-entries", deduped);
+      // Optional: Confirm in group
+      if (msg) {
+        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`);
+      }
+    }
+  }
+
+  // Leadgreed FTD Parser + Saver (functions moved here to avoid duplication)
+  function parseLeadgreedFTD(text) {
+    const lines = text.trim().split('\n').map(l => l.trim());
+    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
+    
+    const countryMatch = lines[0].match(/🏦\s*(.+)/);
+    if (!countryMatch) return null;
+    const country = countryMatch[1].trim();
+    
+    const ftdLine = lines[1];
+    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
+    if (!ftdMatch) return null;
+    
+    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
+    return {
+      id: crypto.randomBytes(6).toString('hex'),
+      timestamp: new Date().toISOString(),
+      country: country.trim(),
+      sourceId: sourceId.trim(),
+      sourceName: sourceName.trim(),
+      destId: destId.trim(),
+      destName: destName.trim(),
+      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
+      emoji: emoji || '',
+      rawMessage: text,
+      date: new Date().toISOString().split('T')[0]
+    };
+  }
+
+  async function saveFTD(ftd, msg) {
+    const ftds = readJSON("ftd-entries.json", []);
+    ftds.unshift(ftd);
+    
+    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
+    const deduped = ftds.filter(f => {
+      const key = `${f.sourceId}-${f.destId}-${f.country}`;
+      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
+    });
+    
+    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
+      action: "ftd_create",
+      user: "leadgreed-bot",
+      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
+    });
+    
+    if (success) {
+      broadcastUpdate("ftd-entries", deduped);
+      // Optional: Confirm in group
+      if (msg) {
+        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId} → ${ftd.destId}`);
+      }
+    }
+  }
+
+  // NEW: Leadgreed FTD listener (-5195790399)
+  const leadsChatIdStr = String(msg.chat.id);
+  if (leadsChatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
+    try {
+      const ftd = parseLeadgreedFTD(msg.text);
+      if (ftd) {
+        await saveFTD(ftd, msg);
+        structuredLog("ftd_leadgreed", "new", "ok", { chatId: leadsChatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
+        console.log(`✅ FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
+      }
+    } catch (err) {
+      console.error("❌ FTD parse error:", err.message);
+    }
+    return;  // Don't process as offer/hash
+  }
+// NEW: Leadgreed FTD listener (-5195790399)
+  const chatIdStr = String(msg.chat.id);
+  if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
+    try {
+      const ftd = parseLeadgreedFTD(msg.text);
+      if (ftd) {
+        await saveFTD(ftd, msg);
+        structuredLog("ftd_leadgreed", "new", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
+        console.log(`✅ FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
+      }
+    } catch (err) {
+      console.error("❌ FTD parse error:", err.message);
+    }
+    return;  // Don't process as offer/hash
+  }
+
+  // Leadgreed FTD Parser
+  function parseLeadgreedFTD(text) {
+    const lines = text.trim().split('\n').map(l => l.trim());
+    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
+    
+    const countryMatch = lines[0].match(/🏦\s*(.+)/);
+    if (!countryMatch) return null;
+    const country = countryMatch[1].trim();
+    
+    const ftdLine = lines[1];
+    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
+    if (!ftdMatch) return null;
+    
+    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
+    return {
+      id: crypto.randomBytes(6).toString('hex'),
+      timestamp: new Date().toISOString(),
+      country: country.trim(),
+      sourceId: sourceId.trim(),
+      sourceName: sourceName.trim(),
+      destId: destId.trim(),
+      destName: destName.trim(),
+      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
+      emoji: emoji || '',
+      rawMessage: text,
+      date: new Date().toISOString().split('T')[0]
+    };
+  }
+
+  // Save FTD to ftd-entries.json
+  async function saveFTD(ftd, msg) {
+    const ftds = readJSON("ftd-entries.json", []);
+    ftds.unshift(ftd);
+    
+    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
+    const deduped = ftds.filter(f => {
+      const key = `${f.sourceId}-${f.destId}-${f.country}`;
+      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
+    });
+    
+    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
+      action: "ftd_create",
+      user: "leadgreed-bot",
+      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
+    });
+    
+    if (success) {
+      broadcastUpdate("ftd-entries", deduped);
+      // Optional: Confirm in group
+      if (msg) {
+        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId} → ${ftd.destId}`);
+      }
+    }
+  }
+
+  if (msg.text && msg.text.startsWith("/")) return;
       const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
       const st = userStates[chatId];
 
@@ -3236,7 +3437,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
       const offerLower = offerMessageText.toLowerCase();
-      const chatIdStr = chatId.toString();
+      // const chatIdStr = chatId.toString(); // FIXED: duplicate declaration removed, reuse chatIdStr from above
       
       // Debug: show chat ID
       console.log("💬 Message from chat ID:", chatIdStr, "| OFFER_GROUP_CHAT_ID:", OFFER_GROUP_CHAT_ID);

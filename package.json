@@ -1,0 +1,26 @@
+{
+  "name": "crm-app",
+  "version": "1.0.0",
+  "description": "��#\u0000 \u0000c\u0000r\u0000m\u0000-\u0000a\u0000p\u0000p\u0000\r\u0000 \u0000",
+  "main": "vite.config.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dev-nayanray/crm-app.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/dev-nayanray/crm-app/issues"
+  },
+  "homepage": "https://github.com/dev-nayanray/crm-app#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "ws": "^8.19.0"
+  }
+}
