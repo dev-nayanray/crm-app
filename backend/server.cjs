@@ -1,4 +1,4 @@
-// Blitz CRM Server — v12.02 (2026-03-13)
+// Blitz CRM Server — v12.03 (2026-03-13)
 // Load environment variables
 // require("dotenv").config();
 
@@ -70,7 +70,49 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "12.02";
+const VERSION = "12.04";
+
+// ═══════════════════════════════════════════════
+// FILE-BASED LOGGING SYSTEM v12.04
+// Writes logs to /logs/ directory for easy download and diagnosis
+// ═══════════════════════════════════════════════
+const LOG_DIR = path.join(__dirname, "logs");
+const LOG_LEVELS = { INFO: 'INFO', WARN: 'WARN', ERROR: 'ERROR', CRASH: 'CRASH', STARTUP: 'STARTUP' };
+
+function ensureLogDir() {
+  try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+}
+
+function getLogFile(type = 'app') {
+  const date = new Date().toISOString().split('T')[0];
+  return path.join(LOG_DIR, `blitz-${type}-${date}.log`);
+}
+
+function writeLog(level, module, message, data = {}) {
+  ensureLogDir();
+  const ts = new Date().toISOString();
+  const line = JSON.stringify({ ts, level, module, message, ...data }) + '\n';
+  // Write to daily app log
+  try { fs.appendFileSync(getLogFile('app'), line); } catch {}
+  // Write errors/crashes to separate error log
+  if (level === LOG_LEVELS.ERROR || level === LOG_LEVELS.CRASH) {
+    try { fs.appendFileSync(getLogFile('error'), line); } catch {}
+  }
+  // Also keep last 200 lines in memory for /api/logs endpoint
+  SERVER_LOG_BUFFER.push({ ts, level, module, message, ...data });
+  if (SERVER_LOG_BUFFER.length > 200) SERVER_LOG_BUFFER.shift();
+}
+
+const SERVER_LOG_BUFFER = [];
+
+// Patch crash handlers to also write to file
+process.on('uncaughtException', (err) => {
+  writeLog(LOG_LEVELS.CRASH, 'process', `Uncaught Exception: ${err.message}`, { stack: (err.stack||'').split('\n').slice(0,8).join('\n') });
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  writeLog(LOG_LEVELS.CRASH, 'process', `Unhandled Rejection: ${msg}`, { stack: reason instanceof Error ? (reason.stack||'').split('\n').slice(0,5).join('\n') : '' });
+});
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -1242,6 +1284,23 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
+// v12.04: HTTP Request Error Logger — logs 4xx/5xx responses to file
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (res.statusCode >= 400) {
+      writeLog(
+        res.statusCode >= 500 ? LOG_LEVELS.ERROR : LOG_LEVELS.WARN,
+        'http',
+        `${req.method} ${req.path} → ${res.statusCode}`,
+        { method: req.method, path: req.path, status: res.statusCode, ms, ip: req.ip }
+      );
+    }
+  });
+  next();
+});
+
 // v9.05: Input Sanitization Middleware — strips XSS/injection from all POST bodies
 function sanitizeValue(val) {
   if (typeof val === 'string') {
@@ -2176,38 +2235,28 @@ app.post("/api/users", requireAdmin, async (req, res) => { // v11.02 H2: admin-o
     return u;
   });
 
-  // SERVER-SIDE MERGE for users — v10.07: Protect admin-managed fields
-  const mergedMap = new Map();
-  existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
-  users.forEach(u => { if (u && u.email) {
-    const ex = mergedMap.get(u.email);
+  // SERVER-SIDE MERGE for users — v12.03: Fix delete + permissions bugs
+  // Rule: client list is authoritative for membership (deletions are respected)
+  // Only merge fields for users that exist in BOTH client and server
+  const existingMap2 = new Map();
+  existing.forEach(u => { if (u && u.email) existingMap2.set(u.email, u); });
+
+  const mergedUsers = users.map(u => {
+    if (!u || !u.email) return null;
+    const ex = existingMap2.get(u.email);
     if (!ex) {
-      // New user from client
-      mergedMap.set(u.email, u);
-    } else {
-      // v10.16: ALWAYS preserve server pageAccess unless client has explicit newer updatedAt
-      // This is the #1 rule: pageAccess can ONLY change via admin edit (which stamps updatedAt)
-      const clientTime = u.updatedAt || 0;
-      const serverTime = ex.updatedAt || 0;
-      
-      // Preserve lastLogin from server
-      if (ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
-      
-      if (clientTime > serverTime) {
-        // Client is explicitly newer (admin just clicked Save) — accept ALL fields including pageAccess
-        mergedMap.set(u.email, u);
-      } else {
-        // Server wins on pageAccess — ALWAYS. Client can update name/email but NOT permissions.
-        const merged = { ...u, 
-          pageAccess: ex.pageAccess || u.pageAccess,
-          updatedAt: ex.updatedAt || u.updatedAt,
-          lastLogin: ex.lastLogin || u.lastLogin,
-        };
-        mergedMap.set(u.email, merged);
-      }
+      // New user — accept as-is
+      return u;
     }
-  } });
-  const mergedUsers = Array.from(mergedMap.values());
+    // Existing user — preserve lastLogin from server
+    if (ex.lastLogin && !u.lastLogin) u = { ...u, lastLogin: ex.lastLogin };
+    // v12.03 FIX: Accept pageAccess from client whenever it is explicitly sent
+    // (admin clicked Save Changes — always trust the client's pageAccess)
+    // Only fall back to server pageAccess if client didn't send pageAccess at all
+    const pageAccess = u.pageAccess !== undefined ? u.pageAccess : (ex.pageAccess || []);
+    return { ...ex, ...u, pageAccess, updatedAt: u.updatedAt || ex.updatedAt || Date.now() };
+  }).filter(Boolean);
+  // Note: users NOT in client list are NOT added back — deletions are respected
 
   // Skip write if data hasn't actually changed (prevents save loops)
   const existingStr = JSON.stringify(existing.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
@@ -2609,9 +2658,48 @@ app.get("/api/health", (req, res) => {
   res.json(basic);
 });
 
+// // ── Logs endpoint — admin only ──
+app.get("/api/logs", requireAdmin, (req, res) => {
+  const { date, type = 'app', lines = 200 } = req.query;
+  const logDate = date || new Date().toISOString().split('T')[0];
+  const logFile = path.join(LOG_DIR, `blitz-${type}-${logDate}.log`);
+  try {
+    if (!fs.existsSync(logFile)) {
+      return res.json({ ok: true, date: logDate, type, entries: [], message: 'No log file for this date', buffer: SERVER_LOG_BUFFER.slice(-100) });
+    }
+    const content = fs.readFileSync(logFile, 'utf8');
+    const entries = content.trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return { raw: l }; } });
+    const last = entries.slice(-parseInt(lines));
+    res.json({ ok: true, date: logDate, type, file: logFile, totalLines: entries.length, entries: last });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Download log file — admin only ──
+app.get("/api/logs/download", requireAdmin, (req, res) => {
+  const { date, type = 'app' } = req.query;
+  const logDate = date || new Date().toISOString().split('T')[0];
+  const logFile = path.join(LOG_DIR, `blitz-${type}-${logDate}.log`);
+  if (!fs.existsSync(logFile)) return res.status(404).json({ error: 'Log file not found' });
+  res.download(logFile, `blitz-${type}-${logDate}.log`);
+});
+
+// ── List available log files — admin only ──
+app.get("/api/logs/list", requireAdmin, (req, res) => {
+  try {
+    ensureLogDir();
+    const files = fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.log')).map(f => {
+      const stat = fs.statSync(path.join(LOG_DIR, f));
+      return { name: f, size: stat.size, modified: stat.mtime };
+    }).sort((a, b) => new Date(b.modified) - new Date(a.modified));
+    res.json({ ok: true, files });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Debug: check users.json state (no passwords exposed, just diagnostic info) ──
-// ═══════════════════════════════════════════════════════════════
-// 13. TELEGRAM BOT (preserved from v2.03)
+// ═══════════════════════════════════════════════
+// 13. TELEGRAM BOT TELEGRAM BOT (preserved from v2.03)
 // ═══════════════════════════════════════════════════════════════
 
 function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
@@ -4355,6 +4443,30 @@ if (fs.existsSync(PUBLIC_DIR)) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
+  const startTime = new Date().toISOString();
+  // Count records in each data file for startup report
+  const dataReport = {};
+  ['crg-deals','payments','customer-payments','daily-cap','deals','offers','users','partners','ftd-entries','daily-calcs-data'].forEach(ep => {
+    const file = path.join(DATA_DIR, ep + '.json');
+    try {
+      if (fs.existsSync(file)) {
+        const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+        dataReport[ep] = Array.isArray(arr) ? arr.length : 'N/A';
+      } else { dataReport[ep] = 'MISSING'; }
+    } catch(e) { dataReport[ep] = `ERROR: ${e.message}`; }
+  });
+
+  // Write startup log to file
+  writeLog(LOG_LEVELS.STARTUP, 'server', `Blitz CRM v${VERSION} started on port ${PORT}`, {
+    nodeVersion: process.version,
+    platform: process.platform,
+    pid: process.pid,
+    dataDir: DATA_DIR,
+    dataReport,
+    wsAvailable: WS_AVAILABLE,
+    startTime
+  });
+
   console.log(`\n╔══════════════════════════════════════════════╗`);
   console.log(`║  🚀 Blitz CRM Server v${VERSION}               ║`);
   console.log(`║  📡 HTTP + WebSocket on port ${PORT}            ║`);
@@ -4365,11 +4477,12 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🛡️  Auto-ban attackers + path traversal block ║`);
   console.log(`║  🧹 ID-based dedup (no more record collapse)  ║`);
   console.log(`║  🪦 Tombstone system (7-day anti-resurrect)   ║`);
-  console.log(`║  🔧 v10.06: GET filters tombstoned records    ║`);
-  console.log(`║  🔧 v10.06: No-op save skip (reduces I/O)     ║`);
-  console.log(`║  🔧 v10.06: WS broadcasts full tombstone list ║`);
+  console.log(`║  🔧 v12.04: File-based logging to /logs/       ║`);
+  console.log(`║  🔧 v12.03: User delete + permissions fixed    ║`);
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
+  console.log(`📊 Data files: ${JSON.stringify(dataReport)}`);
+  console.log(`📁 Logs directory: ${LOG_DIR}`);
 
   // Initial external sync on startup
   setTimeout(() => syncExternalData(), 3000);
