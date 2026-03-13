@@ -1,6 +1,45 @@
-
+// Blitz CRM Server — v12.10 (2026-03-13)
 // Load environment variables
 // require("dotenv").config();
+
+// ═══════════════════════════════════════════════
+// STARTUP DEPENDENCY CHECK v12.05
+// Runs before anything else — prints clear error if modules are missing
+// ═══════════════════════════════════════════════
+const REQUIRED_MODULES = [
+  'express',
+  'cors',
+  'ws',
+  'node-telegram-bot-api',
+  'debug',
+  'ms',
+  'depd',
+  'inherits',
+  'safe-buffer',
+];
+
+const missing = [];
+for (const mod of REQUIRED_MODULES) {
+  try { require.resolve(mod); } catch { missing.push(mod); }
+}
+
+if (missing.length > 0) {
+  console.error('\n╔══════════════════════════════════════════════╗');
+  console.error('║  ❌ BLITZ CRM — MISSING DEPENDENCIES                  ║');
+  console.error('║                                                      ║');
+  console.error('║  The following npm modules are not installed:        ║');
+  missing.forEach(m => console.error(`║    • ${m.padEnd(46)}║`));
+  console.error('║                                                      ║');
+  console.error('║  Fix: run this command in the server directory:      ║');
+  console.error('║                                                      ║');
+  console.error(`║  npm install ${missing.join(' ')}`);
+  console.error('║                                                      ║');
+  console.error('║  Or reinstall everything:  npm install               ║');
+  console.error('╚══════════════════════════════════════════════╝\n');
+  process.exit(1); // Exit with error code so pm2/systemd knows it failed
+}
+
+console.log('✅ All dependencies verified — starting Blitz CRM server...');
 
 const express = require("express");
 const fs = require("fs");
@@ -22,7 +61,7 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
-    const screenshotModule = require("./screenshot.cjs");
+const screenshotModule = require("./screenshot.cjs");
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -70,7 +109,49 @@ function structuredLog(module, event, result, details = {}) {
   return entry;
 }
 const PORT = 3001;
-const VERSION = "12.00";
+const VERSION = "12.10";
+
+// ═══════════════════════════════════════════════
+// FILE-BASED LOGGING SYSTEM v12.04
+// Writes logs to /logs/ directory for easy download and diagnosis
+// ═══════════════════════════════════════════════
+const LOG_DIR = path.join(__dirname, "logs");
+const LOG_LEVELS = { INFO: 'INFO', WARN: 'WARN', ERROR: 'ERROR', CRASH: 'CRASH', STARTUP: 'STARTUP' };
+
+function ensureLogDir() {
+  try { if (!fs.existsSync(LOG_DIR)) fs.mkdirSync(LOG_DIR, { recursive: true }); } catch {}
+}
+
+function getLogFile(type = 'app') {
+  const date = new Date().toISOString().split('T')[0];
+  return path.join(LOG_DIR, `blitz-${type}-${date}.log`);
+}
+
+function writeLog(level, module, message, data = {}) {
+  ensureLogDir();
+  const ts = new Date().toISOString();
+  const line = JSON.stringify({ ts, level, module, message, ...data }) + '\n';
+  // Write to daily app log
+  try { fs.appendFileSync(getLogFile('app'), line); } catch {}
+  // Write errors/crashes to separate error log
+  if (level === LOG_LEVELS.ERROR || level === LOG_LEVELS.CRASH) {
+    try { fs.appendFileSync(getLogFile('error'), line); } catch {}
+  }
+  // Also keep last 200 lines in memory for /api/logs endpoint
+  SERVER_LOG_BUFFER.push({ ts, level, module, message, ...data });
+  if (SERVER_LOG_BUFFER.length > 200) SERVER_LOG_BUFFER.shift();
+}
+
+const SERVER_LOG_BUFFER = [];
+
+// Patch crash handlers to also write to file
+process.on('uncaughtException', (err) => {
+  writeLog(LOG_LEVELS.CRASH, 'process', `Uncaught Exception: ${err.message}`, { stack: (err.stack||'').split('\n').slice(0,8).join('\n') });
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  writeLog(LOG_LEVELS.CRASH, 'process', `Unhandled Rejection: ${msg}`, { stack: reason instanceof Error ? (reason.stack||'').split('\n').slice(0,5).join('\n') : '' });
+});
 const DATA_DIR = path.join(__dirname, "data");
 const BACKUP_DIR = path.join(__dirname, "backups");
 const AUDIT_DIR = path.join(__dirname, "audit");
@@ -242,13 +323,13 @@ const TELEGRAM_TOKEN = "8560973106:AAG6J4FRj8ShS-WKLOzs2TmhdaHlqCKevhA";
 
 // Telegram Group Chat IDs (hardcoded)
 const AFFILIte_FINANCE_GROUP_CHAT_ID = "-1002830517753";
-const LEADS_GROUP_CHAT_ID = "-5195790399";  // Leadgreed FTD bot group
 const BRANDS_GROUP_CHAT_ID = "-1002796530029";        // Finance | Brands group
 const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
 const CRG_GROUP_CHAT_ID = "-1002560408661";           // CRG Deals Telegram Group
 const MONITORING_GROUP_CHAT_ID = "-1002832299846";
-const FTD_CONFIRM_GROUP_CHAT_ID = "-4744920512"; // Additional FTD confirmation group
+const LEADS_GROUP_CHAT_ID = "-5195790399";           // Leadgreed FTD bot group (v12.10)
+const FTD_CONFIRM_GROUP_CHAT_ID = "-4744920512";     // Additional FTD confirmation group (v12.10)
 
 // Helper function to validate and normalize chat ID for supergroups
 function normalizeChatId(chatId) {
@@ -1244,6 +1325,23 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
+// v12.04: HTTP Request Error Logger — logs 4xx/5xx responses to file
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const ms = Date.now() - start;
+    if (res.statusCode >= 400) {
+      writeLog(
+        res.statusCode >= 500 ? LOG_LEVELS.ERROR : LOG_LEVELS.WARN,
+        'http',
+        `${req.method} ${req.path} → ${res.statusCode}`,
+        { method: req.method, path: req.path, status: res.statusCode, ms, ip: req.ip }
+      );
+    }
+  });
+  next();
+});
+
 // v9.05: Input Sanitization Middleware — strips XSS/injection from all POST bodies
 function sanitizeValue(val) {
   if (typeof val === 'string') {
@@ -2178,38 +2276,28 @@ app.post("/api/users", requireAdmin, async (req, res) => { // v11.02 H2: admin-o
     return u;
   });
 
-  // SERVER-SIDE MERGE for users — v10.07: Protect admin-managed fields
-  const mergedMap = new Map();
-  existing.forEach(u => { if (u && u.email) mergedMap.set(u.email, u); });
-  users.forEach(u => { if (u && u.email) {
-    const ex = mergedMap.get(u.email);
+  // SERVER-SIDE MERGE for users — v12.03: Fix delete + permissions bugs
+  // Rule: client list is authoritative for membership (deletions are respected)
+  // Only merge fields for users that exist in BOTH client and server
+  const existingMap2 = new Map();
+  existing.forEach(u => { if (u && u.email) existingMap2.set(u.email, u); });
+
+  const mergedUsers = users.map(u => {
+    if (!u || !u.email) return null;
+    const ex = existingMap2.get(u.email);
     if (!ex) {
-      // New user from client
-      mergedMap.set(u.email, u);
-    } else {
-      // v10.16: ALWAYS preserve server pageAccess unless client has explicit newer updatedAt
-      // This is the #1 rule: pageAccess can ONLY change via admin edit (which stamps updatedAt)
-      const clientTime = u.updatedAt || 0;
-      const serverTime = ex.updatedAt || 0;
-      
-      // Preserve lastLogin from server
-      if (ex.lastLogin && !u.lastLogin) u.lastLogin = ex.lastLogin;
-      
-      if (clientTime > serverTime) {
-        // Client is explicitly newer (admin just clicked Save) — accept ALL fields including pageAccess
-        mergedMap.set(u.email, u);
-      } else {
-        // Server wins on pageAccess — ALWAYS. Client can update name/email but NOT permissions.
-        const merged = { ...u, 
-          pageAccess: ex.pageAccess || u.pageAccess,
-          updatedAt: ex.updatedAt || u.updatedAt,
-          lastLogin: ex.lastLogin || u.lastLogin,
-        };
-        mergedMap.set(u.email, merged);
-      }
+      // New user — accept as-is
+      return u;
     }
-  } });
-  const mergedUsers = Array.from(mergedMap.values());
+    // Existing user — preserve lastLogin from server
+    if (ex.lastLogin && !u.lastLogin) u = { ...u, lastLogin: ex.lastLogin };
+    // v12.03 FIX: Accept pageAccess from client whenever it is explicitly sent
+    // (admin clicked Save Changes — always trust the client's pageAccess)
+    // Only fall back to server pageAccess if client didn't send pageAccess at all
+    const pageAccess = u.pageAccess !== undefined ? u.pageAccess : (ex.pageAccess || []);
+    return { ...ex, ...u, pageAccess, updatedAt: u.updatedAt || ex.updatedAt || Date.now() };
+  }).filter(Boolean);
+  // Note: users NOT in client list are NOT added back — deletions are respected
 
   // Skip write if data hasn't actually changed (prevents save loops)
   const existingStr = JSON.stringify(existing.map(u => ({ ...u })).sort((a,b) => (a.email||'').localeCompare(b.email||'')));
@@ -2611,9 +2699,48 @@ app.get("/api/health", (req, res) => {
   res.json(basic);
 });
 
+// // ── Logs endpoint — admin only ──
+app.get("/api/logs", requireAdmin, (req, res) => {
+  const { date, type = 'app', lines = 200 } = req.query;
+  const logDate = date || new Date().toISOString().split('T')[0];
+  const logFile = path.join(LOG_DIR, `blitz-${type}-${logDate}.log`);
+  try {
+    if (!fs.existsSync(logFile)) {
+      return res.json({ ok: true, date: logDate, type, entries: [], message: 'No log file for this date', buffer: SERVER_LOG_BUFFER.slice(-100) });
+    }
+    const content = fs.readFileSync(logFile, 'utf8');
+    const entries = content.trim().split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return { raw: l }; } });
+    const last = entries.slice(-parseInt(lines));
+    res.json({ ok: true, date: logDate, type, file: logFile, totalLines: entries.length, entries: last });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Download log file — admin only ──
+app.get("/api/logs/download", requireAdmin, (req, res) => {
+  const { date, type = 'app' } = req.query;
+  const logDate = date || new Date().toISOString().split('T')[0];
+  const logFile = path.join(LOG_DIR, `blitz-${type}-${logDate}.log`);
+  if (!fs.existsSync(logFile)) return res.status(404).json({ error: 'Log file not found' });
+  res.download(logFile, `blitz-${type}-${logDate}.log`);
+});
+
+// ── List available log files — admin only ──
+app.get("/api/logs/list", requireAdmin, (req, res) => {
+  try {
+    ensureLogDir();
+    const files = fs.readdirSync(LOG_DIR).filter(f => f.endsWith('.log')).map(f => {
+      const stat = fs.statSync(path.join(LOG_DIR, f));
+      return { name: f, size: stat.size, modified: stat.mtime };
+    }).sort((a, b) => new Date(b.modified) - new Date(a.modified));
+    res.json({ ok: true, files });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Debug: check users.json state (no passwords exposed, just diagnostic info) ──
-// ═══════════════════════════════════════════════════════════════
-// 13. TELEGRAM BOT (preserved from v2.03)
+// ═══════════════════════════════════════════════
+// 13. TELEGRAM BOT TELEGRAM BOT (preserved from v2.03)
 // ═══════════════════════════════════════════════════════════════
 
 function sendTelegramNotification(message, chatId = AFFILIte_FINANCE_GROUP_CHAT_ID) {
@@ -3230,217 +3357,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     // BUG FIX from v1.055: /deals set state to 'waiting_for_country_deals' but
     // text handler only checked 'waiting_for_country' → typing country code did NOTHING
     bot.on("message", async (msg) => {
-  // Leadgreed FTD Parser + Saver (functions moved here to avoid duplication)
-  function parseLeadgreedFTD(text) {
-    const lines = text.trim().split('\n').map(l => l.trim());
-    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
-    
-    const countryMatch = lines[0].match(/🏦\s*(.+)/);
-    if (!countryMatch) return null;
-    const country = countryMatch[1].trim();
-    
-    const ftdLine = lines[1];
-    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
-    if (!ftdMatch) return null;
-    
-    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
-    return {
-      id: crypto.randomBytes(6).toString('hex'),
-      timestamp: new Date().toISOString(),
-      country: country.trim(),
-      sourceId: sourceId.trim(),
-      sourceName: sourceName.trim(),
-      destId: destId.trim(),
-      destName: destName.trim(),
-      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
-      emoji: emoji || '',
-      rawMessage: text,
-      date: new Date().toISOString().split('T')[0]
-    };
-  }
-
-
-    ftds.unshift(ftd);
-    
-    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
-    const deduped = ftds.filter(f => {
-      const key = `${f.sourceId}-${f.destId}-${f.country}`;
-      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
-    });
-    
-    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
-      action: "ftd_create",
-      user: "leadgreed-bot",
-      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
-    });
-    
-    if (success) {
-      broadcastUpdate("ftd-entries", deduped);
-      // Optional: Confirm in group
-      if (msg) {
-        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`);
-      }
-    }
-  }
-
-  // Leadgreed FTD Parser + Saver (functions moved here to avoid duplication)
-  function parseLeadgreedFTD(text) {
-    const lines = text.trim().split('\n').map(l => l.trim());
-    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
-    
-    const countryMatch = lines[0].match(/🏦\s*(.+)/);
-    if (!countryMatch) return null;
-    const country = countryMatch[1].trim();
-    
-    const ftdLine = lines[1];
-    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
-    if (!ftdMatch) return null;
-    
-    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
-    return {
-      id: crypto.randomBytes(6).toString('hex'),
-      timestamp: new Date().toISOString(),
-      country: country.trim(),
-      sourceId: sourceId.trim(),
-      sourceName: sourceName.trim(),
-      destId: destId.trim(),
-      destName: destName.trim(),
-      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
-      emoji: emoji || '',
-      rawMessage: text,
-      date: new Date().toISOString().split('T')[0]
-    };
-  }
-
-  async function saveFTD(ftd, msg) {
-    const ftds = readJSON("ftd-entries.json", []);
-    ftds.unshift(ftd);
-    
-    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
-    const deduped = ftds.filter(f => {
-      const key = `${f.sourceId}-${f.destId}-${f.country}`;
-      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
-    });
-    
-    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
-      action: "ftd_create",
-      user: "leadgreed-bot",
-      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
-    });
-    
-    if (success) {
-      broadcastUpdate("ftd-entries", deduped);
-      // Optional: Confirm in group
-      if (msg) {
-        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId} → ${ftd.destId}`);
-      }
-    }
-  }
-
-  // NEW: Leadgreed FTD listener (-5195790399)
-
-// Leadgreed FTD listener (-5195790399) — supports BOTH 🏦 format AND "Deposit from..." format
-  const chatIdStr = String(msg.chat.id);
-  console.log(`💬 Leadgreed Deposit test: "${msg.text.substring(0,50)}..."`);
-  if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text && msg.text.includes('Deposit from')) {
-    try {
-      console.log('🔍 Parsing Leadgreed Deposit...');
-      const parseLeadgreedDeposit = require('./parseLeadgreedDeposit.js');
-      let ftd = parseLeadgreedDeposit(msg.text);
-      if (ftd) {
-        // Generate ID (parser doesn't have crypto access)
-        ftd.id = crypto.randomBytes(6).toString('hex');
-        console.log('✅ Deposit parsed:', JSON.stringify(ftd, null, 1));
-        await saveFTD(ftd, msg);
-        sendFTDConfirmNotification(ftd, TELEGRAM_TOKEN, FTD_CONFIRM_GROUP_CHAT_ID);
-        structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliateId: ftd.affiliateId });
-        bot.sendMessage(msg.chat.id, `✅ Deposit FTD saved!\n${ftd.country}\n${ftd.affiliateName} → ${ftd.brokerName}`);
-      } else {
-        console.log('❌ Deposit parse failed - no FTD object');
-      }
-    } catch (err) {
-      console.error("❌ Deposit FTD parse error:", err.message, err.stack);
-    }
-    return;
-  }
-  if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
-    try {
-        const ftd = parseLeadgreedFTD(msg.text);
-        if (ftd) {
-          await saveFTD(ftd, msg);
-          sendFTDConfirmNotification(ftd, TELEGRAM_TOKEN, FTD_CONFIRM_GROUP_CHAT_ID);
-          structuredLog("ftd_leadgreed", "new", "classic", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
-          console.log(`✅ Classic FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
-        }
-    } catch (err) {
-      console.error("❌ Classic FTD parse error:", err.message);
-    }
-    return;  // Don't process as offer/hash
-  }
-
-
-  // Leadgreed FTD Parser
-  function parseLeadgreedFTD(text) {
-    const lines = text.trim().split('\n').map(l => l.trim());
-    if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
-    
-    const countryMatch = lines[0].match(/🏦\s*(.+)/);
-    if (!countryMatch) return null;
-    const country = countryMatch[1].trim();
-    
-    const ftdLine = lines[1];
-    const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
-    if (!ftdMatch) return null;
-    
-    const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
-    return {
-      id: crypto.randomBytes(6).toString('hex'),
-      timestamp: new Date().toISOString(),
-      country: country.trim(),
-      sourceId: sourceId.trim(),
-      sourceName: sourceName.trim(),
-      destId: destId.trim(),
-      destName: destName.trim(),
-      status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
-      emoji: emoji || '',
-      rawMessage: text,
-      date: new Date().toISOString().split('T')[0]
-    };
-  }
-
-  // Save FTD to ftd-entries.json
-  async function saveFTD(ftd, msg) {
-    const ftds = readJSON("ftd-entries.json", []);
-    ftds.unshift(ftd);
-    
-    // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
-    const deduped = ftds.filter(f => {
-      const key = `${f.sourceId}-${f.destId}-${f.country}`;
-      return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
-    });
-    
-    const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
-      action: "ftd_create",
-      user: "leadgreed-bot",
-      details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
-    });
-    
-    if (success) {
-      broadcastUpdate("ftd-entries", deduped);
-      // Optional: Confirm in group
-      if (msg) {
-        bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM table\n${ftd.country}\n${ftd.sourceId} → ${ftd.destId}`);
-      }
-    }
-  }
-
-  if (msg.text && msg.text.startsWith("/")) return;
+      if (msg.text && msg.text.startsWith("/")) return;
       const chatId = msg.chat.id; const userText = msg.text ? msg.text.trim().toUpperCase() : "";
       const st = userStates[chatId];
 
@@ -3448,10 +3365,106 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
       // This ensures Offer: messages are processed even if user is in a waiting state
       const offerMessageText = msg.text || '';
       const offerLower = offerMessageText.toLowerCase();
-      // const chatIdStr = chatId.toString(); // FIXED: duplicate declaration removed, reuse chatIdStr from above
+      const chatIdStr = chatId.toString();
       
       // Debug: show chat ID
       console.log("💬 Message from chat ID:", chatIdStr, "| OFFER_GROUP_CHAT_ID:", OFFER_GROUP_CHAT_ID);
+
+      // ── v12.10: Leadgreed FTD Bot — listens to LEADS_GROUP_CHAT_ID ──
+      // Parses FTD messages in two formats:
+      //   1. Classic: 🏦 Country\n sourceId - sourceName → destId - destName [emoji]
+      //   2. Deposit: "Deposit from ..." (handled via parseLeadgreedDeposit if available)
+      if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text) {
+        // Helper: parse classic 🏦 format
+        function parseLeadgreedFTD(text) {
+          const lines = text.trim().split('\n').map(l => l.trim());
+          if (lines.length < 2 || !lines[0].startsWith('🏦')) return null;
+          const countryMatch = lines[0].match(/🏦\s*(.+)/);
+          if (!countryMatch) return null;
+          const country = countryMatch[1].trim();
+          const ftdLine = lines[1];
+          const ftdMatch = ftdLine.match(/(\d+)\s*-\s*([^→-]+?)\s*→\s*(\d+)\s*-\s*(.+?)\s*(🟩|🟥|🟨)?$/);
+          if (!ftdMatch) return null;
+          const [, sourceId, sourceName, destId, destName, emoji] = ftdMatch;
+          return {
+            id: crypto.randomBytes(6).toString('hex'),
+            timestamp: new Date().toISOString(),
+            country: country.trim(),
+            sourceId: sourceId.trim(),
+            sourceName: sourceName.trim(),
+            destId: destId.trim(),
+            destName: destName.trim(),
+            status: emoji === '🟩' ? 'success' : emoji === '🟥' ? 'failed' : 'pending',
+            emoji: emoji || '',
+            rawMessage: text,
+            date: new Date().toISOString().split('T')[0]
+          };
+        }
+        // Helper: save FTD to ftd-entries.json with dedup
+        async function saveLeadgreedFTD(ftd) {
+          const ftds = readJSON("ftd-entries.json", []);
+          ftds.unshift(ftd);
+          // Dedup: remove duplicates by sourceId-destId-country combo within last 24h
+          const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+          const uniqueKey = `${ftd.sourceId}-${ftd.destId}-${ftd.country}`;
+          const deduped = ftds.filter(f => {
+            const key = `${f.sourceId}-${f.destId}-${f.country}`;
+            return key !== uniqueKey || new Date(f.timestamp).getTime() < cutoff;
+          });
+          const success = await lockedWrite("ftd-entries.json", deduped.slice(0, 10000), {
+            action: "ftd_create",
+            user: "leadgreed-bot",
+            details: `Leadgreed FTD: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`
+          });
+          if (success) {
+            broadcastUpdate("ftd-entries", deduped);
+            // Send confirmation to FTD confirm group
+            try {
+              bot.sendMessage(FTD_CONFIRM_GROUP_CHAT_ID, `✅ FTD saved to CRM\n${ftd.country}\n${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName}`);
+            } catch (e) { /* ignore send errors */ }
+          }
+          return success;
+        }
+        // Handle classic 🏦 format
+        if (msg.text.startsWith('🏦')) {
+          try {
+            const ftd = parseLeadgreedFTD(msg.text);
+            if (ftd) {
+              await saveLeadgreedFTD(ftd);
+              structuredLog("ftd_leadgreed", "classic", "ok", { country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
+              bot.sendMessage(msg.chat.id, `✅ FTD saved to CRM\n${ftd.country}\n${ftd.sourceId} → ${ftd.destId}`);
+            }
+          } catch (err) {
+            console.error("❌ Leadgreed classic FTD parse error:", err.message);
+          }
+          return;
+        }
+        // Handle "Deposit from ..." format (if parser module exists)
+        if (msg.text.includes('Deposit from')) {
+          try {
+            let parseLeadgreedDeposit;
+            try { parseLeadgreedDeposit = require('./parseLeadgreedDeposit.cjs'); } catch {
+              try { parseLeadgreedDeposit = require('./parseLeadgreedDeposit.js'); } catch { parseLeadgreedDeposit = null; }
+            }
+            if (parseLeadgreedDeposit) {
+              let ftd = parseLeadgreedDeposit(msg.text);
+              if (ftd) {
+                ftd.id = crypto.randomBytes(6).toString('hex');
+                ftd.timestamp = ftd.timestamp || new Date().toISOString();
+                ftd.date = ftd.date || new Date().toISOString().split('T')[0];
+                await saveLeadgreedFTD(ftd);
+                structuredLog("ftd_leadgreed", "deposit", "ok", { country: ftd.country });
+                bot.sendMessage(msg.chat.id, `✅ Deposit FTD saved!\n${ftd.country || ''}\n${ftd.affiliateName || ftd.sourceId || ''} → ${ftd.brokerName || ftd.destName || ''}`);
+              }
+            } else {
+              console.log('ℹ️ parseLeadgreedDeposit.js not found — skipping Deposit format');
+            }
+          } catch (err) {
+            console.error("❌ Leadgreed deposit FTD parse error:", err.message);
+          }
+          return;
+        }
+      }
       
       // L1 FIX: Direct string comparison — old .replace('-100','-') chain was fragile
       // and could accidentally match wrong groups with similar numeric suffixes
@@ -3615,6 +3628,12 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
             };
 
             const cp = readJSON("customer-payments.json", []);
+            // v12.07: Check if this hash already exists — prevent ghost records after delete
+            const hashExistsBrands = cp.some(p => p.paymentHash === hash);
+            if (hashExistsBrands || (bot._processedHashes && bot._processedHashes.has(hash))) {
+              console.log(`⚠️ [Brands] Skipping duplicate hash ${hash.slice(0,10)}... — already exists in customer-payments`);
+              continue;
+            }
             cp.unshift(newPayment);
             await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash (Brands group)` });
             broadcastUpdate("customer-payments", cp);
@@ -3680,6 +3699,17 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         };
 
         const cp = readJSON("customer-payments.json", []);
+        // v12.07: Check if this hash already exists (including tombstoned) — prevent ghost records
+        const tombstonedCP = getTombstonedIds('customer-payments');
+        const hashExists = cp.some(p => p.paymentHash === hash);
+        const hashTombstoned = [...tombstonedCP].some(id => {
+          // Check if any tombstoned record had this hash by scanning audit log
+          return false; // tombstones don't store hash, use in-memory processedHashes
+        });
+        if (hashExists || (bot._processedHashes && bot._processedHashes.has(hash))) {
+          console.log(`⚠️ [Finance] Skipping duplicate hash ${hash.slice(0,10)}... — already exists in customer-payments`);
+          continue;
+        }
         cp.unshift(newPayment);
         await lockedWrite("customer-payments.json", cp, { action: "create", user: "telegram-bot", details: `Auto-created ${invoice} from hash` });
         broadcastUpdate("customer-payments", cp);
@@ -4567,6 +4597,30 @@ if (fs.existsSync(PUBLIC_DIR)) {
 }
 
 server.listen(PORT, "0.0.0.0", () => {
+  const startTime = new Date().toISOString();
+  // Count records in each data file for startup report
+  const dataReport = {};
+  ['crg-deals','payments','customer-payments','daily-cap','deals','offers','users','partners','ftd-entries','daily-calcs-data'].forEach(ep => {
+    const file = path.join(DATA_DIR, ep + '.json');
+    try {
+      if (fs.existsSync(file)) {
+        const arr = JSON.parse(fs.readFileSync(file, 'utf8'));
+        dataReport[ep] = Array.isArray(arr) ? arr.length : 'N/A';
+      } else { dataReport[ep] = 'MISSING'; }
+    } catch(e) { dataReport[ep] = `ERROR: ${e.message}`; }
+  });
+
+  // Write startup log to file
+  writeLog(LOG_LEVELS.STARTUP, 'server', `Blitz CRM v${VERSION} started on port ${PORT}`, {
+    nodeVersion: process.version,
+    platform: process.platform,
+    pid: process.pid,
+    dataDir: DATA_DIR,
+    dataReport,
+    wsAvailable: WS_AVAILABLE,
+    startTime
+  });
+
   console.log(`\n╔══════════════════════════════════════════════╗`);
   console.log(`║  🚀 Blitz CRM Server v${VERSION}               ║`);
   console.log(`║  📡 HTTP + WebSocket on port ${PORT}            ║`);
@@ -4577,11 +4631,15 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`║  🛡️  Auto-ban attackers + path traversal block ║`);
   console.log(`║  🧹 ID-based dedup (no more record collapse)  ║`);
   console.log(`║  🪦 Tombstone system (7-day anti-resurrect)   ║`);
-  console.log(`║  🔧 v10.06: GET filters tombstoned records    ║`);
-  console.log(`║  🔧 v10.06: No-op save skip (reduces I/O)     ║`);
-  console.log(`║  🔧 v10.06: WS broadcasts full tombstone list ║`);
+  console.log(`║  🔧 v12.10: Leadgreed FTD bot integration      ║`);
+  console.log(`║  🔧 v12.08: FTD-CRG sync + Time column         ║`);
+  console.log(`║  🔧 v12.07: Ghost records + date logic fixed   ║`);
+  console.log(`║  🔧 v12.04: File-based logging to /logs/       ║`);
+  console.log(`║  🔧 v12.03: User delete + permissions fixed    ║`);
   console.log(`║  🤖 Telegram: @blitzfinance_bot              ║`);
   console.log(`╚══════════════════════════════════════════════╝\n`);
+  console.log(`📊 Data files: ${JSON.stringify(dataReport)}`);
+  console.log(`📁 Logs directory: ${LOG_DIR}`);
 
   // Initial external sync on startup
   setTimeout(() => syncExternalData(), 3000);
