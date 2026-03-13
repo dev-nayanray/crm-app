@@ -1,10 +1,14 @@
 {
   "name": "crm-app",
   "version": "1.0.0",
-  "description": "��#\u0000 \u0000c\u0000r\u0000m\u0000-\u0000a\u0000p\u0000p\u0000\r\u0000 \u0000",
+  "description": "Blitz CRM App",
   "main": "vite.config.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start:backend": "node backend/server.cjs",
+    "dev:backend": "nodemon backend/server.cjs"
   },
   "repository": {
     "type": "git",
@@ -17,6 +21,9 @@
     "url": "https://github.com/dev-nayanray/crm-app/issues"
   },
   "homepage": "https://github.com/dev-nayanray/crm-app#readme",
+  "devDependencies": {
+    "vite": "^5.4.8"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "express": "^5.2.1",
