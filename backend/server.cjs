@@ -3363,8 +3363,10 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     try {
       console.log('🔍 Parsing Leadgreed Deposit...');
       const parseLeadgreedDeposit = require('./parseLeadgreedDeposit.js');
-      const ftd = parseLeadgreedDeposit(msg.text);
+      let ftd = parseLeadgreedDeposit(msg.text);
       if (ftd) {
+        // Generate ID (parser doesn't have crypto access)
+        ftd.id = crypto.randomBytes(6).toString('hex');
         console.log('✅ Deposit parsed:', JSON.stringify(ftd, null, 1));
         await saveFTD(ftd, msg);
         structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliateId: ftd.affiliateId });

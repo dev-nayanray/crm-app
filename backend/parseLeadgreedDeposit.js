@@ -47,7 +47,7 @@ module.exports = function parseLeadgreedDeposit(text) {
   const status = emoji === '🟩' ? 'success' : emoji === '🟨' ? 'pending' : 'unknown';
 
   return {
-    id: crypto.randomBytes(6).toString('hex'),
+    id: null, // Generated in server.cjs to avoid crypto dependency
     timestamp: new Date().toISOString(),
     country,
     regDate,
@@ -62,5 +62,6 @@ module.exports = function parseLeadgreedDeposit(text) {
     date: new Date().toISOString().split('T')[0],
     type: 'deposit'  // Distinguish from classic format
   };
+
 };
 
