@@ -666,7 +666,7 @@ const INITIAL_USERS = [
 
 const ADMIN_EMAILS = ["y0505300530@gmail.com", "wpnayanray@gmail.com", "office1092021@gmail.com"];
 const isAdmin = (email) => ADMIN_EMAILS.includes(email);
-const VERSION = "12.10";
+const VERSION = "12.12";
 
 // ═══════════════════════════════════════════════════════════════
 // v10.09: DEFAULT AFFILIATE & BRAND/NETWORK LOOKUP TABLES
@@ -1667,8 +1667,7 @@ function NavDropdown({ label, icon, items, activePage, userAccess, onNav, accent
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 200,
-          background: "#FFFFFF", borderRadius: 16, border: "1px solid rgba(99,102,241,0.12)", boxShadow: "0 4px 20px rgba(99,102,241,0.07)",
-          boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
+          background: "#FFFFFF", borderRadius: 16, border: "1px solid rgba(99,102,241,0.12)", boxShadow: "0 12px 40px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)",
           padding: "6px", zIndex: 200, animation: "fadeUp 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
         }}>
           {visibleItems.map(pg => {
@@ -1741,7 +1740,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
 
   return (
     <>
-      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid #E2E8F0", background: "rgba(10,15,30,0.97)", backdropFilter: "blur(24px) saturate(200%)", WebkitBackdropFilter: "blur(24px) saturate(200%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(99,102,241,0.25), 0 4px 32px rgba(0,0,0,0.3)", borderBottom: "1px solid rgba(99,102,241,0.2)" }}>
+      <header className="blitz-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 32px", borderBottom: "1px solid rgba(99,102,241,0.2)", background: "rgba(10,15,30,0.97)", backdropFilter: "blur(24px) saturate(200%)", WebkitBackdropFilter: "blur(24px) saturate(200%)", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 0 rgba(99,102,241,0.25), 0 4px 32px rgba(0,0,0,0.3)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: mobile ? 8 : 12 }}>
           {I.logo}
           {!mobile && <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 800, fontSize: 18, letterSpacing: -0.5, background: "linear-gradient(135deg, #38BDF8 0%, #A78BFA 50%, #F472B6 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>Blitz CRM</span>}
@@ -1755,7 +1754,7 @@ function BlitzHeader({ user, activePage, userAccess, onNav, onAdmin, onLogout, a
                   const isActive = activePage === group.key;
                   return isActive
                     ? <span key={group.key} style={{ display: "flex", alignItems: "center", gap: 5, background: `${group.color}15`, border: `1.5px solid ${group.color}40`, color: group.color, padding: "5px 12px", borderRadius: 8, fontSize: 13, fontWeight: 700 }}><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</span>
-                    : <button key={group.key} onClick={() => onNav(group.key)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1.5px solid transparent", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 8, transition: "all 0.15s", background: "transparent" }}
+                    : <button key={group.key} onClick={() => onNav(group.key)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "1.5px solid transparent", color: "#94A3B8", cursor: "pointer", fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 8, transition: "all 0.15s" }}
                         onMouseEnter={e => { e.currentTarget.style.color = group.color; e.currentTarget.style.background = "rgba(99,102,241,0.12)"; }}
                         onMouseLeave={e => { e.currentTarget.style.color = "#94A3B8"; e.currentTarget.style.background = "transparent"; }}
                       ><span style={{ fontSize: 14 }}>{group.icon}</span>{group.label}</button>;
@@ -7102,7 +7101,7 @@ function CRGDeals({ user, onLogout, onNav, onAdmin, deals: rawDeals, setDeals, u
                       { label: "FTDs Count", value: dayFtd, color: "#10B981", bg: "#F0FDF4", icon: "⭐" },
                     ];
                     return (
-                      <div style={{ display: "flex", alignItems: "stretch", gap: 0, padding: "10px 16px", flexWrap: "wrap", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "stretch", gap: 10, padding: "10px 16px", flexWrap: "wrap" }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.8px", alignSelf: "center", marginRight: 4 }}>Table Summary</span>
                         {stats.map(st => (
                           <div key={st.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px", background: st.bg, borderRadius: 8, border: `1px solid ${st.color}22` }}>
