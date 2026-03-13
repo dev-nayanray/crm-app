@@ -3356,21 +3356,35 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
     }
     return;  // Don't process as offer/hash
   }
-// NEW: Leadgreed FTD listener (-5195790399)
+// Leadgreed FTD listener (-5195790399) — supports BOTH 🏦 format AND "Deposit from..." format
   const chatIdStr = String(msg.chat.id);
+  if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text && msg.text.includes('Deposit from')) {
+    try {
+      const ftd = parseLeadgreedDeposit(msg.text);
+      if (ftd) {
+        await saveFTD(ftd, msg);
+        structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliate: `${ftd.affiliateId}-${ftd.affiliateName}`, broker: `${ftd.brokerId}-${ftd.brokerName}` });
+        console.log(`✅ Deposit FTD saved: ${ftd.country} ${ftd.affiliateId}-${ftd.affiliateName} → ${ftd.brokerId}-${ftd.brokerName}`);
+      }
+    } catch (err) {
+      console.error("❌ Deposit FTD parse error:", err.message);
+    }
+    return;
+  }
   if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
     try {
       const ftd = parseLeadgreedFTD(msg.text);
       if (ftd) {
         await saveFTD(ftd, msg);
-        structuredLog("ftd_leadgreed", "new", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
-        console.log(`✅ FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
+        structuredLog("ftd_leadgreed", "new", "classic", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
+        console.log(`✅ Classic FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
       }
     } catch (err) {
-      console.error("❌ FTD parse error:", err.message);
+      console.error("❌ Classic FTD parse error:", err.message);
     }
     return;  // Don't process as offer/hash
   }
+
 
   // Leadgreed FTD Parser
   function parseLeadgreedFTD(text) {
