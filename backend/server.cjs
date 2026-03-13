@@ -1,4 +1,4 @@
-// Blitz CRM Server — v12.00 (2026-03-12)
+
 // Load environment variables
 // require("dotenv").config();
 
@@ -22,7 +22,7 @@ try {
 }
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
-const screenshotModule = require("./screenshot.cjs");
+    const screenshotModule = require("./screenshot.cjs");
 
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
@@ -248,6 +248,7 @@ const OFFER_GROUP_CHAT_ID = "-1002183891044";         // Offers supergroup
 const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
 const CRG_GROUP_CHAT_ID = "-1002560408661";           // CRG Deals Telegram Group
 const MONITORING_GROUP_CHAT_ID = "-1002832299846";
+const FTD_CONFIRM_GROUP_CHAT_ID = "-4744920512"; // Additional FTD confirmation group
 
 // Helper function to validate and normalize chat ID for supergroups
 function normalizeChatId(chatId) {
@@ -3342,20 +3343,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   }
 
   // NEW: Leadgreed FTD listener (-5195790399)
-  const leadsChatIdStr = String(msg.chat.id);
-  if (leadsChatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
-    try {
-      const ftd = parseLeadgreedFTD(msg.text);
-      if (ftd) {
-        await saveFTD(ftd, msg);
-        structuredLog("ftd_leadgreed", "new", "ok", { chatId: leadsChatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
-        console.log(`✅ FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
-      }
-    } catch (err) {
-      console.error("❌ FTD parse error:", err.message);
-    }
-    return;  // Don't process as offer/hash
-  }
+
 // Leadgreed FTD listener (-5195790399) — supports BOTH 🏦 format AND "Deposit from..." format
   const chatIdStr = String(msg.chat.id);
   console.log(`💬 Leadgreed Deposit test: "${msg.text.substring(0,50)}..."`);
@@ -3369,6 +3357,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
         ftd.id = crypto.randomBytes(6).toString('hex');
         console.log('✅ Deposit parsed:', JSON.stringify(ftd, null, 1));
         await saveFTD(ftd, msg);
+        sendFTDConfirmNotification(ftd, TELEGRAM_TOKEN, FTD_CONFIRM_GROUP_CHAT_ID);
         structuredLog("ftd_leadgreed", "new", "deposit", "ok", { chatId: chatIdStr, country: ftd.country, affiliateId: ftd.affiliateId });
         bot.sendMessage(msg.chat.id, `✅ Deposit FTD saved!\n${ftd.country}\n${ftd.affiliateName} → ${ftd.brokerName}`);
       } else {
@@ -3381,12 +3370,13 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
   }
   if (chatIdStr === LEADS_GROUP_CHAT_ID && msg.text?.startsWith('🏦')) {
     try {
-      const ftd = parseLeadgreedFTD(msg.text);
-      if (ftd) {
-        await saveFTD(ftd, msg);
-        structuredLog("ftd_leadgreed", "new", "classic", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
-        console.log(`✅ Classic FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
-      }
+        const ftd = parseLeadgreedFTD(msg.text);
+        if (ftd) {
+          await saveFTD(ftd, msg);
+          sendFTDConfirmNotification(ftd, TELEGRAM_TOKEN, FTD_CONFIRM_GROUP_CHAT_ID);
+          structuredLog("ftd_leadgreed", "new", "classic", "ok", { chatId: chatIdStr, country: ftd.country, source: `${ftd.sourceId}-${ftd.sourceName}`, dest: `${ftd.destId}-${ftd.destName}` });
+          console.log(`✅ Classic FTD saved: ${ftd.country} ${ftd.sourceId}-${ftd.sourceName} → ${ftd.destId}-${ftd.destName} 🟩`);
+        }
     } catch (err) {
       console.error("❌ Classic FTD parse error:", err.message);
     }
