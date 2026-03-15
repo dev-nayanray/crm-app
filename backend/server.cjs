@@ -74,6 +74,8 @@ try {
   };
 }
 
+const sendFTDConfirmNotification = require('./sendFTDConfirm.cjs');
+
 const app = express();
 app.disable('x-powered-by'); // Don't reveal tech stack
 
@@ -340,7 +342,10 @@ const OPEN_PAYMENT_GROUP_CHAT_ID = "-1002830517753";  // Same as Finance
 const CRG_GROUP_CHAT_ID = "-1002560408661";           // CRG Deals Telegram Group
 const MONITORING_GROUP_CHAT_ID = "-1002832299846";
 const LEADS_GROUP_CHAT_ID = "-5195790399";           // Leadgreed FTD bot group (v12.10)
-const FTD_CONFIRM_GROUP_CHAT_ID = "-4744920512";     // Additional FTD confirmation group (v12.10)
+// Duplicate constants removed - use top declarations:
+// FTD_GROUP_CHAT_ID = "-5195790399" (line ~150)
+// FTD_CONFIRM_GROUP_CHAT_ID = "-4744920512" (line ~150)
+// FTD groups and bot - using top declarations
 
 // Helper function to validate and normalize chat ID for supergroups
 function normalizeChatId(chatId) {
@@ -3450,7 +3455,7 @@ if (TELEGRAM_TOKEN && TELEGRAM_TOKEN !== "YOUR_BOT_TOKEN_HERE") {
           }
           return;
         }
-        // Handle "Deposit from ..." format (if parser module exists)
+
         if (msg.text.includes('Deposit from')) {
           try {
             let parseLeadgreedDeposit;
